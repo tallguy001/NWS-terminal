@@ -1,0 +1,53 @@
+{
+ "season": 2026,
+ "verified": "2026-10-26",
+ "tags": {"C": "confirmed (official or two agreeing sources)", "R": "reported", "U": "unpublished — never guess"},
+ "fbs": {
+  "teams": 138,
+  "conferences": {"SEC": 16, "Big Ten": 18, "Big 12": 16, "ACC": 17, "American": 14, "Pac-12": 8, "Mountain West": 10,
+                  "Sun Belt": 14, "MAC": 13, "C-USA": 10, "Independents": 2},
+  "notes": "Membership read from ESPN's FBS standings on 2026-10-26 (138 teams). New to FBS or realigned for 2026: Sacramento State (MAC), North Dakota State (Mountain West); the rebuilt Pac-12 = Boise State, Colorado State, Fresno State, Oregon State, San Diego State, Texas State, Utah State, Washington State. Sun Belt keeps East and West divisions.",
+  "tag": "C",
+  "source": "ESPN standings feed (group 80); Pac-12 release 2026-02-09"
+ },
+ "last_season": {
+  "champion": "Indiana",
+  "title_game": "Indiana 27, Miami 21 — Mon Jan 19, 2026, Hard Rock Stadium, Miami Gardens, Fla.",
+  "record": "16–0, the program's first national title; first unbeaten champion of the 12-team CFP era",
+  "tag": "C",
+  "source": "AP game story via Lee Enterprises; NBC Sports live updates"
+ },
+ "cfp": {
+  "format": "12 teams: 5 automatic bids + 7 at-large. Automatic: the champions of the ACC, Big Ten, Big 12 and SEC, plus the highest-ranked champion of the American, Conference USA, MAC, Mountain West, Pac-12 and Sun Belt. Notre Dame is in if it finishes in the top 12 of the final ranking. An automatic qualifier ranked outside the top 12 still gets in and takes one of the lowest seeds.",
+  "seeding": "Straight seeding from the committee's final ranking (approved May 2025); seeds 1–4 receive first-round byes whether or not they are conference champions. First round on the higher seed's campus: 12 at 5, 11 at 6, 10 at 7, 9 at 8. Quarterfinals: 1 v 8/9, 2 v 7/10, 3 v 6/11, 4 v 5/12. No reseeding; no adjustment for rematches or conference opponents. From 2026 the No. 1 seed picks its quarterfinal bowl and semifinal site, then No. 2, No. 3; No. 4 gets the remaining bowl.",
+  "tag": "C",
+  "source": "College Football Playoff Management Committee vote 2026-01-23 (as summarised by National Football Post, 2026-10-23); FBSchedules",
+  "expansion": "A 24-team format for 2027 is under discussion (ESPN report 2026-10-15) and is NOT approved; any 2027 change must be decided by Dec 1, 2026. Until the CFP announces one, the 12-team format is the only confirmed format.",
+  "expansion_tag": "R"
+ },
+ "calendar": [
+  {"date": "2026-08-22", "what": "Week 1 window opens (Aug 22 – Sep 7)", "tag": "C"},
+  {"date": "2026-11-03", "what": "First CFP ranking (Tue, ESPN, 7 p.m. ET)", "tag": "C"},
+  {"date": "2026-11-10", "what": "CFP ranking 2", "tag": "C"},
+  {"date": "2026-11-17", "what": "CFP ranking 3", "tag": "C"},
+  {"date": "2026-11-24", "what": "CFP ranking 4", "tag": "C"},
+  {"date": "2026-12-01", "what": "CFP ranking 5 (last before Selection Day)", "tag": "C"},
+  {"date": "2026-12-04", "what": "Big 12 Championship (AT&T Stadium, Arlington; ABC) · Pac-12 Championship (top seed hosts; CBS)", "tag": "C"},
+  {"date": "2026-12-05", "what": "SEC (Atlanta), Big Ten (Indianapolis), ACC (Charlotte) and American championships; Mountain West, Sun Belt, C-USA and MAC (Ford Field) games are Dec 4–5 with days and times unpublished", "tag": "C"},
+  {"date": "2026-12-06", "what": "Selection Day (noon–3 p.m. ET): the 12-team bracket, first-round sites, quarterfinal bowls", "tag": "C"},
+  {"date": "2026-12-12", "what": "Week 15 ends (Army–Navy week in ESPN's calendar; kickoff details unpublished here)", "tag": "U"},
+  {"date": "2026-12-18", "what": "CFP first round: one game Fri Dec 18, 8 p.m. ET (ESPN)", "tag": "C"},
+  {"date": "2026-12-19", "what": "CFP first round: three games Sat Dec 19 (noon ABC/ESPN; 3:30 and 7:30 p.m. TNT/truTV/HBO Max)", "tag": "C"},
+  {"date": "2026-12-30", "what": "CFP quarterfinal: Fiesta Bowl, Glendale, Ariz. (7:30 p.m. ET)", "tag": "C"},
+  {"date": "2027-01-01", "what": "CFP quarterfinals: Peach (Atlanta), Rose (Pasadena), Cotton (Arlington) — noon, 4 and 8 p.m. ET; order set Dec 6", "tag": "C"},
+  {"date": "2027-01-14", "what": "CFP semifinal: Orange Bowl, Miami Gardens (7:30 p.m. ET, ESPN)", "tag": "C"},
+  {"date": "2027-01-15", "what": "CFP semifinal: Sugar Bowl, New Orleans (7:30 p.m. ET, ESPN)", "tag": "C"},
+  {"date": "2027-01-25", "what": "National championship: Allegiant Stadium, Las Vegas (7:30 p.m. ET, ABC/ESPN)", "tag": "C"}
+ ],
+ "rules_used_by_the_model": {
+  "conference_title_games": "Every conference but the Independents plays one; the two teams with the best conference record meet (Sun Belt: the East and West division winners). The Pac-12's Week 13 flex game counts as non-conference.",
+  "tiebreakers": "Each conference's published tiebreakers are long (head-to-head, common opponents, then ratings composites). The HOUSE MODEL applies conference win percentage, then head-to-head between two tied teams, then its own rating — an approximation, labelled as such.",
+  "bowl_eligibility": "Six wins (at most one against an FCS opponent counts) — the HOUSE MODEL's 'bowl eligible' line; the NCAA's waiver and APR backfill rules are not modelled.",
+  "tag": "R"
+ }
+}

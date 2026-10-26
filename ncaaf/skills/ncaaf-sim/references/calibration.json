@@ -1,0 +1,257 @@
+{
+ "model": "ncaaf-sim HOUSE MODEL v1 (offense/defense ridge ratings)",
+ "built": "2026-10-26 15:30 UTC",
+ "params": {
+  "hfa": 2.5,
+  "k_off": 3.0,
+  "k_def": 3.0,
+  "k_fcs": 3.0,
+  "rho": 0.7,
+  "cap": 0.0,
+  "shrink": 0.0,
+  "w_fcs": 0.5,
+  "tau": 0.0,
+  "sigma": 15.5,
+  "sigma_early": 15.0,
+  "early_weeks": 4,
+  "mu0": 28.0,
+  "new_team": -3.0
+ },
+ "train_seasons": [
+  2016,
+  2023
+ ],
+ "test_seasons": [
+  2024,
+  2025
+ ],
+ "corpus": "ESPN finals 2014\u20132025, closing lines from ESPN core odds (DraftKings / ESPN BET / consensus)",
+ "report": {
+  "train": {
+   "2016": {},
+   "2017": {},
+   "2018": {},
+   "2019": {
+    "n": 774,
+    "mae_house": 12.717,
+    "mae_market": 12.186,
+    "brier_house": 0.1708,
+    "brier_market": 0.15701,
+    "logloss_house": 0.50976,
+    "same_favorite": 0.907,
+    "ats_3plus": [
+     161,
+     334
+    ],
+    "mae_total_house": 13.338,
+    "mae_total_market": 10.286,
+    "brier_diff": 0.01379,
+    "brier_diff_ci95": [
+     0.00905,
+     0.0188
+    ]
+   },
+   "2020": {
+    "n": 534,
+    "mae_house": 13.239,
+    "mae_market": 12.854,
+    "brier_house": 0.18551,
+    "brier_market": 0.17478,
+    "logloss_house": 0.54846,
+    "same_favorite": 0.8895,
+    "ats_3plus": [
+     128,
+     252
+    ],
+    "mae_total_house": 13.977,
+    "mae_total_market": 13.603,
+    "brier_diff": 0.01073,
+    "brier_diff_ci95": [
+     0.00288,
+     0.0189
+    ]
+   },
+   "2021": {
+    "n": 770,
+    "mae_house": 13.115,
+    "mae_market": 12.571,
+    "brier_house": 0.18255,
+    "brier_market": 0.17707,
+    "logloss_house": 0.54193,
+    "same_favorite": 0.9052,
+    "ats_3plus": [
+     135,
+     294
+    ],
+    "mae_total_house": 13.213,
+    "mae_total_market": 12.593,
+    "brier_diff": 0.00548,
+    "brier_diff_ci95": [
+     -0.00062,
+     0.01087
+    ]
+   },
+   "2022": {
+    "n": 776,
+    "mae_house": 12.487,
+    "mae_market": 12.026,
+    "brier_house": 0.19331,
+    "brier_market": 0.1858,
+    "logloss_house": 0.56528,
+    "same_favorite": 0.8995,
+    "ats_3plus": [
+     144,
+     297
+    ],
+    "mae_total_house": 12.852,
+    "mae_total_market": 12.066,
+    "brier_diff": 0.00751,
+    "brier_diff_ci95": [
+     0.00307,
+     0.01323
+    ]
+   },
+   "2023": {
+    "n": 792,
+    "mae_house": 12.71,
+    "mae_market": 12.093,
+    "brier_house": 0.17876,
+    "brier_market": 0.17052,
+    "logloss_house": 0.53159,
+    "same_favorite": 0.9015,
+    "ats_3plus": [
+     156,
+     342
+    ],
+    "mae_total_house": 13.152,
+    "mae_total_market": 12.785,
+    "brier_diff": 0.00824,
+    "brier_diff_ci95": [
+     0.00286,
+     0.01367
+    ]
+   }
+  },
+  "test": {
+   "2024": {
+    "n": 770,
+    "mae_house": 12.491,
+    "mae_market": 11.998,
+    "brier_house": 0.1905,
+    "brier_market": 0.18424,
+    "logloss_house": 0.55502,
+    "same_favorite": 0.8818,
+    "ats_3plus": [
+     162,
+     323
+    ],
+    "mae_total_house": 13.143,
+    "mae_total_market": 12.777,
+    "brier_diff": 0.00626,
+    "brier_diff_ci95": [
+     0.00114,
+     0.01187
+    ]
+   },
+   "2025": {
+    "n": 806,
+    "mae_house": 12.163,
+    "mae_market": 11.834,
+    "brier_house": 0.17715,
+    "brier_market": 0.17542,
+    "logloss_house": 0.52416,
+    "same_favorite": 0.8933,
+    "ats_3plus": [
+     173,
+     329
+    ],
+    "mae_total_house": 13.168,
+    "mae_total_market": 12.578,
+    "brier_diff": 0.00173,
+    "brier_diff_ci95": [
+     -0.00347,
+     0.00683
+    ]
+   }
+  },
+  "train_all": {
+   "n": 3646,
+   "mae_house": 12.827,
+   "mae_market": 12.311,
+   "brier_house": 0.18196,
+   "brier_market": 0.17291,
+   "logloss_house": 0.53878,
+   "same_favorite": 0.9013,
+   "ats_3plus": [
+    724,
+    1519
+   ],
+   "mae_total_house": 13.261,
+   "mae_total_market": 12.18,
+   "brier_diff": 0.00905,
+   "brier_diff_ci95": [
+    0.00631,
+    0.01115
+   ]
+  },
+  "test_all": {
+   "n": 1576,
+   "mae_house": 12.323,
+   "mae_market": 11.914,
+   "brier_house": 0.18367,
+   "brier_market": 0.17973,
+   "logloss_house": 0.53924,
+   "same_favorite": 0.8877,
+   "ats_3plus": [
+    335,
+    652
+   ],
+   "mae_total_house": 13.156,
+   "mae_total_market": 12.675,
+   "brier_diff": 0.00394,
+   "brier_diff_ci95": [
+    0.00016,
+    0.00763
+   ]
+  }
+ },
+ "reading": "Held-out seasons scored walk-forward: each week predicted from games before it. The closing market is the better forecaster (lower MAE and Brier); the HOUSE MODEL is advisory and never blended with it.",
+ "committee": {
+  "params": {
+   "b": 1.25,
+   "c": 0.5,
+   "k_elite": 12
+  },
+  "seasons": [
+   2014,
+   2015,
+   2016,
+   2017,
+   2018,
+   2019,
+   2020,
+   2021,
+   2022,
+   2023,
+   2024,
+   2025
+  ],
+  "top12_overlap": {
+   "2014": 9,
+   "2015": 12,
+   "2016": 11,
+   "2017": 12,
+   "2018": 12,
+   "2019": 10,
+   "2020": 11,
+   "2021": 11,
+   "2022": 11,
+   "2023": 12,
+   "2024": 10,
+   "2025": 11
+  },
+  "top12_overlap_mean": 11.0,
+  "spearman_top25_mean": 0.801,
+  "reading": "Fitted to the committee's final rankings (ESPN core API, ranking 21): of the committee's top 12, the proxy names 11.0 on average. The committee is people; the proxy is a formula."
+ }
+}
