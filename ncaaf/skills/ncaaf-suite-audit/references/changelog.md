@@ -19,14 +19,17 @@ Owner request: "House team is Wisconsin. Need you to fine tune the model and dai
   proxy refit on the v1.1 ratings (top-12 overlap 11.0 → 11.1). Production fit uses every season 2015–2025.
 - **Daily rebuild** — scheduled task "NCAAF League Hub", 5:41 AM CT daily in a fresh cloud session (Mondays only in the
   offseason): phase gate → pull → build → qa → sweep light + dark → publish in place; a failed gate blocks the publish. It runs
-  the installed skills when they carry v1.1 + the house team, else this repository's copy; neither → no publish.
+  the installed skills only, and only when they carry v1.1 + the house team (else no publish, and it says to re-save). Two test
+  firings 2026-10-26 with the v1 skills still installed: both refused to publish as designed; routine sessions see the
+  installed (synced) skills but cannot reach the repository (no GitHub access), so re-saving the skills is the only path.
 - Republished https://claude.ai/artifact/3WewjztwCbPeZYbkdv9Dox (version 2). Gates: ncaaf-qa PASS; league_sweep PASS 540 views
   light, 540 dark, 0 dead links.
 
 Learned (codified): ESPN moved the preseason AP poll to `types/1/weeks/1` from 2025 (`types/2/weeks/1` before); team box
 fetches cost ≈100 KB each but run ≈70 a second with 16 workers, so the live season's boxes are fetched per run and cached; the
 stack is linear per team, so it folds into one rating and the season simulation needs no change beyond the effective home field
-(`R.hfa`); after a worker restart the artifact tool forgets what this session published — list the files, then republish.
+(`R.hfa`); after a worker restart the artifact tool forgets what this session published — list the files, then republish; a
+scheduled session has no repository checkout and no GitHub access — whatever it runs must be installed as a skill.
 
 Script md5s (v1.1):
 
