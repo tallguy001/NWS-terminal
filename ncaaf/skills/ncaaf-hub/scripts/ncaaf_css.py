@@ -21,6 +21,38 @@ NCAAF_CSS = r'''
   a.tl2:hover b,a.tl2:focus-visible b{text-decoration:underline;text-underline-offset:3px}
   .kx{color:var(--ink3);font-size:11.5px}
   .kx b{color:var(--ink2)}
+  /* the house team (owner, 2026-10-26: Wisconsin): landing card, highlighted rows, header link, two-number line */
+  .hs-card{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr);gap:0;background:var(--sf);border:1px solid var(--ln);
+    box-shadow:inset 5px 0 0 var(--tm-bg),var(--shadow)}
+  .hs-card>div{padding:14px 16px;min-width:0}
+  .hs-card>div+div{border-left:1px solid var(--ln)}
+  .hs-id{display:flex;gap:12px;align-items:flex-start}
+  .hs-id .chip{font-size:15px;margin-top:4px}
+  .hs-nm{display:block;font-family:var(--disp);font-stretch:66%;font-weight:900;font-style:italic;text-transform:uppercase;font-size:30px;
+    line-height:.95;color:var(--ink);text-decoration:none}
+  .hs-nm span{color:var(--acc)}
+  .hs-nm:hover,.hs-nm:focus-visible{text-decoration:underline;text-underline-offset:3px}
+  .hs-rec{font-size:13px;color:var(--ink2);margin:6px 0 8px}
+  .hs-rec b{color:var(--ink);font-family:var(--disp);font-stretch:72%;font-style:italic;font-size:22px}
+  .hs-k{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin-bottom:5px}
+  .hs-g{font-family:var(--disp);font-stretch:72%;font-weight:800;font-style:italic;font-size:19px;color:var(--ink);text-transform:uppercase;line-height:1.15}
+  .hs-g .chip{font-size:11px;font-style:normal}
+  .hs-s{font-size:12.5px;color:var(--ink2);margin-top:4px;line-height:1.45}
+  .hs-s b{color:var(--ink)}
+  .hs-o{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}
+  .hs-o span{font-size:11.5px;color:var(--ink3);line-height:1.25}
+  .hs-o b{display:block;font-family:var(--disp);font-stretch:72%;font-weight:800;font-style:italic;font-size:20px;color:var(--ink)}
+  .hs-card>.hs-two{grid-column:1/-1;border-left:0;border-top:1px solid var(--ln);background:var(--sf2);font-size:13px;color:var(--ink2);padding:10px 16px}
+  .hs-two b{color:var(--ink)}
+  @media (max-width:900px){ .hs-card{grid-template-columns:minmax(0,1fr)} .hs-card>div+div{border-left:0;border-top:1px solid var(--ln)} }
+  table.rb tr.hs-row td:first-child{box-shadow:inset 4px 0 0 var(--tm-hs,var(--gold-l)),1px 0 0 var(--ln)}
+  .lg-wk.lg-hs{gap:7px}
+  .lg-wk.lg-hs .chip{font-size:10px;min-width:2.4em}
+  @media (max-width:1100px){ .lg-wk.lg-hs{display:none} }
+  .tn-p{margin:12px 0 0;padding:10px 16px}
+  .tn-line{margin:0;font-size:13.5px;color:var(--ink2)}
+  .tn-line b{color:var(--ink)}
+  .tn-sep{color:var(--ink3);margin:0 4px}
   /* conference index in the picker */
   .lg-confs{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 8px;padding:2px 0 8px;border-bottom:1px solid var(--c-ln)}
   .lg-confs button{appearance:none;font:inherit;font-size:12px;font-weight:700;border:1px solid var(--c-ln);background:transparent;color:var(--c-ink);

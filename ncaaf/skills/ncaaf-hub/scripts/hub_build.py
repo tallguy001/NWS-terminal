@@ -35,6 +35,7 @@ TH = HC.TH
 DOT, DASH = HC.DOT, HC.DASH
 TEMPLATE = os.path.normpath(os.path.join(HERE, "..", "assets", "hub-template.html"))
 LAND = HC.LAND
+HOUSE_KEY = "WIS"        # the house team (owner, 2026-10-26: "House team is Wisconsin"); --house overrides
 WARN = []
 
 
@@ -82,8 +83,11 @@ def _structure_check(page, what="HTML structure"):
     return True
 
 
-def build_league(P, out_dir):
+def build_league(P, out_dir, house=None):
     X = hub_ctx.X(P)
+    hk = house if house is not None else HOUSE_KEY
+    if hk and not HC.set_house(hk):
+        warn(f"house team {hk} is not an FBS key in this season's registry — no house treatment")
     import pages_landing as PL
     import pages_team as PT
     import pages_conf as PC
@@ -153,6 +157,9 @@ def build_league(P, out_dir):
         wkb += '<button type="button" class="lg-wkb" data-ab="WP" aria-current="false" title="Postseason">P</button>'
     sheet = [f'<button type="button" class="lg-team lg-home tm-{LAND}" data-ab="{LAND}" aria-current="false">{HC.chip(LAND)}'
              f'<span class="lg-nk">League home</span><span class="lg-pw">{len(X.teams)} teams</span><span class="lg-rc">Week {X.week}</span></button>',
+             (f'<button type="button" class="lg-team tm-{E(HC.HOUSE["key"])}" data-ab="{E(HC.HOUSE["key"])}" aria-current="false">{HC.chip(HC.HOUSE["id"])}'
+              f'<span class="lg-nk">{E(X.loc(HC.HOUSE["id"]))} {DOT} house team</span><span class="lg-pw">{("#" + str(X.ap[HC.HOUSE["id"]])) if HC.HOUSE["id"] in X.ap else ""}</span>'
+              f'<span class="lg-rc">{E(X.record(HC.HOUSE["id"]))}</span></button>' if HC.HOUSE["id"] else ""),
              '<div class="lg-confs" aria-label="Conferences">' + "".join(
                  f'<button type="button" data-ab="C-{ck}" aria-current="false">{E(X.confs[ck]["short"])}</button>' for ck in X.conf_order) + '</div>',
              f'<div class="lg-div" style="grid-column:1/-1"><h3>League schedule {DOT} weeks</h3><div class="lg-wkg">{wkb}</div></div>',
@@ -187,6 +194,8 @@ def build_league(P, out_dir):
                 f'<span class="car" aria-hidden="true"></span></button>\n'
                 f'    <span class="lg-st" id="lg-st">{E(meta[LAND]["status"])}</span>\n'
                 f'    <a class="lg-wk" href="#W{X.week}">Week {X.week} slate</a>\n'
+                + (f'    <a class="lg-wk lg-hs" href="#{E(HC.HOUSE["key"])}" title="House team">{HC.chip(HC.HOUSE["id"])}{E(X.loc(HC.HOUSE["id"]))}</a>\n'
+                   if HC.HOUSE["id"] else "") +
                 f'    <nav class="bug-nav" id="lg-nav" aria-label="Sections"></nav>\n'
                 f'  </div>\n' + LSH.TRAIL_HTML +
                 f'  <div class="lg-sheet" id="lg-sheet" hidden><div class="lg-sheet-in ncaaf">{"".join(sheet)}</div></div>\n'
@@ -237,6 +246,10 @@ def provenance(X):
     m = X.model
     test = m.get("test_all") or {}
     cal = m.get("calibration") or {}
+    bx = m.get("boxes") or {}
+    v11 = m.get("v11") or {}
+    v1t = (((v11.get("compare") or {}).get("test") or {}).get("v1") or {}).get("mae_house")
+    lo = (v11.get("loso") or {}).get("summary") or {}
     km = X.kmeta
     if X.kal_ok:
         kal_txt = (f'Public Trade API, read {E(km.get("read_utc") or "")}: {km.get("priced", 0)} games priced ({km.get("pre", 0)} at the '
@@ -248,12 +261,20 @@ def provenance(X):
             f'DraftKings lines for upcoming games (scoreboard), conference membership and standings (computed from the games; ESPN '
             f'{"agrees on every record" if not P.get("espn_mismatch") else "differs on " + str(len(P["espn_mismatch"])) + " records"}), the AP / Coaches polls'
             f'{" and the CFP ranking" if X.cfp else ""}, ESPN team statistics, game summaries. {E(P.get("fetch") or "")}.<br>'
-            f'<b>{HC.HM}.</b> ncaaf-sim: offense/defense ridge ratings from this season’s finals (prior: last season regressed toward the '
-            f'current conference), home edge {C_fmt(m["hfa"])} points, win chance from a normal margin (sigma {C_fmt(m["sigma"])}, '
+            f'<b>{HC.HM}.</b> ncaaf-sim {E(m.get("version") or "v1")}: offense/defense ridge ratings from this season’s finals (prior: last '
+            f'season regressed toward the current conference'
+            + (f', moved toward the preseason AP poll of {E((m.get("poll") or "")[:10])}' if m.get("poll") and m.get("version") == "v1.1" else "")
+            + ')'
+            + (f', stacked with opponent-adjusted run, pass and turnover efficiency from {bx.get("with_boxes", 0)} of {bx.get("fbs_finals", 0)} '
+               f'FBS v FBS finals’ team boxes{" (Weeks 1–4 weights)" if m.get("early") else ""}' if m.get("version") == "v1.1" and bx else "")
+            + f', home edge {C_fmt(m["hfa"])} points, win chance from a normal margin (sigma {C_fmt(m["sigma"])}, '
             f'{C_fmt(m.get("sigma_early"))} in Weeks 1–4). Calibrated on {E("–".join(map(str, cal.get("train_seasons") or [])))}, held out '
-            f'{E("–".join(map(str, cal.get("test_seasons") or [])))}: margin error {C_fmt(test.get("mae_house"), 2)} vs the closing line’s '
-            f'{C_fmt(test.get("mae_market"), 2)}; Brier {C_fmt(test.get("brier_house"), 4)} vs {C_fmt(test.get("brier_market"), 4)} — the closing '
-            f'market is the better forecaster and the house numbers are advisory. Season simulation: {X.smeta["sims"]:,} seasons, seed '
+            f'{E("–".join(map(str, cal.get("test_seasons") or [])))}: margin error {C_fmt(test.get("mae_house"), 2)}'
+            + (f' (v1 {C_fmt(v1t, 2)})' if v1t is not None else "")
+            + f' vs the closing line’s {C_fmt(test.get("mae_market"), 2)}; Brier {C_fmt(test.get("brier_house"), 4)} vs '
+            f'{C_fmt(test.get("brier_market"), 4)}'
+            + (f'; left out one season at a time (2016–2025) v1.1 beats v1 in {lo["seasons_better"]} of {lo["seasons"]}' if lo else "")
+            + f' — the closing market is the better forecaster and the house numbers are advisory. Season simulation: {X.smeta["sims"]:,} seasons, seed '
             f'{X.smeta["seed"]}; conference title games by conference record with head-to-head, a committee proxy fitted to the committee’s '
             f'final rankings 2014–2025, the 2026 bid rules.<br>'
             f'<b>Kalshi.</b> {kal_txt}. '
@@ -271,9 +292,10 @@ def main():
     s = sp.add_parser("league")
     s.add_argument("--pull", required=True)
     s.add_argument("--out-dir", required=True)
+    s.add_argument("--house", default=HOUSE_KEY, help="house team key (default WIS); '' for none")
     a = ap.parse_args()
     P = json.load(open(a.pull, encoding="utf-8"))
-    shell, rels, X = build_league(P, a.out_dir)
+    shell, rels, X = build_league(P, a.out_dir, a.house)
     tot = os.path.getsize(os.path.join(a.out_dir, "index.html")) + sum(os.path.getsize(os.path.join(a.out_dir, r)) for r in rels)
     print(f"[hub_build league] {len(rels)} data files + shell · {tot / 1e6:.1f} MB to publish · teams {len(X.teams)} · "
           f"game pages {len(X.game_pages)}", file=sys.stderr)

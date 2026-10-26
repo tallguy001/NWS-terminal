@@ -1,10 +1,10 @@
 {
- "model": "ncaaf-sim HOUSE MODEL v1 (offense/defense ridge ratings)",
- "built": "2026-10-26 15:30 UTC",
+ "model": "ncaaf-sim HOUSE MODEL v1.1 (points ratings + preseason poll prior + box-score efficiency stack)",
+ "built": "2026-10-26 17:06 UTC",
  "params": {
   "hfa": 2.5,
-  "k_off": 3.0,
-  "k_def": 3.0,
+  "k_off": 4.0,
+  "k_def": 4.0,
   "k_fcs": 3.0,
   "rho": 0.7,
   "cap": 0.0,
@@ -12,10 +12,38 @@
   "w_fcs": 0.5,
   "tau": 0.0,
   "sigma": 15.5,
-  "sigma_early": 15.0,
+  "sigma_early": 16.0,
   "early_weeks": 4,
   "mu0": 28.0,
-  "new_team": -3.0
+  "new_team": -3.0,
+  "k_e": 4.0,
+  "rho_e": 0.75,
+  "poll": {
+   "coef": [
+    -1.14428,
+    0.88466,
+    4.38704,
+    1.70456
+   ],
+   "lam": 1.0,
+   "form": "sqrt"
+  },
+  "stack": {
+   "feats": [
+    "rypc",
+    "pypa",
+    "to"
+   ],
+   "coef": [
+    0.92132,
+    1.24066,
+    0.2436,
+    1.35046,
+    -0.1494,
+    0.29427,
+    -0.81015
+   ]
+  }
  },
  "train_seasons": [
   2016,
@@ -25,7 +53,7 @@
   2024,
   2025
  ],
- "corpus": "ESPN finals 2014\u20132025, closing lines from ESPN core odds (DraftKings / ESPN BET / consensus)",
+ "corpus": "ESPN finals 2014\u20132025, closing lines from ESPN core odds (DraftKings / ESPN BET / consensus); team boxes (FBS v FBS) 2014\u20132025; preseason AP poll 2014\u20132026",
  "report": {
   "train": {
    "2016": {},
@@ -33,194 +61,393 @@
    "2018": {},
    "2019": {
     "n": 774,
-    "mae_house": 12.717,
+    "mae_house": 12.642,
     "mae_market": 12.186,
-    "brier_house": 0.1708,
+    "brier_house": 0.16985,
     "brier_market": 0.15701,
-    "logloss_house": 0.50976,
-    "same_favorite": 0.907,
+    "logloss_house": 0.50795,
+    "same_favorite": 0.9251,
     "ats_3plus": [
-     161,
-     334
+     170,
+     324
     ],
-    "mae_total_house": 13.338,
+    "mae_total_house": 13.237,
     "mae_total_market": 10.286,
-    "brier_diff": 0.01379,
+    "brier_diff": 0.01284,
     "brier_diff_ci95": [
-     0.00905,
-     0.0188
+     0.00818,
+     0.01754
     ]
    },
    "2020": {
     "n": 534,
-    "mae_house": 13.239,
+    "mae_house": 13.19,
     "mae_market": 12.854,
-    "brier_house": 0.18551,
+    "brier_house": 0.18352,
     "brier_market": 0.17478,
-    "logloss_house": 0.54846,
-    "same_favorite": 0.8895,
+    "logloss_house": 0.54452,
+    "same_favorite": 0.897,
     "ats_3plus": [
-     128,
-     252
+     138,
+     258
     ],
-    "mae_total_house": 13.977,
+    "mae_total_house": 13.871,
     "mae_total_market": 13.603,
-    "brier_diff": 0.01073,
+    "brier_diff": 0.00874,
     "brier_diff_ci95": [
-     0.00288,
-     0.0189
+     0.00154,
+     0.01612
     ]
    },
    "2021": {
     "n": 770,
-    "mae_house": 13.115,
+    "mae_house": 13.106,
     "mae_market": 12.571,
-    "brier_house": 0.18255,
+    "brier_house": 0.18196,
     "brier_market": 0.17707,
-    "logloss_house": 0.54193,
-    "same_favorite": 0.9052,
+    "logloss_house": 0.53961,
+    "same_favorite": 0.9156,
     "ats_3plus": [
-     135,
-     294
+     137,
+     287
     ],
-    "mae_total_house": 13.213,
+    "mae_total_house": 13.117,
     "mae_total_market": 12.593,
-    "brier_diff": 0.00548,
+    "brier_diff": 0.00489,
     "brier_diff_ci95": [
-     -0.00062,
-     0.01087
+     -0.00031,
+     0.00987
     ]
    },
    "2022": {
     "n": 776,
-    "mae_house": 12.487,
+    "mae_house": 12.321,
     "mae_market": 12.026,
-    "brier_house": 0.19331,
+    "brier_house": 0.19164,
     "brier_market": 0.1858,
-    "logloss_house": 0.56528,
-    "same_favorite": 0.8995,
+    "logloss_house": 0.56211,
+    "same_favorite": 0.9124,
     "ats_3plus": [
-     144,
-     297
+     140,
+     288
     ],
-    "mae_total_house": 12.852,
+    "mae_total_house": 12.799,
     "mae_total_market": 12.066,
-    "brier_diff": 0.00751,
+    "brier_diff": 0.00583,
     "brier_diff_ci95": [
-     0.00307,
-     0.01323
+     0.00139,
+     0.01046
     ]
    },
    "2023": {
     "n": 792,
-    "mae_house": 12.71,
+    "mae_house": 12.513,
     "mae_market": 12.093,
-    "brier_house": 0.17876,
+    "brier_house": 0.17649,
     "brier_market": 0.17052,
-    "logloss_house": 0.53159,
-    "same_favorite": 0.9015,
+    "logloss_house": 0.52475,
+    "same_favorite": 0.9053,
     "ats_3plus": [
-     156,
-     342
+     152,
+     311
     ],
-    "mae_total_house": 13.152,
+    "mae_total_house": 13.109,
     "mae_total_market": 12.785,
-    "brier_diff": 0.00824,
+    "brier_diff": 0.00596,
     "brier_diff_ci95": [
-     0.00286,
-     0.01367
+     0.00064,
+     0.01105
     ]
    }
   },
   "test": {
    "2024": {
     "n": 770,
-    "mae_house": 12.491,
+    "mae_house": 12.417,
     "mae_market": 11.998,
-    "brier_house": 0.1905,
+    "brier_house": 0.18984,
     "brier_market": 0.18424,
-    "logloss_house": 0.55502,
-    "same_favorite": 0.8818,
+    "logloss_house": 0.55411,
+    "same_favorite": 0.8857,
     "ats_3plus": [
-     162,
-     323
+     154,
+     312
     ],
-    "mae_total_house": 13.143,
+    "mae_total_house": 13.026,
     "mae_total_market": 12.777,
-    "brier_diff": 0.00626,
+    "brier_diff": 0.0056,
     "brier_diff_ci95": [
-     0.00114,
-     0.01187
+     0.00049,
+     0.01041
     ]
    },
    "2025": {
     "n": 806,
-    "mae_house": 12.163,
+    "mae_house": 12.157,
     "mae_market": 11.834,
-    "brier_house": 0.17715,
+    "brier_house": 0.1788,
     "brier_market": 0.17542,
-    "logloss_house": 0.52416,
-    "same_favorite": 0.8933,
+    "logloss_house": 0.52843,
+    "same_favorite": 0.9069,
     "ats_3plus": [
-     173,
-     329
+     153,
+     298
     ],
-    "mae_total_house": 13.168,
+    "mae_total_house": 13.079,
     "mae_total_market": 12.578,
-    "brier_diff": 0.00173,
+    "brier_diff": 0.00338,
     "brier_diff_ci95": [
-     -0.00347,
-     0.00683
+     -0.00146,
+     0.00807
     ]
    }
   },
   "train_all": {
    "n": 3646,
-   "mae_house": 12.827,
+   "mae_house": 12.724,
    "mae_market": 12.311,
-   "brier_house": 0.18196,
+   "brier_house": 0.18049,
    "brier_market": 0.17291,
-   "logloss_house": 0.53878,
-   "same_favorite": 0.9013,
+   "logloss_house": 0.53517,
+   "same_favorite": 0.912,
    "ats_3plus": [
-    724,
-    1519
+    737,
+    1468
    ],
-   "mae_total_house": 13.261,
+   "mae_total_house": 13.183,
    "mae_total_market": 12.18,
-   "brier_diff": 0.00905,
+   "brier_diff": 0.00758,
    "brier_diff_ci95": [
-    0.00631,
-    0.01115
+    0.00497,
+    0.00968
    ]
   },
   "test_all": {
    "n": 1576,
-   "mae_house": 12.323,
+   "mae_house": 12.284,
    "mae_market": 11.914,
-   "brier_house": 0.18367,
+   "brier_house": 0.18419,
    "brier_market": 0.17973,
-   "logloss_house": 0.53924,
-   "same_favorite": 0.8877,
+   "logloss_house": 0.54098,
+   "same_favorite": 0.8966,
    "ats_3plus": [
-    335,
-    652
+    307,
+    610
    ],
-   "mae_total_house": 13.156,
+   "mae_total_house": 13.053,
    "mae_total_market": 12.675,
-   "brier_diff": 0.00394,
+   "brier_diff": 0.00446,
    "brier_diff_ci95": [
-    0.00016,
-    0.00763
+    0.00069,
+    0.008
    ]
   }
  },
- "reading": "Held-out seasons scored walk-forward: each week predicted from games before it. The closing market is the better forecaster (lower MAE and Brier); the HOUSE MODEL is advisory and never blended with it.",
+ "v11": {
+  "selection": "validation seasons 2022\u20132023 with every coefficient fit on 2016\u20132021 (prior strength 3\u20135, poll form sqrt / linear / log and share 0.5\u20131, efficiency sets of yards per play, first-down rate, rushing yards per carry, passing yards per dropback, third downs, penalties and giveaways, efficiency prior strength 2\u201316 and carry-over 0.4\u20130.75); the v1 points parameters were already at a flat optimum",
+  "v1_params": {
+   "hfa": 2.5,
+   "k_off": 3.0,
+   "k_def": 3.0,
+   "k_fcs": 3.0,
+   "rho": 0.7,
+   "cap": 0.0,
+   "shrink": 0.0,
+   "w_fcs": 0.5,
+   "tau": 0.0,
+   "sigma": 15.5,
+   "sigma_early": 15.0,
+   "early_weeks": 4,
+   "mu0": 28.0,
+   "new_team": -3.0,
+   "k_e": 4.0,
+   "rho_e": 0.75
+  },
+  "train_fit": {
+   "poll": [
+    -1.23708,
+    0.87928,
+    4.98971,
+    1.59999
+   ],
+   "poll_rmse": 6.203,
+   "prior_only_rmse": 6.352,
+   "stack": [
+    0.88247,
+    1.41196,
+    0.3691,
+    1.17548,
+    -0.18037,
+    0.32824,
+    -1.12818
+   ],
+   "sigma": [
+    15.5,
+    15.5
+   ]
+  },
+  "production_fit": {
+   "poll": [
+    -1.14428,
+    0.88466,
+    4.38704,
+    1.70456
+   ],
+   "stack": [
+    0.92132,
+    1.24066,
+    0.2436,
+    1.35046,
+    -0.1494,
+    0.29427,
+    -0.81015
+   ],
+   "sigma": [
+    15.5,
+    16.0
+   ],
+   "seasons": [
+    2015,
+    2025
+   ]
+  },
+  "stack_order": [
+   "points line",
+   "rypc",
+   "pypa",
+   "to",
+   "early\u00b7rypc",
+   "early\u00b7pypa",
+   "early\u00b7to"
+  ],
+  "compare": {
+   "train": {
+    "v1": {
+     "n": 3646,
+     "mae_house": 12.827,
+     "brier_house": 0.18196,
+     "logloss_house": 0.53878,
+     "mae_market": 12.311,
+     "brier_market": 0.17291
+    },
+    "v1_1": {
+     "n": 3646,
+     "mae_house": 12.724,
+     "brier_house": 0.18049,
+     "logloss_house": 0.53517
+    }
+   },
+   "test": {
+    "v1": {
+     "n": 1576,
+     "mae_house": 12.323,
+     "brier_house": 0.18367,
+     "logloss_house": 0.53924,
+     "mae_market": 11.914,
+     "brier_market": 0.17973
+    },
+    "v1_1": {
+     "n": 1576,
+     "mae_house": 12.284,
+     "brier_house": 0.18419,
+     "logloss_house": 0.54098
+    }
+   },
+   "test_mae_delta": -0.0369,
+   "test_mae_delta_ci95": [
+    -0.135,
+    0.0644
+   ],
+   "test_mae_wk1_4": [
+    12.992,
+    12.996
+   ],
+   "test_mae_wk5_plus": [
+    12.226,
+    12.179
+   ],
+   "test_mae_post": [
+    11.673,
+    11.587
+   ]
+  },
+  "loso": {
+   "2016": {
+    "mae_delta": -0.1106,
+    "brier_delta": -0.00103,
+    "mae_delta_wk1_4": -0.2481,
+    "n": 760
+   },
+   "2017": {
+    "mae_delta": -0.0635,
+    "brier_delta": -0.00018,
+    "mae_delta_wk1_4": -0.1394,
+    "n": 776
+   },
+   "2018": {
+    "mae_delta": -0.1356,
+    "brier_delta": -0.00086,
+    "mae_delta_wk1_4": -0.1405,
+    "n": 772
+   },
+   "2019": {
+    "mae_delta": -0.0442,
+    "brier_delta": -0.00072,
+    "mae_delta_wk1_4": -0.3175,
+    "n": 774
+   },
+   "2020": {
+    "mae_delta": -0.0439,
+    "brier_delta": -0.00179,
+    "mae_delta_wk1_4": -0.4859,
+    "n": 534
+   },
+   "2021": {
+    "mae_delta": 0.0078,
+    "brier_delta": -0.00051,
+    "mae_delta_wk1_4": 0.2756,
+    "n": 770
+   },
+   "2022": {
+    "mae_delta": -0.1446,
+    "brier_delta": -0.00166,
+    "mae_delta_wk1_4": -0.1671,
+    "n": 776
+   },
+   "2023": {
+    "mae_delta": -0.1614,
+    "brier_delta": -0.00201,
+    "mae_delta_wk1_4": -0.2055,
+    "n": 792
+   },
+   "2024": {
+    "mae_delta": -0.0653,
+    "brier_delta": -0.00028,
+    "mae_delta_wk1_4": -0.0528,
+    "n": 798
+   },
+   "2025": {
+    "mae_delta": -0.004,
+    "brier_delta": 0.00166,
+    "mae_delta_wk1_4": 0.075,
+    "n": 808
+   },
+   "summary": {
+    "mean_mae_delta": -0.0765,
+    "seasons_better": 9,
+    "seasons": 10,
+    "mean_brier_delta": -0.00074,
+    "seasons_brier_better": 9,
+    "mean_mae_delta_wk1_4": -0.1406
+   }
+  }
+ },
+ "reading": "Held-out seasons scored walk-forward with the v1.1 layers fit on the training seasons only: each week predicted from games before it. v1.1 beats v1 modestly and consistently (leave-one-season-out: better in most seasons, most in weeks 1\u20134); the closing market is still the better forecaster. The HOUSE MODEL is advisory and never blended with it.",
  "committee": {
   "params": {
-   "b": 1.25,
-   "c": 0.5,
-   "k_elite": 12
+   "b": 0.75,
+   "c": 0.75,
+   "k_elite": 9
   },
   "seasons": [
    2014,
@@ -238,20 +465,20 @@
   ],
   "top12_overlap": {
    "2014": 9,
-   "2015": 12,
+   "2015": 11,
    "2016": 11,
    "2017": 12,
    "2018": 12,
-   "2019": 10,
+   "2019": 11,
    "2020": 11,
    "2021": 11,
    "2022": 11,
    "2023": 12,
-   "2024": 10,
+   "2024": 11,
    "2025": 11
   },
-  "top12_overlap_mean": 11.0,
-  "spearman_top25_mean": 0.801,
-  "reading": "Fitted to the committee's final rankings (ESPN core API, ranking 21): of the committee's top 12, the proxy names 11.0 on average. The committee is people; the proxy is a formula."
+  "top12_overlap_mean": 11.08,
+  "spearman_top25_mean": 0.777,
+  "reading": "Fitted to the committee's final rankings (ESPN core API, ranking 21): of the committee's top 12, the proxy names 11.1 on average. The committee is people; the proxy is a formula."
  }
 }

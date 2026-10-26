@@ -22,6 +22,9 @@ def render(X):
     wk_ev = [e for e in X.ev if e["st"] == 2 and e["week"] == wk]
     fin_all = [e for e in X.ev if e["status"]["completed"]]
     parts.append(hero(X, wk, wk_ev, fin_all))
+    hc = house_card(X)
+    if hc:
+        parts.append(hc); nav.append(("house", X.loc(HC.HOUSE["id"])))
     parts.append(games(X, wk, wk_ev)); nav.append(("games", f"Week {wk}"))
     parts.append(rankings(X)); nav.append(("rankings", "Rankings"))
     parts.append(playoff(X)); nav.append(("playoff", "Playoff"))
@@ -95,6 +98,65 @@ def hero(X, wk, wk_ev, fin_all):
 
 def cell(k, v, note):
     return f'<div class="cell"><div class="k">{k}</div><div class="v">{v}</div><div class="note">{note}</div></div>'
+
+
+# ============================================================================ the house team (owner, 2026-10-26: Wisconsin)
+def house_card(X):
+    import pages_team as PT
+    tid = HC.HOUSE["id"]
+    if not tid or tid not in X.teams:
+        return ""
+    t = X.teams[tid]
+    S = X.sim[tid]
+    R = X.rat[tid]
+    pl, lab = PT.conf_place(X, tid)
+    lead = [f"{C.ordn(pl)} in the {E(lab)}"] if pl else []
+    if tid in X.ap:
+        lead.append(f"AP No. {X.ap[tid]}")
+    if tid in X.cfp:
+        lead.append(f"CFP No. {X.cfp[tid]}")
+    nxt = X.next_game(tid)
+    if nxt:
+        home = nxt["h"]["id"] == tid
+        op = nxt["a"] if home else nxt["h"]
+        t_, day, utc = X.when(nxt)
+        hm = nxt["hm"]
+        p = hm["p"] if home else 1 - hm["p"]
+        ln = C.line_txt(-hm["line"], X.abbr(nxt["h"]["id"], nxt["h"]), X.abbr(nxt["a"]["id"], nxt["a"]))
+        o = nxt.get("odds") or {}
+        mk = (f'DraftKings {E(X.mk_txt(nxt, o))}' + (f', {E(X.abbr(tid))} {C.pct1(o["p_h"] if home else 1 - o["p_h"])} no-vig' if o.get("p_h") is not None else "")
+              if o.get("spread") is not None else "DraftKings not posted")
+        k = X.kg.get(nxt["eid"])
+        kx = f' {DOT} Kalshi {E(X.abbr(tid))} {C.pct1(k["p_home"] if home else 1 - k["p_home"])}' if k else ""
+        stk = (S.get("stakes") or {})
+        sx = ""
+        if stk.get("eid") == nxt["eid"]:
+            bw, bl = stk.get("bowl", (None, None))
+            cw, cl = stk.get("cfp", (None, None))
+            if cw is not None and cl is not None and max(cw, cl) >= 0.02:
+                sx = f'<div class="hs-s">{HM} stakes: CFP <b>{C.pct0(cw)}</b> with a win, <b>{C.pct0(cl)}</b> with a loss</div>'
+            elif bw is not None and bl is not None and 0.02 < S["p_bowl"] < 0.98:
+                sx = f'<div class="hs-s">{HM} stakes: bowl eligible <b>{C.pct0(bw)}</b> with a win, <b>{C.pct0(bl)}</b> with a loss</div>'
+        gl = X.game_link(nxt, "Game page ›", "wk-a")
+        game = (f'<div class="hs-k">Next {DOT} {E(X.week_label(nxt))}</div><div class="hs-g">{"vs" if home or nxt["neutral"] else "at"} '
+                f'{HC.chip(op["id"], op.get("abbr"))} {X.team_link(op["id"], op)}{(" " + X.rank_html(op["id"])) if op["id"] in X.ap else ""}</div>'
+                f'<div class="hs-s"><b>{E(day)}</b> {E(t_)} {DOT} {E(" / ".join(nxt["tv"]) or "TV TBA")}</div>'
+                f'<div class="hs-s">{HM} <b>{E(X.abbr(tid))} {C.pct1(p)}</b> {DOT} {E(ln)} {DOT} total {C.fmt(hm["total"])}</div>'
+                f'<div class="hs-s">{mk}{kx}</div>{sx}' + (f'<div class="hs-s">{gl}</div>' if gl else ""))
+    else:
+        game = '<div class="hs-k">Season</div><div class="hs-g">no games left</div>'
+    a, b = PT.two_numbers(X, tid)
+    odds = (f'<div class="hs-k">{HM} season odds</div><div class="hs-o">'
+            f'<span><b>{C.fmt(S["w"])}</b>proj wins ({S["w10"]}–{S["w90"]})</span><span><b>{C.pct0(S["p_bowl"])}</b>bowl eligible</span>'
+            + (f'<span><b>{C.pct1(S["p_ccg"])}</b>{E(X.conf_short(t["conf"]))} title game</span><span><b>{C.pct1(S["p_conf"])}</b>{E(X.conf_short(t["conf"]))} champion</span>' if t["conf"] != "IND" else "")
+            + f'<span><b>{C.pct1(S["p_cfp"])}</b>CFP</span><span><b>{C.signed(R["net"])}</b>power ({C.ordn(R["rk"])})</span></div>')
+    two = f'<div class="hs-two"><b>Two numbers.</b> {" · ".join(x for x in (a, b) if x)}.</div>'
+    return (f'  <section class="sec" id="house">\n    <div class="sec-h"><h2 class="sec-t">House team</h2><span class="sec-note">'
+            f'{E(t["full"])} {DOT} every number from this build</span></div>\n'
+            f'    <div class="hs-card tm-{E(t["key"])}"><div class="hs-id">{HC.chip(tid)}<div><a class="hs-nm" href="#{E(t["key"])}">{E(t["loc"])} '
+            f'<span>{E(t["nick"] or "")}</span></a><div class="hs-rec"><b>{E(X.record(tid))}</b> {DOT} {" · ".join(lead)}</div>'
+            f'<a class="wk-a" href="#{E(t["key"])}">Full {E(t["loc"])} page ›</a></div></div>'
+            f'<div class="hs-col">{game}</div><div class="hs-col">{odds}</div>{two}</div>\n  </section>')
 
 
 # ============================================================================ this week's games
@@ -424,13 +486,30 @@ def power(X):
     t = HC.rb_table(cols, rows, 5, "lp-power", sort_default=0)
     out = [HC.sec("power", "Power ratings", f'{HM} {DOT} all {len(ids)} FBS teams {DOT} through Week {X.model["through"]}')]
     test = X.model.get("test_all") or {}
-    out.append(HC.brd(f"{HM} ratings", "points better than an average FBS team on a neutral field; offense = points scored above average, "
-                      "defense = points prevented", t,
-                      f'Each score is modeled as league average + offense − opposing defense ± half the home edge ({C.fmt(X.model["hfa"])} points); '
-                      f'ridge-shrunk toward a prior (last season’s final rating regressed {int(round(100 * (1 - X.model["params"]["rho"])))}% '
-                      f'toward the team’s current conference). FCS opponents share a group rating ({C.signed(X.model["fcs_group"])}). '
-                      f'Held-out {E("–".join(map(str, (X.model.get("calibration") or {}).get("test_seasons") or [])))}: margin error '
-                      f'{C.fmt(test.get("mae_house"), 2)} points vs the closing line’s {C.fmt(test.get("mae_market"), 2)} — the market is better.'))
+    v11 = X.model.get("v11") or {}
+    v1_test = (((v11.get("compare") or {}).get("test") or {}).get("v1") or {}).get("mae_house")
+    lo = (v11.get("loso") or {}).get("summary") or {}
+    if X.model.get("version") == "v1.1":
+        how = (f'v1.1. Each score is modeled as league average + offense − opposing defense ± half the home edge, ridge-shrunk toward '
+               f'a prior (last season’s final rating regressed {int(round(100 * (1 - X.model["params"]["rho"])))}% toward the team’s '
+               f'current conference, then moved toward what the preseason AP poll implies). A second layer rates rushing yards per carry, '
+               f'passing yards per dropback and giveaways the same opponent-adjusted way from FBS team boxes; the line stacks the two '
+               f'(giveaways enter as a luck correction: a team that scored despite them is better than its points say; home edge '
+               f'{C.fmt(X.model["hfa"])} points). FCS opponents share a group rating ({C.signed(X.model["fcs_group"])}). '
+               f'Held-out {E("–".join(map(str, (X.model.get("calibration") or {}).get("test_seasons") or [])))}: margin error '
+               f'{C.fmt(test.get("mae_house"), 2)} points (v1 {C.fmt(v1_test, 2)}) vs the closing line’s {C.fmt(test.get("mae_market"), 2)}'
+               + (f'; better than v1 in {lo["seasons_better"]} of {lo["seasons"]} seasons left out one at a time' if lo else "")
+               + ' — the market is still better.')
+        sub = ("points better than an average FBS team on a neutral field; offense and defense = each side’s share "
+               "(scoring plus run and pass efficiency, with a turnover-luck correction)")
+    else:
+        how = (f'Each score is modeled as league average + offense − opposing defense ± half the home edge ({C.fmt(X.model["hfa"])} points); '
+               f'ridge-shrunk toward a prior (last season’s final rating regressed {int(round(100 * (1 - X.model["params"]["rho"])))}% '
+               f'toward the team’s current conference). FCS opponents share a group rating ({C.signed(X.model["fcs_group"])}). '
+               f'Held-out {E("–".join(map(str, (X.model.get("calibration") or {}).get("test_seasons") or [])))}: margin error '
+               f'{C.fmt(test.get("mae_house"), 2)} points vs the closing line’s {C.fmt(test.get("mae_market"), 2)} — the market is better.')
+        sub = "points better than an average FBS team on a neutral field; offense = points scored above average, defense = points prevented"
+    out.append(HC.brd(f"{HM} ratings", sub, t, how))
     out.append("  </section>")
     return "\n".join(out)
 

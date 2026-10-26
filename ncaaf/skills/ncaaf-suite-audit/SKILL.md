@@ -20,8 +20,10 @@ raised, closing condition) — read at the start of every audit, re-dated at the
 1. `ncaaf_data.py verify --strict` → 7/7 (calendar, scoreboard with DraftKings odds, standings 130+ teams, rankings, a closing
    line, a game summary, team statistics). `ncaaf_theme.py` → PASS. `phase.py` prints a phase line.
 2. `ncaaf_kalshi.py` → this week's games paired with 0 unmatched FBS games (unnamed FCS-only markets are expected).
-3. `ncaaf_model.py backtest --seasons 2024-2025` reproduces calibration.json's held-out numbers (margin error 12.32 vs 11.91);
-   `ncaaf_sim.py season` prints CFP sum 12.0 and title sum 1.0.
+3. `ncaaf_model.py backtest --seasons 2024-2025` reproduces the production fit's numbers (v1.1: margin error 12.268 vs 11.914 —
+   in-sample for the v1.1 weights; the held-out 12.28 comes from `calibrate-v11`, recorded in calibration.json `v11.compare`);
+   `ncaaf_sim.py season` prints CFP sum 12.0 and title sum 1.0; `ncaaf_model.py ratings` logs `team boxes: {…}` with nothing
+   missing.
 4. ncaaf-hub: pull → build → `qa.py` PASS → `league_sweep.py` PASS light and `--dark` (exit 2 = no browser = NOT certified; a
    cloud container needs `pip install --break-system-packages playwright==<the Node package's version>`).
 5. Record the script md5s in the changelog entry; a re-save whose md5s differ is a new build: certify again.
@@ -35,13 +37,16 @@ print nothing.
    session repeat today's mistake?
 3. **Drift checks** — the operator's routing table names a real skill or command on every row; trigger namespaces stay disjoint
    from nfl-* (pro football) and wiaa-fb (Wisconsin high school); cross-references resolve.
-4. **In-season freshness walk (weekly, Tuesday)** — `clock`; last week's finals all carry closing lines (`lines --week N-1`);
+4. **In-season freshness walk (weekly, Tuesday)** — the "NCAAF League Hub" scheduled task's last run published with both gates
+   PASS (its session report; the page's build stamp is today's); `clock`; last week's finals all carry closing lines (`lines --week N-1`);
    the AP poll's week advanced; from Nov 3 the CFP ranking is read (`rankings --poll cfp`) and the hub's playoff picture says
    "committee"; the hub's scorecard (Trends) still shows the closing line ahead — if the house ever leads over a full month,
    run the leakage walk (nfl-suite-audit walk 5: read `chain`/`fit` for look-ahead, then a paired bootstrap) before believing it.
-5. **Annual walk (after the title game, before August)** — add the finished season to the corpus (`build_corpus.py --seasons Y`),
-   recalibrate (`ncaaf_model.py calibrate --train … --test … --write`), refit the committee proxy (`ncaaf_sim.py committee --fetch
-   --write`), rebuild the registry (`ncaaf_data.py registry --write` once ESPN shows the new season's membership), rewrite
+5. **Annual walk (after the title game, before August)** — add the finished season to the corpus (`build_corpus.py --seasons Y`)
+   and its team boxes (`build_boxes.py --seasons Y`), score the season just played v1.1 vs v1 (the hub's scorecard numbers;
+   ledger #11), recalibrate (`ncaaf_model.py calibrate-v11 --train … --test … --loso --write`; the v1 points grid `calibrate`
+   only when a structural change is proposed), refit the committee proxy (`ncaaf_sim.py committee --fetch --write`); in August
+   `build_polls.py --seasons Y` once the preseason AP poll is out, rebuild the registry (`ncaaf_data.py registry --write` once ESPN shows the new season's membership), rewrite
    `season_<Y>_facts.json` from verified sources (CFP format — the 2027 expansion decision —, dates, champions), update qa.py's
    SEASON_DATES, and re-run certification.
 

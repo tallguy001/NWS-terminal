@@ -15,7 +15,7 @@ place; never create another page.
 
 | File | Role |
 |---|---|
-| `scripts/hub_pull.py` | Collector → `league.json` (schema ncaaf-hub/1): season events with closing lines, the registry, HOUSE MODEL ratings + every game's house line / total / win chance + walk-forward pregame lines on this season's finals, the season simulation and today's committee-proxy picture, records (home/away/neutral/conference, one-score, Pythagorean, schedule strength, rating-expected wins), rankings, ESPN team stats → 25 rates with FBS ranks and percentiles, last season from the corpus, Kalshi (games of this week and last + futures), game summaries (last week's finals and this week's started games), the fact sheet. ≈30 s cold, ≈15 s warm. |
+| `scripts/hub_pull.py` | Collector → `league.json` (schema ncaaf-hub/1): season events with closing lines, the registry, HOUSE MODEL v1.1 ratings (this season's FBS v FBS team boxes fetched through ncaaf-sim, ≈900 requests cold / cached after; the preseason AP poll) + every game's house line / total / win chance + walk-forward pregame lines on this season's finals, the season simulation and today's committee-proxy picture, records (home/away/neutral/conference, one-score, Pythagorean, schedule strength, rating-expected wins), rankings, ESPN team stats → 25 rates with FBS ranks and percentiles, last season from the corpus, Kalshi (games of this week and last + futures), game summaries (last week's finals and this week's started games), the fact sheet. ≈45 s cold, ≈30 s warm. |
 | `scripts/hub_build.py` | Renderer: `league --pull P --out-dir OUT` → `index.html` (shell) + `league/NCAAF.json`, `teams/<KEY>.json` ×138, `confs/<CONF>.json` ×11, `weeks/W1..W15.json` (+ `WP` postseason), `games/w<NN>.json` (game pages bundled by week), `publish-files.json`; QA-only `league-hub-full.html` and `games-qa.html` (never published). ≈4 s; ≈12 MB. |
 | `scripts/hub_ctx.py` · `scripts/hub_common.py` | Build context (lookups, kickoff / line / result / cover formatting) · shared helpers (percentile scale, `rb_table` with the fit-to-width + sort contract, sections, tabs, ladders, chips, themes). |
 | `scripts/pages_landing.py` · `pages_team.py` · `pages_conf.py` · `pages_week.py` · `pages_game.py` | The five view renderers (sections below). |
@@ -35,6 +35,9 @@ python3 <ncaaf-qa>/scripts/qa.py OUT/league-hub-full.html --pull league.json   #
 python3 scripts/league_sweep.py OUT                                            # exit 1 blocks; 2 = no browser (never claim a pass)
 python3 scripts/league_sweep.py OUT --dark --teams 40
 ```
+**Scheduled:** the "NCAAF League Hub" scheduled task (owner request 2026-10-26: "daily rebuild") runs this block in a fresh
+cloud session every day at 5:41 AM CT — preseason through the postseason; in the offseason (final mode, nothing changes) only
+on Mondays — then publishes in place and reports the gates; any gate failure blocks the publish and is reported instead.
 The sim seed defaults to the build date (Central), so two builds on one day print identical odds. The gates need the Python
 Playwright binding: a cloud container ships only Node's — `pip install --break-system-packages playwright==<the Node package's
 version>` (never `playwright install`; it drives `/opt/pw-browsers`).

@@ -127,7 +127,7 @@ def build(a):
     log(f"  closing lines {ncl}/{len(fin)} finals · {C.stats_line()}")
     # ---- HOUSE MODEL
     P = M.params()
-    R, G = M.live(season, evs, reg, P)
+    R, G = M.live(season, evs, reg, P, log=log)
     cw = D.current_week(season, now)
     cur_wk = cw["week"] if cw and cw["st"] == 2 else (max(e["week"] for e in evs if e["st"] == 2) + 1)
     for e in evs:
@@ -136,13 +136,12 @@ def build(a):
         e["hm"] = {"line": round(R.line(h, aw, e["neutral"]), 4), "total": round(R.total(h, aw), 3),
                    "p": round(R.p_home(h, aw, e["neutral"], wk, e["st"]), 6)}
     # walk-forward pregame lines for this season's finals (each week fit on the games before it)
-    prev = M.load_prior_ratings(season, P)
-    pr = M.prior_from(prev, fbs, P)
+    pr, BX = R.prior, R.boxes
     reg_weeks = sorted({e["week"] for e in evs if e["st"] == 2 and e["status"]["completed"]})
-    GG = [{"hid": e["h"]["id"], "aid": e["a"]["id"], "hs": e["h"]["score"], "as": e["a"]["score"], "neutral": e["neutral"],
+    GG = [{"eid": e["eid"], "hid": e["h"]["id"], "aid": e["a"]["id"], "hs": e["h"]["score"], "as": e["a"]["score"], "neutral": e["neutral"],
            "week": e["week"], "st": e["st"], "date": e["date"]} for e in fin if e["h"]["score"] is not None]
     for w in reg_weeks:
-        Rw = M.fit([g for g in GG if g["st"] == 2 and g["week"] < w], fbs, pr, P, season, w - 1, ref_week=w)
+        Rw = M.fit([g for g in GG if g["st"] == 2 and g["week"] < w], fbs, pr, P, season, w - 1, ref_week=w, boxes=BX)
         for e in evs:
             if e["st"] == 2 and e["week"] == w and e["status"]["completed"]:
                 e["hm_pre"] = {"line": round(Rw.line(e["h"]["id"], e["a"]["id"], e["neutral"]), 4),
@@ -150,7 +149,7 @@ def build(a):
                                "total": round(Rw.total(e["h"]["id"], e["a"]["id"]), 3)}
     post_fin = [e for e in evs if e["st"] == 3 and e["status"]["completed"]]
     if post_fin:
-        Rr = M.fit([g for g in GG if g["st"] == 2], fbs, pr, P, season, "reg")
+        Rr = M.fit([g for g in GG if g["st"] == 2], fbs, pr, P, season, "reg", ref_week=99, boxes=BX)
         for e in post_fin:
             e["hm_pre"] = {"line": round(Rr.line(e["h"]["id"], e["a"]["id"], e["neutral"]), 4),
                            "p": round(Rr.p_home(e["h"]["id"], e["a"]["id"], e["neutral"], None, 3), 6),
@@ -164,7 +163,7 @@ def build(a):
         ratings[t] = {"net": round(R.net(t), 4), "off": round(R.o(t), 4), "def": round(R.d(t), 4), "se": round(R.se.get(t, 0.0), 3),
                       "n": R.n_games.get(t, 0), "rk": rk_net[t][0], "pct": round(rk_net[t][1], 4), "rk_off": rk_off[t][0],
                       "pct_off": round(rk_off[t][1], 4), "rk_def": rk_def[t][0], "pct_def": round(rk_def[t][1], 4),
-                      "prior": [round(x, 3) for x in (R.prior["teams"].get(t) or (0.0, 0.0))]}
+                      "prior": [round(x, 3) for x in (R.prior_rating.get(t) or (0.0, 0.0))]}
     log(f"  HOUSE MODEL ratings through week {R.through} · {len(G)} finals · {time.time() - t0:.1f} s")
     # ---- season simulation + today's picture
     seed = a.seed or int(C.to_ct(now).strftime("%Y%m%d"))
@@ -250,10 +249,13 @@ def build(a):
     cal_doc = M.load_cal()
     P_ = {"schema": SCHEMA, "season": season, "built_utc": now.strftime("%Y-%m-%dT%H:%MZ"), "built_ct": C.stamp_ct(now),
           "phase": ph, "cal": cal, "week": cur_wk, "reg": reg, "events": evs, "ratings": ratings,
-          "model": {"mu": round(R.mu, 3), "hfa": P["hfa"], "sigma": P["sigma"], "sigma_early": P.get("sigma_early"),
+          "model": {"mu": round(R.mu, 3), "hfa": round(R.hfa, 3), "sigma": P["sigma"], "sigma_early": P.get("sigma_early"),
+                    "version": "v1.1" if P.get("stack") else "v1", "early": R.early, "boxes": R.box_note,
+                    "poll": (M.polls().get(str(season)) or {}).get("date"),
                     "through": R.through, "finals": len(G), "fcs_group": round(R.g_off + R.g_def, 2),
                     "params": P, "calibration": {k: cal_doc.get(k) for k in ("model", "built", "train_seasons", "test_seasons", "corpus", "reading")},
                     "test_all": (cal_doc.get("report") or {}).get("test_all"), "train_all": (cal_doc.get("report") or {}).get("train_all"),
+                    "v11": {k: (cal_doc.get("v11") or {}).get(k) for k in ("compare", "loso")},
                     "committee": cal_doc.get("committee")},
           "sim": sim, "today": today, "teamrec": teamrec, "rankings": rk, "stats": stats,
           "stat_defs": [[k, lab, side, hib, nd, unit] for k, lab, side, fn, hib, nd, unit in STAT_DEFS],
@@ -305,7 +307,7 @@ def records(evs, fbs, R):
                     r["rk_w" if won else "rk_l"] += 1
                 r["seq"].append("W" if won else "L")
                 r["opp_played"].append(op["id"])
-                adv = 0.0 if e["neutral"] else (R.P["hfa"] if home else -R.P["hfa"])
+                adv = 0.0 if e["neutral"] else (R.hfa if home else -R.hfa)
                 r["xw"] += M.Phi((R.net(t) - R.net(op["id"]) + adv) / R.P["sigma"])
             else:
                 r["opp_left"].append(op["id"])

@@ -6,8 +6,9 @@
     python3 ncaaf_sim.py committee [--fetch] [--write]                          fit + grade the committee proxy (2014–2025)
 
 One simulated season (vectorised over N seasons, numpy):
-  1. Each team's true strength is drawn around its HOUSE MODEL net rating with the fit's own standard error; every remaining
-     game's margin = strength(home) − strength(away) + hfa (none at a neutral site) + game noise, with the noise sized so a
+  1. Each team's true strength is drawn around its HOUSE MODEL net rating (v1.1: points + efficiency stack) with the fit's own
+     standard error; every remaining game's margin = strength(home) − strength(away) + the model's effective home field (none
+     at a neutral site) + game noise, with the noise sized so a
      single game keeps the calibrated sigma (sqrt(sigma² − se_h² − se_a²), at least 10 points).
   2. Conference title games: the two best conference records meet (Sun Belt: the East and West division winners); a two-way
      tie at the cut goes to head-to-head, anything else to the simulated strength (each league's published tiebreakers are
@@ -99,7 +100,7 @@ def resume(G, fbs, R, k_elite, cutoff=None):
         for me, op, home in ((h, a, True), (a, h, False)):
             if me not in out:
                 continue
-            adv = 0.0 if g["neutral"] else (R.P["hfa"] if home else -R.P["hfa"])
+            adv = 0.0 if g["neutral"] else (R.hfa if home else -R.hfa)
             out[me]["E"] += M.Phi((Re - R.net(op) + adv) / sig)
             won = (g["hs"] > g["as"]) == (me == h)
             out[me]["w" if won else "l"] += 1
@@ -124,7 +125,8 @@ def committee_fit(write=False, log=print):
     for y in range(first, max(seasons) + 1):
         Cp = M.load_corpus(y)
         fbs = Cp["fbs"]
-        pr = M.prior_from(prev, fbs, P)
+        B = (M.load_boxes(y) or {}) if P.get("stack") else None
+        pr = M.prior_from(prev, fbs, P, season=y)
         if str(y) in hist:
             cut = (hist[str(y)].get("date") or "")[:16]
             if not cut:          # no date on the ranking (2014): the day after the last conference title game
@@ -132,9 +134,9 @@ def committee_fit(write=False, log=print):
                 last = max(tg) if tg else max(g["date"] for g in Cp["games"] if g["st"] == 2)
                 cut = (dt.datetime.fromisoformat(last[:10]) + dt.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")
             G = [g for g in Cp["games"] if g["st"] == 2 and g["date"] < cut]
-            R = M.fit(G, fbs, pr, P, y, "ranking")
+            R = M.fit(G, fbs, pr, P, y, "ranking", boxes=B)
             data[y] = (G, fbs, R, cut)
-        prev = M.fit(Cp["games"], fbs, pr, P, y, "final")
+        prev = M.fit(Cp["games"], fbs, pr, P, y, "final", boxes=B)
     best = None
     for k in (4, 6, 9, 12, 25):
         rs = {y: resume(*data[y][:3], k, data[y][3]) for y in seasons}
@@ -214,7 +216,7 @@ def season_sim(season, R, events, reg, n=10000, seed=None, log=None):
         """margins for a list of games (vectors of indices) -> (n, g) bool home wins."""
         hidx, aidx = np.asarray(hidx), np.asarray(aidx)
         neu = np.asarray(neutral, dtype=float)
-        m = S[:, hidx] - S[:, aidx] + P["hfa"] * (1.0 - neu)[None, :]
+        m = S[:, hidx] - S[:, aidx] + R.hfa * (1.0 - neu)[None, :]
         sg = np.sqrt(np.maximum(sig ** 2 - se[hidx] ** 2 - se[aidx] ** 2, 100.0))
         m = m + rng.standard_normal(m.shape) * sg[None, :]
         return m > 0
@@ -322,7 +324,7 @@ def season_sim(season, R, events, reg, n=10000, seed=None, log=None):
     for g in done + reg_rem:
         for me, op, home in ((g["h"], g["a"], True), (g["a"], g["h"], False)):
             if me in fi:
-                adv = 0.0 if g["neutral"] else (P["hfa"] if home else -P["hfa"])
+                adv = 0.0 if g["neutral"] else (R.hfa if home else -R.hfa)
                 E[fi[me]] += M.Phi((Re - net[ai[op]] + adv) / sig)
     # title game adds a game against the opponent (wins counted in W below)
     TW = np.zeros((n, nf))
@@ -374,7 +376,7 @@ def season_sim(season, R, events, reg, n=10000, seed=None, log=None):
         st = S[s, Fa]
 
         def g1(x, y, home):
-            mm = st[x] - st[y] + (P["hfa"] if home else 0.0) + rng.standard_normal() * math.sqrt(max(sig ** 2 - se[Fa[x]] ** 2 - se[Fa[y]] ** 2, 100.0))
+            mm = st[x] - st[y] + (R.hfa if home else 0.0) + rng.standard_normal() * math.sqrt(max(sig ** 2 - se[Fa[x]] ** 2 - se[Fa[y]] ** 2, 100.0))
             return x if mm > 0 else y
         sd = {k + 1: j for k, j in enumerate(seeds)}
         r1 = {5: g1(sd[5], sd[12], True), 6: g1(sd[6], sd[11], True), 7: g1(sd[7], sd[10], True), 8: g1(sd[8], sd[9], True)}

@@ -5,7 +5,8 @@ description: "Produce the analytical college football team card in chat for any 
 
 # ncaaf-team-card
 
-The chat sibling of a hub team page (the nhl-team-card / mlb-team-card shape, college edition). No player cards in this suite:
+The chat sibling of a hub team page (the nhl-team-card / mlb-team-card shape, college edition). **Default team: Wisconsin**
+(the house team, owner 2026-10-26) when no team is named — "my team", "the Badgers", "how are we doing". No player cards in this suite:
 a question about one player gets the team context plus a plain search answer, labeled as such.
 
 ## Steps
@@ -29,9 +30,10 @@ a question about one player gets the team context plus a plain search answer, la
    the sample (games played; early-season ratings lean on the prior).
 4. **Schedule** — strength played and remaining (mean opponent house net, rank of 138), the remaining games with the house win
    chance each, the toughest left.
-5. **Race** — conference standing (the two-number rule: games behind first in the conference, and games ahead of / behind the
-   second title-game spot), P(title game), P(champion), Kalshi's champion price beside; CFP: P(CFP), P(bye), the seed range, the
-   committee proxy's median rank, Kalshi's playoff price, the AP / CFP rank. If the committee has ranked, say where it has them.
+5. **Race** — the two-number rule (ncaaf-operator §1): games behind the conference title-game line (or ahead of the first team
+   outside it) with conference games left, and places inside / outside the 12-team cut in the committee's ranking (the house proxy
+   before Nov 3) — the hub's team page prints both as "Two numbers." Then P(title game), P(champion), Kalshi's champion price
+   beside; P(CFP), P(bye), the seed range, Kalshi's playoff price, the AP / CFP rank.
 6. **Next game** — kickoff CT (UTC), venue, TV; HOUSE MODEL line / total / win chance vs DraftKings and Kalshi (never blended);
    the stakes from the simulation (CFP odds with a win and with a loss).
 7. **Verdict** (mandatory): weighting rationale first (how much record vs margins vs schedule), an honest range (the 10th–90th

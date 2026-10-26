@@ -42,6 +42,7 @@ def render(X, tid):
     nav, parts = [], []
     parts.append(hero(X, tid))
     parts.append(snap(X, tid))
+    parts.append(two_line(X, tid))
     if t["conf"] != "IND":
         parts.append(standings(X, tid)); nav.append(("standings", "Standings"))
     parts.append(odds(X, tid)); nav.append(("odds", "Odds"))
@@ -66,7 +67,7 @@ def hero(X, tid):
     ng = n_reg_games(X, tid)
     pl, lab = conf_place(X, tid)
     nxt = X.next_game(tid)
-    sub = f"{X.season} season {DOT} {E(X.conf_short(t['conf']))}"
+    sub = ("<b>House team</b> " + DOT + " " if HC.HOUSE["id"] == tid else "") + f"{X.season} season {DOT} {E(X.conf_short(t['conf']))}"
     if t.get("div"):
         sub += f" ({E(t['div'])})"
     if nxt:
@@ -194,6 +195,69 @@ def snap(X, tid):
     ]
     return '  <div class="snap">' + "".join(f'<div class="cell"><div class="k">{k}</div><div class="v">{v}</div><div class="note">{n}</div></div>'
                                            for k, v, n in cells) + "</div>"
+
+
+# ============================================================================ the two-number rule
+def _gb(a, b):
+    """games between two conference records (a ahead of b when positive)."""
+    return ((a["cw"] - b["cw"]) + (b["cl"] - a["cl"])) / 2.0
+
+
+def conf_games_left(X, tid):
+    fb = {t: v["conf"] for t, v in X.teams.items()}
+    return sum(1 for e in X.by_team[tid] if e["st"] == 2 and not e["status"]["completed"] and e["conf"]
+               and fb.get(e["h"]["id"]) == fb.get(e["a"]["id"]) and not X.is_title(e) and X.state(e) != "off")
+
+
+def two_numbers(X, tid):
+    """(conference-race sentence, CFP-cut sentence): the operator's two-number rule, college form."""
+    t = X.teams[tid]
+    ck = t["conf"]
+    conf_s = None
+    if ck != "IND":
+        cf = X.confs[ck]
+        if t.get("div") and cf.get("divs"):
+            order, cut, where = conf_order(X, ck, cf["divs"][t["div"]]), 1, f'{t["div"]} Division lead'
+        else:
+            order, cut, where = conf_order(X, ck), 2, "title-game line"
+        pos = order.index(tid) + 1
+        me = X.rec[tid]
+        left = conf_games_left(X, tid)
+        if pos <= cut and len(order) > cut:
+            o = order[cut]
+            g = _gb(me, X.rec[o])
+            conf_s = (f'{E(cf["short"])}: in the {"division lead" if cut == 1 else "title game today"} ({E(X.conf_record(tid))}), '
+                      + (f'{C.fmt(g)} game{"s" if g != 1 else ""} ahead of {E(X.loc(o))} ({E(X.conf_record(o))})' if g > 0
+                         else f'tied with {E(X.loc(o))} ({E(X.conf_record(o))}) on record')
+                      + f' {DOT} {left} conference game{"s" if left != 1 else ""} left')
+        else:
+            c = order[cut - 1]
+            g = _gb(X.rec[c], me)
+            conf_s = (f'{E(cf["short"])}: {C.fmt(g)} game{"s" if g != 1 else ""} behind the {where} '
+                      f'({E(X.loc(c))}, {E(X.conf_record(c))}) at {E(X.conf_record(tid))}' if g > 0 else
+                      f'{E(cf["short"])}: level with {E(X.loc(c))} ({E(X.conf_record(c))}) at the {where}, behind on the order')
+            conf_s += f' {DOT} {left} conference game{"s" if left != 1 else ""} left'
+    if X.cfp:
+        r = X.cfp.get(tid)
+        basis = f'the committee’s ranking ({E((X.rk.get("cfp") or {}).get("week") or "")})'
+    else:
+        order = X.today.get("rank") or []
+        r = order.index(tid) + 1 if tid in order else None
+        basis = f'the {HM} committee proxy (the committee ranks from Nov 3)'
+    if r is None:
+        cfp_s = f'CFP: outside the top 25 of {basis}'
+    elif r <= 12:
+        cfp_s = f'CFP: No. {r} in {basis} — {12 - r} place{"s" if 12 - r != 1 else ""} inside the 12-team cut, before automatic bids'
+    else:
+        cfp_s = f'CFP: No. {r} in {basis} — {r - 12} place{"s" if r - 12 != 1 else ""} outside the 12-team cut, before automatic bids'
+    return conf_s, cfp_s
+
+
+def two_line(X, tid):
+    a, b = two_numbers(X, tid)
+    parts = [x for x in (a, b) if x]
+    sep = ' <span class="tn-sep">·</span> '
+    return f'  <div class="paper tn-p"><p class="tn-line"><b>Two numbers.</b> {sep.join(parts)}.</p></div>'
 
 
 # ============================================================================ standings
@@ -369,7 +433,7 @@ def schedule(X, tid):
         {"g": "Line", "h": "Closing or DraftKings", "d": 1, "f": line},
         {"g": "Kalshi", "h": "Win", "d": 3, "f": kal},
     ]
-    tb = HC.rb_table(cols, rows, 3, "sched")
+    tb = HC.rb_table(cols, rows, 3, "sched", house=False)
     r = X.rec[tid]
     left = sum(1 for e in evs if not e["status"]["completed"])
     out = [HC.sec("schedule", "Schedule & results", f'{r["w"]}{EN}{r["l"]} {DOT} {left} to play {DOT} ESPN kickoffs (Central) and TV'),
@@ -392,13 +456,16 @@ def ratings(X, tid):
     r = X.rec[tid]
     sp = r["sos_played_rk"]
     sp_p = None if sp is None else 100 * (n - sp) / (n - 1)
+    v11 = X.model.get("version") == "v1.1"
     cards = [card("Overall · power", C.signed(R["net"]), "pts", R["pct"], f'{HC.pct_word(R["pct"])} {DOT} {C.ordn(R["rk"])} of {n}',
                   "Points better than an average FBS team on a neutral field: offense plus defense, opponent-adjusted.",
                   f'preseason prior {C.signed(sum(R["prior"]))} {DOT} {R["n"]} games in the fit {DOT} ±{C.fmt(R["se"])}'),
              card("Offense", C.signed(R["off"]), "pts", R["pct_off"], f'{HC.pct_word(R["pct_off"])} {DOT} {C.ordn(R["rk_off"])} of {n}',
-                  "Points scored above what an average offense would score against the same defenses."),
+                  ("Offensive share, in points: scoring against the same defenses plus run and pass efficiency, with a turnover-luck "
+                   "correction." if v11 else "Points scored above what an average offense would score against the same defenses.")),
              card("Defense", C.signed(R["def"]), "pts", R["pct_def"], f'{HC.pct_word(R["pct_def"])} {DOT} {C.ordn(R["rk_def"])} of {n}',
-                  "Points prevented below what an average defense would allow to the same offenses."),
+                  ("Defensive share, in points: points prevented against the same offenses plus run and pass efficiency allowed, with "
+                   "a turnover-luck correction." if v11 else "Points prevented below what an average defense would allow to the same offenses.")),
              card("Schedule played", C.signed(r["sos_played"]) if r["sos_played"] is not None else DASH, "pts", sp_p,
                   (f'{C.ordn(sp)} hardest of {n}' if sp else DASH),
                   f'Mean {HM} net rating of the opponents faced so far (FCS opponents at their own rating).',

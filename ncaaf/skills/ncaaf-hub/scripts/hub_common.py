@@ -100,6 +100,25 @@ def pbar(label, val, p, sub, neutral=False):
 # ============================================================================ chips, links, themes
 TEAMS = {}       # id -> registry row (set by the builder)
 KEY2ID = {}
+HOUSE = {"key": None, "id": None}      # the house team (owner, 2026-10-26: Wisconsin); set by the builder
+
+
+def set_house(key):
+    HOUSE["key"] = key if key in KEY2ID else None
+    HOUSE["id"] = KEY2ID.get(key)
+    return HOUSE["id"]
+
+
+def is_house_row(item):
+    """A board row that belongs to the house team: its id, a ranking entry for it, or a game it plays."""
+    hid = HOUSE["id"]
+    if not hid:
+        return False
+    if isinstance(item, str):
+        return item == hid
+    if isinstance(item, dict):
+        return item.get("id") == hid or (item.get("h") or {}).get("id") == hid or (item.get("a") or {}).get("id") == hid
+    return False
 
 
 def set_registry(teams):
@@ -151,7 +170,7 @@ def sec(sid, title, note=""):
             f'      <h2 class="sec-t">{title}</h2>\n      {note_s}\n    </div>\n')
 
 
-def rb_table(cols, rows, max_level, cls="", sort_default=None):
+def rb_table(cols, rows, max_level, cls="", sort_default=None, house=True):
     """One board with the fit-to-width contract (data-d drop levels) and click-to-sort headers (button.srt + data-v cells).
     cols: dicts g (group), gs (group short), h (header html), f (cell fn), c (class), d (drop level), t (title),
     sk (sort key fn -> number or None), asc (sort ascending first), a (extra attrs fn), cf (cell class fn)."""
@@ -187,6 +206,8 @@ def rb_table(cols, rows, max_level, cls="", sort_default=None):
     for row in rows:
         kind, item = row[0], row[1]
         rcls = row[2] if len(row) > 2 else ""
+        if house and kind == "row" and "us" not in rcls.split() and is_house_row(item):
+            rcls = (rcls + " us hs-row").strip()
         if kind == "grp":
             body.append(f'<tr class="grp band {rcls}"><td colspan="{len(cols)}">{item}</td></tr>')
             continue

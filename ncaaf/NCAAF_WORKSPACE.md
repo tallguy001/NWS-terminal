@@ -32,9 +32,11 @@ Indiana's 2025 title, the 12-team CFP format and seeding, the ranking dates, Sel
 (Jan 25, 2027, Las Vegas). Never guess an unpublished date; the 2027 expansion is reported, not approved.
 
 ## §5 The HOUSE MODEL (honesty)
-Results-only offense/defense ratings with a prior from last season; calibrated walk-forward. Held out 2024–2025 the closing line
-beat it (margin error 11.91 vs 12.32): house numbers are advisory, always labeled HOUSE MODEL, never averaged with DraftKings,
-the closing line or Kalshi. "If the season ended today" always names its basis (the committee's ranking from Nov 3, else the house
+v1.1 (2026-10-26): offense/defense points ratings stacked with opponent-adjusted run, pass and turnover efficiency from team box
+scores; prior from last season regressed toward the conference and moved by the preseason AP poll. No market input. Calibrated
+walk-forward: held out 2024–2025 margin error 12.28 (v1 12.32) vs the closing line's 11.91; better than v1 in 9 of 10 seasons
+left out one at a time; 2026 to date 11.99 (v1 12.15) vs 11.29. The closing line is still the better forecaster: house numbers
+are advisory, always labeled HOUSE MODEL, never averaged with DraftKings, the closing line or Kalshi. "If the season ended today" always names its basis (the committee's ranking from Nov 3, else the house
 committee proxy). No bracket is "set" before Selection Day.
 
 ## §6 Output contract
@@ -43,10 +45,14 @@ Eastern date) · a verdict or bottom line every time, with weighting and range b
 information said plainly.
 
 ## §7 Cadence
-The hub is rebuilt on request (`ncaaf-hub` Daily build: pull → build → qa → sweep → publish to the fixed URL). Proposed daily
-scheduled task (~5:41 AM CT, plus Saturday night and Sunday morning in season) awaits the owner's approval (ncaaf-suite-audit
-open item #2). Annual offseason walk: corpus, calibration, committee proxy, registry, fact sheet.
+The "NCAAF League Hub" scheduled task rebuilds the hub every day at 5:41 AM CT in a fresh cloud session (`ncaaf-hub` Daily build:
+phase gate → pull → build → qa → sweep light + dark → publish to the fixed URL; Mondays only in the offseason); also on request.
+A failed gate blocks the publish and the run reports why. Annual offseason walk: corpus + team boxes, `calibrate-v11`, committee
+proxy, registry, fact sheet; each August the new preseason AP poll.
 
 ## §8 House team
-Not set. When named: fullest treatment, the two-number rule (conference-race gap and CFP-cut gap), optionally an authored house
-hub beside the League Hub.
+**Wisconsin Badgers** (owner, 2026-10-26). Fullest treatment in every league-wide answer; "my team" / "the Badgers" = Wisconsin;
+the two-number rule in every standings and CFP answer (Big Ten title-game gap with conference games left; places inside or
+outside the 12-team cut in the committee's ranking, the house proxy before Nov 3). On the League Hub: the House team card on the
+league home, Wisconsin highlighted on every board, the header link and the picker's top row. Program news (coaching, injuries,
+roster) by search only, tiered.
