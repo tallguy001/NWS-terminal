@@ -2591,3 +2591,43 @@ td { padding: 10px var(--s3); }
 pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { font-family: var(--font-fixed); }
 /* footers and notes that are sentences, not figures: ordinary hyphens */
 .normals-source, .source, .source-line, .afd-meta, .cam-sub, .src-detail, #section-forecast .normals-source { font-variant-numeric: normal; }
+
+/* ── v3.59.0: a station's model sounding from the Forecast maps. The button rides with the station's report; the sounding opens in a pop-up. ── */
+.regmap-sndrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s3); margin-top: var(--s3); }
+.regmap-sndbtn { min-height: 36px; padding: 0 var(--s4); border-radius: var(--r-sm); border: 1px solid rgba(167,139,250,0.55); background: rgba(167,139,250,0.14); color: #C4B5FD;
+  font-family: var(--font-ui); font-size: var(--fs-sm); font-weight: 650; letter-spacing: .01em; cursor: pointer; white-space: nowrap; transition: background .12s ease; }
+.regmap-sndbtn:hover { background: rgba(167,139,250,0.24); }
+.regmap-sndbtn:focus-visible { outline: 2px solid #C4B5FD; outline-offset: 2px; }
+.regmap-sndnote { font-size: var(--fs-micro); color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.map-pop > .regmap-sndrow { margin-top: var(--s2); }
+@media (pointer: coarse) { .regmap-sndbtn { min-height: 40px; } }
+#sndModal { position: fixed; inset: 0; z-index: 9500; display: none; place-items: center; background: rgba(0,0,0,.78); padding: var(--s4); backdrop-filter: blur(3px); }
+#sndModal.open { display: grid; }
+.snd-modal-content { width: min(1120px, 100%); max-height: 94vh; max-height: 94dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  background: var(--bg-overlay); border: 1px solid var(--border-default); border-radius: var(--r-md); box-shadow: var(--sh3); padding: 0 var(--s4) var(--s4); }
+.snd-modal-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: flex-start; gap: var(--s3); margin: 0 calc(-1 * var(--s4)) var(--s2); padding: var(--s3) var(--s4);
+  background: var(--bg-overlay); border-bottom: 1px solid var(--border-subtle); border-radius: var(--r-md) var(--r-md) 0 0; }
+.snd-modal-titles { flex: 1; min-width: 0; }
+.snd-modal-head h3 { font-size: var(--fs-base); font-weight: 600; color: var(--text-1); line-height: 1.35; }
+.snd-modal-head h3 .regmap-id { font-size: var(--fs-micro); margin-left: 2px; font-weight: 500; }
+.snd-modal-head .snd-run { margin-top: 2px; min-height: 1.3em; }
+#sndModal .hsm-close { position: static; flex: none; width: 36px; height: 36px; border-radius: var(--r-sm); background: transparent; border: 1px solid var(--border-default); color: var(--text-3); cursor: pointer; display: grid; place-items: center; }
+#sndModal .hsm-close:hover { background: var(--bg-raised); color: var(--text-1); }
+.snd-modal-bar { display: grid; gap: var(--s2); margin-bottom: var(--s3); }
+.snd-modal-bar .cpc-nav { margin-bottom: 0; }
+.snd-modal-bar .cpc-nav-btn.active { background: rgba(167,139,250,0.14); color: #C4B5FD; box-shadow: inset 0 0 0 1px rgba(167,139,250,0.50); }
+.snd-modal-bar .regmap-slider input { accent-color: #A78BFA; }
+#sndModalBody { transition: opacity .15s; min-height: 120px; }
+#sndModalBody.is-loading { opacity: .45; }
+#sndModalBody .snd-stage { margin-bottom: var(--s3); }
+:root[data-theme="light"] .regmap-sndbtn { background: rgba(109, 40, 217, .08); border-color: rgba(109, 40, 217, .45); color: #6D28D9; }
+:root[data-theme="light"] .regmap-sndbtn:hover { background: rgba(109, 40, 217, .15); }
+:root[data-theme="light"] .regmap-sndbtn:focus-visible { outline-color: #6D28D9; }
+:root[data-theme="light"] .snd-modal-bar .cpc-nav-btn.active { background: rgba(109, 40, 217, .08); color: #6D28D9; box-shadow: inset 0 0 0 1px rgba(109, 40, 217, .40); }
+:root[data-theme="light"] .snd-modal-bar .regmap-slider input { accent-color: #6D28D9; }
+:root[data-theme="light"] #sndModal { background: rgba(15, 23, 42, .55); }
+/* the skew-T's wind barbs and axis figures are drawn pale for a dark page: in light mode the drawing keeps its own dark ground wherever it appears */
+:root[data-theme="light"] .snd-skew .snd-svg { background: #0B0E14; }
+@media (pointer: coarse) { #sndModal .hsm-close { width: 40px; height: 40px; } }
+@media (max-width: 640px) { #sndModal { padding: var(--s2); } .snd-modal-content { padding: 0 var(--s3) var(--s3); max-height: 96vh; max-height: 96dvh; } .snd-modal-head { margin: 0 calc(-1 * var(--s3)) var(--s2); padding: var(--s3); } }
+@media print { #sndModal { display: none !important; } }

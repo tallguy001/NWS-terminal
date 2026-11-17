@@ -7325,7 +7325,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.58.0';
+var APP_VERSION = '3.59.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -12384,7 +12384,7 @@ var REGMAP = (function () {
     var seen = {}; picks.forEach(function (p) { seen[p.o.city] = (seen[p.o.city] || 0) + 1; });
     picks.forEach(function (p) { if (p.o.k) loadKalshi(p.o); });
 
-    var F = "Inter, system-ui, sans-serif", M = F, s = [], taps = [], more = [];
+    var F = "Inter, system-ui, sans-serif", M = F, s = [], taps = [], more = [], tapO = [];
     s.push('<svg class="regmap-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(view.title) + '">');
     s.push('<path d="' + landD + '" style="fill:none;stroke:rgba(255,255,255,0.20);stroke-width:0.8;stroke-linejoin:round"></path>');
     s.push('<path d="' + stateD + '" style="fill:none;stroke:rgba(255,255,255,0.78);stroke-width:1.6;stroke-linejoin:round"></path>');
@@ -12421,7 +12421,7 @@ var REGMAP = (function () {
     picks.forEach(function (p) {
       var o = p.o, x = R(p.x), y = R(p.y), main = p.main, badge = p.badge || null, arrow = '';
       var label = seen[o.city] > 1 ? o.alt : o.city, lw = Math.max(44, label.length * 7.4 + 16);
-      taps.push(p.detail || ''); var ti = taps.length - 1; if (p.more) more[ti] = p.more;
+      taps.push(p.detail || ''); var ti = taps.length - 1; if (p.more) more[ti] = p.more; tapO[ti] = o;
       s.push('<g class="regmap-stn" data-i="' + ti + '" tabindex="0" role="button" aria-label="' + esc(label + ' ' + main + (badge ? ', ' + badge : '')) + '">');
       if (p.nameOnly) {
         s.push('<rect x="' + (x - 50) + '" y="' + (y - 14) + '" width="100" height="40" style="fill:transparent"></rect><circle cx="' + x + '" cy="' + y + '" r="3" style="fill:#fff;stroke:#070B14;stroke-width:1.2"></circle>' +
@@ -12505,7 +12505,7 @@ var REGMAP = (function () {
     if (view.empty) s.push('<text x="' + cx + '" y="' + (cy + 40) + '" style="font:600 16px ' + F + ';fill:#E6EAF2;text-anchor:middle;paint-order:stroke;stroke:rgba(7,11,20,0.85);stroke-width:4px">' + esc(view.empty) + '</text>');
     s.push('</svg>');
 
-    shown = picks.map(function (p) { return p.o; }); view.taps = taps; view.more = more; view.nPts = pts.length;
+    shown = picks.map(function (p) { return p.o; }); view.taps = taps; view.more = more; view.tapO = tapO; view.nPts = pts.length;
     stage.style.aspectRatio = W + ' / ' + H;
     stage.innerHTML = '';
     stage.appendChild(cv);
@@ -12517,6 +12517,7 @@ var REGMAP = (function () {
   function detail(i) {
     var det = document.getElementById('regMapDetail'); if (!det || !view || !view.taps || !view.taps[i]) return;
     det.setAttribute('data-keep', '1'); det.innerHTML = view.taps[i];
+    if (view.tapO && view.tapO[i] && sndCan()) det.insertAdjacentHTML('beforeend', sndBtn(view.tapO[i]));   // v3.59.0
     if (view.more && view.more[i]) { try { det.insertAdjacentHTML('beforeend', '<div class="regmap-below">' + (view.more[i]() || '') + '</div>'); } catch (e) {} }
   }
   function fail(msg, needsKey) {
@@ -12586,10 +12587,155 @@ var REGMAP = (function () {
     REGMAP._lastExport = out;
   }
 
+  /* ════ station sounding pop-up (v3.59.0) ════
+     On every Forecast map the report for a tapped station carries a Sounding button. It opens a model sounding for that
+     station: the same skew-T, hodograph, tables, hazard type and analogs as the Models sounding panel, from the HRRR, the
+     RRFS or the RAP. It opens on the model and hour the map is showing where the map shows one hour (the model maps and
+     future radar); otherwise on the HRRR for the next hour. The Storm potential map already draws the sounding under the
+     map, so it gets no button.
+     What it asks for: one request per model and hour, in the Storm potential map's own form (191 parameters, one valid
+     time), for the tapped station and every other station drawn on the map together. GribStream bills per bundle of 500
+     points, so the others ride along at no extra cost: their soundings for that hour then open from what is in hand, as
+     does any hour the Storm potential map has loaded. Kept for an hour. The slider asks only when the finger lifts. */
+  var SQ = { o: null, m: 'hrrr', i: 0, t0: 0, seq: 0, opener: null }, SQC = { key: '', set: {} }, SQ_MAX = 60;
+  var SQ_REACH = { hrrr: ' Its hourly runs reach 18 hours and its 00, 06, 12 and 18 UTC runs 48.', rrfs: ' It runs every three hours.', rap: ' Its runs reach 21 hours, and 51 hours four times a day.' };
+  function sndEl(id) { return document.getElementById(id); }
+  function sndKey(o) { return o.id || ((+o.lat).toFixed(3) + ',' + (+o.lon).toFixed(3)); }
+  function sndCan() { return modeOf(st.layer) === 'fc' && st.layer !== 'stormpot' && gsAvailable(); }
+  function sndStart() {   // the model and hour the map is showing, where it shows one
+    var h0 = Math.ceil(Date.now() / HOUR) * HOUR, m = 'hrrr', t = h0, n = (L[st.layer] && L[st.layer].needs) || '';
+    if (st.layer === 'model') { t = validTime(); if (SPM[st.model]) m = st.model; }
+    else if (st.layer === 'spread') t = validTime();
+    else if (n.indexOf('mf:') === 0) { t = mfTime(); m = mfModel(); }
+    else if (st.layer === 'fradar') { t = Math.round(frInfo().t / HOUR) * HOUR; if (frSrc() === 'r') m = 'rrfs'; }
+    var i = Math.round((t - h0) / HOUR);
+    return { m: SPM[m] ? m : 'hrrr', t0: h0, i: i >= 0 && i <= SQ_MAX ? i : 0 };
+  }
+  function sndWhen(v, t0) { return hrDay(t0 + v * HOUR) + (v ? ' · +' + v + ' h' : ''); }
+  function sndBtn(o) {
+    var s = sndStart();
+    return '<div class="regmap-sndrow"><button type="button" class="regmap-sndbtn" data-snd="' + esc(o.id || '') + '" data-lat="' + (+o.lat) + '" data-lon="' + (+o.lon) + '" data-nm="' + esc(o.alt || o.city || o.id || '') + '">Sounding</button>' +
+           '<span class="regmap-sndnote">' + SPM[s.m].label + ' · ' + esc(hrDay(s.t0 + s.i * HOUR)) + '</span></div>';
+  }
+  function sndHave(m, t, o) {   // a sounding already in hand for this model, hour and station, or null
+    var k = sndKey(o), ck = m + ':' + t, w = SP && SP.key.indexOf(D.key + ':') === 0 ? SP.win[ck] : null, x = w && w.st && Date.now() - w.at < HOUR ? w.st.by[k] : null;
+    if (x && x.row) return x.row;   // the Storm potential map holds it
+    var c = SQC.key === D.key ? SQC.set[ck] : null;
+    return c && Date.now() - c.at < HOUR && c.by[k] ? c.by[k] : null;
+  }
+  function sndFetch(m, t, o) {
+    var have = sndHave(m, t, o); if (have) return Promise.resolve(have);
+    if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
+    if (SQC.key !== D.key) SQC = { key: D.key, set: {} };
+    var k = sndKey(o), ck = m + ':' + t, c = SQC.set[ck], M = SPM[m];
+    if (c && Date.now() - c.at >= HOUR) c = null;
+    if (c && c.p && c.ids[k]) return c.p.then(function () { if (!c.by[k]) throw new Error('NODATA'); return c.by[k]; }, function (e) { throw e; });
+    if (c && c.none[k] && Date.now() - c.none[k] < 10 * 6e4) return Promise.reject(new Error('NODATA'));   // asked a moment ago and the model had nothing: not asked again for ten minutes
+    if (!c) {
+      var keys = Object.keys(SQC.set); if (keys.length >= 24) keys.sort(function (a, b) { return SQC.set[a].at - SQC.set[b].at; }).slice(0, keys.length - 23).forEach(function (x) { delete SQC.set[x]; });
+      c = SQC.set[ck] = { at: Date.now(), by: {}, ids: {}, none: {}, p: null };
+    }
+    var seen = {}, list = [];
+    [o].concat(shown || []).forEach(function (s) { var id = sndKey(s); if (seen[id] || c.by[id] || list.length >= 60 || !isFinite(+s.lat) || !isFinite(+s.lon)) return; seen[id] = 1; list.push({ lat: +(+s.lat).toFixed(4), lon: +(+s.lon).toFixed(4), name: id }); });
+    list.forEach(function (x) { c.ids[x.name] = 1; });
+    var span = { fromTime: new Date(t - 20 * 6e4).toISOString(), untilTime: new Date(t + 20 * 6e4).toISOString() };
+    var ask = function (feed, vars) { return gsOwn(feed, { fromTime: span.fromTime, untilTime: span.untilTime, coordinates: list, variables: vars }); };
+    var pP = M.sfc ? Promise.all([ask(M.prof, spProfVars(M)), ask(M.sfc, SP_SFC)]).then(function (res) {
+               var by = {}; (res[1] || []).forEach(function (r) { by[r.name] = r; });
+               return (res[0] || []).map(function (r) { var s = by[r.name]; if (s) SP_SFC.forEach(function (x) { r[x.alias] = s[x.alias]; }); return r; });
+             }) : ask(M.prof, SP_SFC.concat(spProfVars(M)));
+    var p = pP.then(function (rows) {
+      (rows || []).forEach(function (r) { if (!r || !r.name) return; var old = c.by[r.name]; if (!old || Math.abs(Date.parse(r.forecasted_time) - t) < Math.abs(Date.parse(old.forecasted_time) - t)) c.by[r.name] = r; });
+      if (c.p === p) c.p = null;
+      list.forEach(function (x) { if (!c.by[x.name]) c.none[x.name] = Date.now(); });
+      if (!c.by[k]) throw new Error('NODATA');
+      return c.by[k];
+    }, function (e) { if (c.p === p) c.p = null; list.forEach(function (x) { delete c.ids[x.name]; }); if (!Object.keys(c.by).length && SQC.set[ck] === c) delete SQC.set[ck]; throw e; });
+    c.p = p; return p;
+  }
+  function sndIsOpen() { var m = sndEl('sndModal'); return !!(m && m.classList.contains('open')); }
+  function sndBar() {
+    var bar = sndEl('sndModalBar'); if (!bar) return;
+    bar.innerHTML = '<div class="regmap-row"><span class="regmap-glabel">Model</span><div class="cpc-nav" role="group" aria-label="Model">' +
+        Object.keys(SPM).map(function (k) { return chip(SPM[k].label, k === SQ.m, 'data-sm="' + k + '"'); }).join('') + '</div></div>' +
+      '<div class="regmap-row"><span class="regmap-glabel">Hour</span><label class="regmap-slider regmap-step"><input type="range" id="sndModalHour" min="0" max="' + SQ_MAX + '" step="1" value="' + SQ.i + '" aria-label="Hour">' +
+        '<output id="sndModalHourOut">' + esc(sndWhen(SQ.i, SQ.t0)) + '</output></label><span class="regmap-stepby"><button type="button" class="cpc-nav-btn" data-sby="-1" aria-label="One hour earlier">‹</button>' +
+        '<button type="button" class="cpc-nav-btn" data-sby="1" aria-label="One hour later">›</button></span></div>';
+  }
+  function sndSync() {   // the controls follow the state without being rebuilt, so the one in use keeps the focus
+    var bar = sndEl('sndModalBar'), sl = sndEl('sndModalHour'), out = sndEl('sndModalHourOut'); if (!bar) return;
+    Array.prototype.forEach.call(bar.querySelectorAll('[data-sm]'), function (b) { var on = b.getAttribute('data-sm') === SQ.m; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    if (sl && +sl.value !== SQ.i) sl.value = SQ.i;
+    if (out) out.textContent = sndWhen(SQ.i, SQ.t0);
+  }
+  function sndTitle() {
+    var h = sndEl('sndModalTitle'), o = SQ.o; if (!h || !o) return;
+    h.innerHTML = esc(SPM[SQ.m].label + ' sounding') + ' · ' + esc(o.alt || o.id || '') + (o.id && o.id !== o.alt ? ' <span class="regmap-id">' + esc(o.id) + '</span>' : '');
+  }
+  function sndShow(r) {
+    var body = sndEl('sndModalBody'), run = sndEl('sndModalRun'), M = SPM[SQ.m], o = SQ.o, my = SQ.seq, x = null;
+    try { x = SND.parts(r); } catch (e) { x = null; }
+    body.classList.remove('is-loading');
+    if (!x) { run.textContent = ''; body.innerHTML = '<div class="state-load">The ' + M.label + ' profile for this hour came back incomplete. Try another hour or model.</div>'; return; }
+    var init = Date.parse(r.forecasted_at), valid = Date.parse(r.forecasted_time), fh = isFinite(init) && isFinite(valid) ? Math.round((valid - init) / HOUR) : null;
+    run.textContent = (fh != null ? M.label + ' ' + String(new Date(init).getUTCHours()).padStart(2, '0') + 'z run, hour ' + fh + ' · ' : '') + (isFinite(valid) ? 'valid ' + hrDay(valid) + ' · ' : '') + (+o.lat).toFixed(2) + ', ' + (+o.lon).toFixed(2);
+    body.innerHTML = '<div class="snd-stage">' + x.stage.replace(/sndClip/g, 'sndClipPop') + '</div><div class="snd-poptables">' + x.tables + '</div>';
+    if (SND.extras) { try { SND.extras(x.P, x.A, body.querySelector('.snd-poptables'), function () { return my === SQ.seq && sndIsOpen(); }); } catch (e) {} }
+  }
+  function sndLoad() {
+    var body = sndEl('sndModalBody'), run = sndEl('sndModalRun'); if (!body || !run || !SQ.o) return;
+    var my = ++SQ.seq, m = SQ.m, t = SQ.t0 + SQ.i * HOUR, M = SPM[m], have = sndHave(m, t, SQ.o);
+    sndTitle();
+    if (have) { sndShow(have); return; }
+    if (body.querySelector('.snd-stage')) body.classList.add('is-loading'); else { run.textContent = ''; body.innerHTML = '<div class="state-load">Loading the ' + M.label + ' sounding…</div>'; }
+    sndFetch(m, t, SQ.o).then(function (r) { if (my === SQ.seq) sndShow(r); }).catch(function (e) {
+      if (my !== SQ.seq) return;
+      var msg = (e && e.message) || 'network error';
+      body.classList.remove('is-loading'); run.textContent = '';
+      body.innerHTML = '<div class="state-load">' + (msg === 'NODATA' ? esc('The ' + M.label + ' has no sounding here for ' + hrDay(t) + '.' + SQ_REACH[m] + ' The place may also be outside the area it covers. Try another hour or model.') :
+        msg === 'NOGS' ? 'The sounding needs GribStream (the GS_TOKEN secret).' : 'The sounding could not be loaded (' + esc(msg) + '). <button type="button" class="btn-link" data-sretry="1">Try again</button>') + '</div>';
+    });
+  }
+  function sndOpen(o, from) {   // from: the button that opened it (a tap does not give a button the focus on an iPad, so it is passed in)
+    var m = sndEl('sndModal'); if (!m || !o || !isFinite(+o.lat) || !isFinite(+o.lon) || !gsAvailable()) return;
+    var s = sndStart(); SQ.o = o; SQ.m = s.m; SQ.i = s.i; SQ.t0 = s.t0; SQ.opener = from || document.activeElement;
+    sndEl('sndModalBody').innerHTML = ''; sndEl('sndModalBody').classList.remove('is-loading'); sndEl('sndModalRun').textContent = '';
+    sndBar(); m.classList.add('open');
+    var c = m.querySelector('.snd-modal-content'); if (c) c.scrollTop = 0;
+    var x = sndEl('sndModalClose'); if (x) x.focus();
+    sndLoad();
+  }
+  function sndClose() {
+    var m = sndEl('sndModal'); if (!m || !m.classList.contains('open')) return;
+    m.classList.remove('open'); SQ.seq++; sndEl('sndModalBody').innerHTML = '';
+    var op = SQ.opener; SQ.opener = null; SQ.o = null;
+    if (op && op.isConnected && op.focus) op.focus();
+  }
+  function sndInit() {
+    var sm = sndEl('sndModal'); if (!sm) return;
+    sm.addEventListener('click', function (e) {
+      if (e.target === sm) { sndClose(); return; }
+      var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
+      if (b.id === 'sndModalClose') sndClose();
+      else if (b.hasAttribute('data-sm')) { var k = b.getAttribute('data-sm'); if (SPM[k] && k !== SQ.m) { SQ.m = k; sndSync(); sndLoad(); } }
+      else if (b.hasAttribute('data-sby')) { var v = Math.max(0, Math.min(SQ_MAX, SQ.i + (+b.getAttribute('data-sby')))); if (v !== SQ.i) { SQ.i = v; sndSync(); sndLoad(); } }
+      else if (b.hasAttribute('data-sretry')) sndLoad();
+    });
+    sm.addEventListener('input', function (e) {   // dragging shows where it would land; an hour already in hand is drawn at once
+      if (!e.target || e.target.id !== 'sndModalHour') return;
+      var v = +e.target.value, out = sndEl('sndModalHourOut'); if (out) out.textContent = sndWhen(v, SQ.t0);
+      if (v !== SQ.i && SQ.o && sndHave(SQ.m, SQ.t0 + v * HOUR, SQ.o)) { SQ.i = v; sndLoad(); }
+    });
+    sm.addEventListener('change', function (e) { if (e.target && e.target.id === 'sndModalHour') { var v = +e.target.value; if (v !== SQ.i) { SQ.i = v; sndLoad(); } } });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && sndIsOpen()) { e.stopPropagation(); sndClose(); } }, true);
+  }
+
   function init() {
+    sndInit();
     var card = document.getElementById('regMapCard'); if (!card) return;
     card.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null;
+      if (b && b.hasAttribute('data-snd')) { sndOpen({ id: b.getAttribute('data-snd'), lat: +b.getAttribute('data-lat'), lon: +b.getAttribute('data-lon'), alt: b.getAttribute('data-nm') }, b); return; }   // v3.59.0
       if (b && b.hasAttribute('data-mode')) { setMode(b.getAttribute('data-mode')); return; }
       if (b && b.id === 'regMapPlay') { frToggle(); return; }
       if (b && b.hasAttribute('data-stepby')) { var row0 = b.closest('.regmap-row'), sl0 = row0 ? row0.querySelector('.regmap-stepin') : null; frStop(); if (sl0) stepSet(sl0.getAttribute('data-key'), +sl0.value + +b.getAttribute('data-stepby'), true); return; }
@@ -12631,7 +12777,7 @@ var REGMAP = (function () {
     renderBar();
   }
   return { init: init, load: load, ensure: ensure, again: again, geo: loadGeo, _parse: parseMetar, _obs: function () { return D.stn; }, _shown: function () { return shown; }, _D: function () { return D; },
-           _view: function () { return view; }, _st: st, _layers: function () { return allLayers(); }, setMode: setMode, mode: function () { return modeOf(st.layer); } };
+           _view: function () { return view; }, _st: st, _layers: function () { return allLayers(); }, _snd: function () { return { SQ: SQ, SQC: SQC, start: sndStart, close: sndClose }; }, setMode: setMode, mode: function () { return modeOf(st.layer); } };
 })();
 document.addEventListener('DOMContentLoaded', function () { REGMAP.init(); });
 
@@ -14718,6 +14864,11 @@ var SND = (function () {
   }
   function stageHtml(P, A) { return '<div class="snd-skew">' + skewT(P, A) + '</div><div class="snd-side">' + hodo(P, A) + '<div class="snd-legend"><span><i style="background:#F87171"></i>Temperature</span><span><i style="background:#4ADE80"></i>Dew point</span><span><i style="background:#4FC3F7"></i>Wet bulb</span><span><i style="background:#E6EAF2"></i>Parcel</span></div></div>'; }
   /* The chart and tables for a sounding that is already in hand (a row from a profile request), as HTML. */
+  function parts(r) {   // v3.59.0: the same, in pieces, for a caller with its own layout
+    var P = build(fillDew(r)); if (!P) return null;
+    var A = analyse(P); if (A.dgz && !LEVELS.some(function (p) { return r['w' + p] != null; })) A.dgz.omega = null;
+    return { P: P, A: A, stage: stageHtml(P, A), tables: tables(P, A) };
+  }
   function panel(r, title) {
     var P = build(fillDew(r)); if (!P) return '';
     var A = analyse(P); if (A.dgz && !LEVELS.some(function (p) { return r['w' + p] != null; })) A.dgz.omega = null;   // no vertical motion came with this sounding
@@ -14745,7 +14896,7 @@ var SND = (function () {
       stage.innerHTML = '<div class="state-load">The sounding could not be loaded (' + esc((e && e.message) || 'error') + '). <button type="button" class="btn-link" onclick="SND.load()">Try again</button></div>'; tb.innerHTML = '';
     });
   }
-  return { load: load, reset: function () { cache = {}; }, panel: panel, _build: build, _analyse: analyse, _storm: storm, _row: fillDew, _thermo: { wetlift: wetlift, drylift: drylift, thetae: thetae, mixratio: mixratio, wetbulb: wetbulb, virtemp: virtemp, lcltemp: lcltemp }, _state: st, LEVELS: LEVELS };
+  return { load: load, reset: function () { cache = {}; }, panel: panel, parts: parts, _build: build, _analyse: analyse, _storm: storm, _row: fillDew, _thermo: { wetlift: wetlift, drylift: drylift, thetae: thetae, mixratio: mixratio, wetbulb: wetbulb, virtemp: virtemp, lcltemp: lcltemp }, _state: st, LEVELS: LEVELS };
 })();
 
 /* Sounding analogs (SARS) and possible hazard type. The matching ranges and the hazard rules are
@@ -14812,17 +14963,17 @@ var SND = (function () {
       (hz.length > 1 ? '<div class="snd-note">Also flagged: ' + hz.slice(1).map(function (h) { return esc(h[0]); }).join(', ') + '.</div>' : '') +
       '<dl class="snd-kv"><div><dt>WNDG</dt><dd>' + (isFinite(A.wndg) ? A.wndg.toFixed(1) : '–') + '</dd></div><div><dt>Sig. severe</dt><dd>' + Math.round(A.sigSev).toLocaleString('en-US') + ' m³/s³</dd></div><div><dt>Heat index</dt><dd>' + (A.sfcF >= 80 ? Math.round(A.heatIndex) + ' F' : '–') + '</dd></div></dl>' +
       '<div class="snd-note">A rule-of-thumb read of this one profile using the SHARPpy thresholds. It assumes storms form and is not a watch or a forecast. The flash-flood flag and the MCS-maintenance test are not evaluated.</div></div>' +
-      '<div class="card snd-card" id="sndSars"><div class="panel-title">Sounding analogs (SARS)</div><div class="state-load">Loading the analog database…</div></div>';
+      '<div class="card snd-card snd-sars"><div class="panel-title">Sounding analogs (SARS)</div><div class="state-load">Loading the analog database…</div></div>';
     host.appendChild(wrap);
     loadDb().then(function (d) {
       if (!live() || !wrap.isConnected) return;
-      var s = supercell(d, A), h = hail(d, A), el = wrap.querySelector('#sndSars'), pct = function (x) { return Math.round(x * 100) + '%'; };
+      var s = supercell(d, A), h = hail(d, A), el = wrap.querySelector('.snd-sars'), pct = function (x) { return Math.round(x * 100) + '%'; };
       el.innerHTML = '<div class="panel-title">Sounding analogs (SARS)</div><div class="snd-two"><div><div class="snd-sub">Supercell</div>' +
         (s ? list(s.q) + '<div class="snd-note">' + (s.loose ? s.hits + ' of ' + s.loose + ' loose matches produced a tornado (' + pct(s.prob) + ').' : 'No loose matches.') + '</div>' : '<div class="snd-note">Not enough of the profile to compare.</div>') +
         '</div><div><div class="snd-sub">Significant hail</div>' +
         (h ? list(h.q) + '<div class="snd-note">' + (h.loose ? h.hits + ' of ' + h.loose + ' loose matches had hail of 2 in or larger (' + pct(h.prob) + ')' + (h.avg != null ? '; average size ' + h.avg.toFixed(2) + ' in.' : '.') : 'No loose matches.') + '</div>' : '<div class="snd-note">Not enough of the profile to compare.</div>') +
         '</div></div><div class="snd-note">Past observed soundings near supercells and large hail whose key parameters resemble this one. Database: NOAA Storm Prediction Center, via SHARPpy.</div>';
-    }).catch(function () { var el = wrap.querySelector('#sndSars'); if (el) el.innerHTML = '<div class="panel-title">Sounding analogs (SARS)</div><div class="state-load">The analog database could not be loaded.</div>'; });
+    }).catch(function () { var el = wrap.querySelector('.snd-sars'); if (el) el.innerHTML = '<div class="panel-title">Sounding analogs (SARS)</div><div class="state-load">The analog database could not be loaded.</div>'; });
   };
   SND._sars = { supercell: supercell, hail: hail, hazard: hazard };
 })();
@@ -15201,6 +15352,7 @@ var MAPPOP = (function () {
     var R = stage.getBoundingClientRect(), pop = document.createElement('div');
     pop.className = 'map-pop'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'Details for the selected spot');
     pop.innerHTML = '<button type="button" class="map-pop-x" aria-label="Close">×</button><div class="map-pop-body">' + html + '</div><i class="map-pop-tip"></i>';
+    var sndRow = pop.querySelector('.map-pop-body .regmap-sndrow'); if (sndRow) pop.insertBefore(sndRow, pop.querySelector('.map-pop-tip'));   // v3.59.0
     var grid = /regmap-grid|regmap-kv/.test(html);   // a table needs more room than a sentence
     pop.style.maxWidth = Math.min(grid ? 400 : 340, R.width - 16) + 'px';
     if (grid) { pop.classList.add('has-grid'); pop.querySelector('.map-pop-body').style.maxHeight = Math.max(150, Math.min(440, R.height - 44)) + 'px'; }
