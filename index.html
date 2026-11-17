@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.62.0">
+<link rel="stylesheet" href="/app.css?v=3.63.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -368,7 +368,7 @@
           <div class="regmap-stage" id="regMapStage"><div class="state-load">Load a location to draw the map.</div></div>
           <div class="regmap-detail" id="regMapDetail" aria-live="polite"></div>
         </div>
-        <div class="source-note">Station reports: aviationweather.gov (latest) and Iowa Environmental Mesonet (25-hour history). Forecasts, including rain and snow amounts: NWS digital forecast. Alerts: NWS. Storm and observer snow reports: Iowa Environmental Mesonet. Rainfall: NWS river forecast centre analysis. Model values: GribStream. Market prices: Kalshi public data, not advice. The colour field blends the plotted values and is not an analysis. Town names on the map: GeoNames (CC BY 4.0) and US Census Bureau; tap a label for the station's own name. County and state lines: US Census Bureau.</div>
+        <div class="source-note">Station reports: aviationweather.gov (latest) and Iowa Environmental Mesonet (25-hour history). Forecasts, including rain and snow amounts: NWS digital forecast. Alerts: NWS. Storm reports and NWS observer reports: Iowa Environmental Mesonet. Volunteer rain and snow reports: CoCoRaHS (cocorahs.org). Rainfall: NWS river forecast centre analysis. Model values: GribStream. Market prices: Kalshi public data, not advice. The colour field blends the plotted values and is not an analysis. Town names on the map: GeoNames (CC BY 4.0) and US Census Bureau; tap a label for the station's own name. County and state lines: US Census Bureau.</div>
         <div id="regStationsBlock">
         <h2 class="section-label" style="margin-top:var(--s5);">Nearest observation stations<span class="sec-age" data-age="regional"></span></h2>
         <div id="regionalContainer">
@@ -1825,6 +1825,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.62.0" defer></script>
+<script src="/app.js?v=3.63.0" defer></script>
 </body>
 </html>

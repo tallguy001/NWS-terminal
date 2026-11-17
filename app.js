@@ -7326,7 +7326,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.62.0';
+var APP_VERSION = '3.63.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -10431,7 +10431,7 @@ var REGMAP = (function () {
   var MODES = [
     { id: 'now', label: 'Current', note: 'Observed now and over the last day', tag: 'CURRENT', color: '#5EEAD4', groups: [
       ['Conditions', [['temp', 'Temperature'], ['dew', 'Dew point'], ['wind', 'Wind'], ['gust', 'Peak gust'], ['vis', 'Visibility'], ['pres', 'Pressure']]],
-      ['Rain and snow', [['precip', 'Station rain, 24 h'], ['rain', 'Rainfall analysis'], ['mrain', 'Radar and gauge rain'], ['snow', 'New snow'], ['snowgnd', 'Snow on the ground'], ['snowdepth', 'Snow depth'], ['lakeice', 'Great Lakes ice'], ['rivers', 'River levels']]],
+      ['Rain and snow', [['precip', 'Station rain, 24 h'], ['obsrain', 'Observer rain'], ['rain', 'Rainfall analysis'], ['mrain', 'Radar and gauge rain'], ['snow', 'New snow'], ['snowgnd', 'Snow on the ground'], ['snowdepth', 'Snow depth'], ['lakeice', 'Great Lakes ice'], ['rivers', 'River levels']]],
       ['Storms now', [['ltgmap', 'Lightning'], ['rot', 'Rotation'], ['hail', 'Hail size']]],
       ['Change', [['chg24', '24-hour change'], ['hilo', 'High and low today']]],
       ['Hazards', [['alerts', 'Alerts'], ['lsr', 'Storm reports']]]] },
@@ -10754,16 +10754,29 @@ var REGMAP = (function () {
   }
 
   function loadSnow() {
-    // observers report at about 7 AM local: before mid-morning, yesterday's file is the complete one
-    var off = gsLocal(Date.now()).h < 9 ? -1 : 0, day = locDateStr(off);
+    // observers report at about 7 AM local: before mid-morning, yesterday's reports are the complete set (OBSV.day). NWS observers and,
+    // since v3.63.0, CoCoRaHS volunteers; either may fail without taking the map down.
+    var day = OBSV.day();
     if (D.snow[day]) { D.snowDay = day; return Promise.resolve(); }
     var d = D, b = projector(1000, 620).bbox;
-    return getJSON(IEM + '/geojson/7am.py?dt=' + day + '&group=coop').then(function (j) {
-      d.snow[day] = (j.features || []).map(function (f) { var p = f.properties || {}, g = f.geometry && f.geometry.coordinates;
-        return g ? { name: p.name || f.id, lon: +g[0], lat: +g[1], snow: p.snow, depth: p.snowd, pday: p.pday, at: Date.parse(p.valid) } : null; })
-        .filter(function (p) { return p && p.lon > b[0] && p.lon < b[2] && p.lat > b[1] && p.lat < b[3]; });
+    return OBSV.box(b[0], b[1], b[2], b[3], day).then(function (r) {
+      d.snow[day] = r.list.map(function (p) { return { name: p.name, lon: p.lon, lat: p.lat, snow: p.snow, depth: p.depth, pday: p.rain, at: p.at, min: p.min, net: p.net }; });
+      d.snowSrc = { coop: r.nCoop, cc: r.nCc, coopFailed: r.coopFailed, ccFailed: r.ccFailed || r.ccPart };
       d.snowDay = day;
     });
+  }
+  function obsName(p) {   // a label for the map: the town, without the observer's offset or the kind of site
+    var nm = String(p.name).toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }).replace(/^City Of\s+/, '').replace(/\s+\d.*$/, '')
+      .replace(/\s+(At|Wwtp|Wtp|Stp|Public Works|Lock\/Dam|Lock And Dam|Dam|Ap|Arpt|Airport|Univ Wi)\b.*$/, '').replace(/[\s-]+$/, '');
+    if (nm.length > 18) nm = nm.slice(0, 17).replace(/\s+\S*$/, '') || nm.slice(0, 17);
+    return nm;
+  }
+  function obsFull(p, nm) { return p.net === 'cc' ? String(p.name) : nm; }   // a CoCoRaHS name carries the observer's offset from town ("Oconomowoc 1.2 W"), which tells several in one town apart
+  function obsWho(p) { return p.net === 'cc' ? 'CoCoRaHS volunteer' : 'NWS observer'; }
+  function obsWhen(p) { if (p.at) return clock(p.at); if (p.min == null) return ''; var h = Math.floor(p.min / 60), m = p.min % 60; return (h % 12 || 12) + ':' + (m < 10 ? '0' : '') + m + (h < 12 ? ' AM' : ' PM'); }
+  function obsSub(n) {
+    var S = D.snowSrc || {};
+    return (S.cc ? 'NWS observers and CoCoRaHS volunteers' : 'NWS observers') + ', ' + D.snowDay + ' · ' + n + ' reports' + (S.coopFailed ? ' · the NWS observer reports did not load' : S.ccFailed ? ' · some CoCoRaHS reports did not load' : '');
   }
 
   var RAIN = { '24': [28, '24 hours'], '48': [36, '2 days'], '72': [40, '3 days'], '168': [56, '7 days'] };
@@ -12088,16 +12101,25 @@ var REGMAP = (function () {
       var list = D.snow[D.snowDay] || [], pts = [];
       list.forEach(function (p) {
         if (p.snow == null || p.snow < 0) return;
-        var tr = p.snow > 0 && p.snow < 0.05, dep = p.depth != null && p.depth >= 0.5 ? R(p.depth) : null;
-        var nm = String(p.name).toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }).replace(/^City Of\s+/, '').replace(/\s+\d.*$/, '')
-          .replace(/\s+(At|Wwtp|Wtp|Stp|Public Works|Lock\/Dam|Lock And Dam|Dam|Ap|Arpt|Airport|Univ Wi)\b.*$/, '').replace(/[\s-]+$/, '');
-        if (nm.length > 18) nm = nm.slice(0, 17).replace(/\s+\S*$/, '') || nm.slice(0, 17);
-        pts.push({ o: { id: '', city: nm, alt: nm, lat: p.lat, lon: p.lon, tier: 1 + p.snow + (dep || 0) / 100 }, v: tr ? 0 : p.snow, main: tr ? 'T' : p.snow === 0 ? '0' : String(+p.snow.toFixed(1)), badge: dep != null ? dep + '"' : null,
-                   detail: '<b>' + esc(nm) + '</b> · observer report ' + (p.at ? esc(clock(p.at)) : '') + ' · new snow <b>' + (tr ? 'trace' : p.snow.toFixed(1) + ' in') + '</b>' + (p.depth != null ? ', depth ' + (p.depth >= 0.5 ? R(p.depth) + ' in' : p.depth > 0 ? 'trace' : 'none') : '') + (p.pday != null ? ', liquid ' + (+p.pday).toFixed(2) + ' in' : '') });
+        var tr = p.snow > 0 && p.snow < 0.05, dep = p.depth != null && p.depth >= 0.5 ? R(p.depth) : null, nm = obsName(p), full = obsFull(p, nm);
+        pts.push({ o: { id: '', city: nm, alt: full, lat: p.lat, lon: p.lon, tier: 1 + p.snow + (dep || 0) / 100 }, v: tr ? 0 : p.snow, main: tr ? 'T' : p.snow === 0 ? '0' : String(+p.snow.toFixed(1)), badge: dep != null ? dep + '"' : null,
+                   detail: '<b>' + esc(full) + '</b> · ' + obsWho(p) + ' report ' + esc(obsWhen(p)) + ' · new snow <b>' + (tr ? 'trace' : p.snow.toFixed(1) + ' in') + '</b>' + (p.depth != null ? ', depth ' + (p.depth >= 0.5 ? R(p.depth) + ' in' : p.depth > 0 ? 'trace' : 'none') : '') + (p.pday != null ? ', liquid ' + (p.pday > 0 && p.pday < 0.005 ? 'trace' : (+p.pday).toFixed(2) + ' in') : '') });
       });
       var any = pts.some(function (p) { return p.v > 0; });
-      return { title: 'New snow, 24 hours to 7 AM', pts: pts, noHome: true, subText: 'Cooperative observers, ' + D.snowDay + ' · ' + pts.length + ' reports' + (any ? '' : ', none with snow'), sub2: 'inches; badge is snow depth',
+      return { title: 'New snow, 24 hours to 7 AM', pts: pts, noHome: true, subText: obsSub(pts.length) + (any ? '' : ', none with snow'), sub2: 'inches; badge is snow depth',
                field: { stops: RAMP_S, band: 0.5, unit: ' in', dp: 1 }, empty: pts.length ? '' : 'No observer snow reports in this area for ' + D.snowDay + '.' }; } },
+    obsrain: { label: 'Observer rain', needs: 'snow', build: function () {   // v3.63.0: the same morning reports, their 24-hour rain
+      var list = D.snow[D.snowDay] || [], pts = [];
+      list.forEach(function (p) {
+        if (p.pday == null || p.pday < 0) return;
+        var tr = p.pday > 0 && p.pday < 0.005, nm = obsName(p), full = obsFull(p, nm);
+        pts.push({ o: { id: '', city: nm, alt: full, lat: p.lat, lon: p.lon, tier: 1 + p.pday }, v: tr ? 0 : p.pday, main: tr ? 'T' : p.pday === 0 ? '0' : p.pday.toFixed(2), wide: p.pday >= 0.005,
+                   detail: '<b>' + esc(full) + '</b> · ' + obsWho(p) + ' report ' + esc(obsWhen(p)) + ' · rain and melted snow <b>' + (tr ? 'trace' : p.pday.toFixed(2) + ' in') + '</b>' +
+                           (p.snow != null && p.snow > 0 ? ', new snow ' + (p.snow < 0.05 ? 'trace' : p.snow.toFixed(1) + ' in') : '') });
+      });
+      var any = pts.some(function (p) { return p.v > 0; });
+      return { title: 'Observer rain, 24 hours to 7 AM', pts: pts, noHome: true, subText: obsSub(pts.length) + (any ? '' : ', none with rain'), sub2: 'inches of rain and melted snow, measured by hand once a day',
+               field: { stops: RAMP_P, band: 0.05, unit: ' in', dp: 2 }, empty: pts.length ? '' : 'No observer rain reports in this area for ' + D.snowDay + '.' }; } },
     rain: { label: 'Rainfall', needs: 'rain', controls: function () { return Object.keys(RAIN).map(function (k) { return [k, RAIN[k][1], 'rain']; }); }, build: function () {
       var pts = refNames();
       return { title: 'Rainfall, last ' + RAIN[st.rain][1], pts: pts, raster: D.rain[st.rain + ':' + frame.W], legendImg: D.rainLegend || [], subText: 'NWS river forecast centre analysis, radar and gauges', sub2: 'inches' }; } },
