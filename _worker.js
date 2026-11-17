@@ -1,13 +1,14 @@
-/* NWS Terminal edge worker (v3.65.0)
+/* NWS Terminal edge worker (v3.66.0)
    - serves the app shell from static assets with security + cache headers
    - /p/<kind>/...   same-origin read-only proxy for NOAA hosts without CORS
    - /p/gs/...       GribStream POST proxy (keeps the token off third parties)
    - /api/normals    1991-2020 normals + records, computed once per point and cached
    - /api/cams       Windy Webcams API v3 near a point (key stays a worker secret)
+   - /api/wicams     Wisconsin 511 road cameras near a point (key stays a worker secret)
    - /api/config     what the server can do for the client
    - /api/health     liveness for uptime checks */
 
-const VERSION = '3.65.0';
+const VERSION = '3.66.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -42,6 +43,8 @@ const CSP = [
   "connect-src 'self' https: wss:",
   // Windy's map embed (embed.windy.com) and webcam player (webcams.windy.com).
   "frame-src https://*.windy.com",
+  // WisDOT's live road-camera video (v3.66.0). Stills are images, which img-src already allows.
+  "media-src 'self' https://*.dot.wi.gov",
   "worker-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",
@@ -128,7 +131,7 @@ function isSameOrigin(request) {
 }
 
 /* ---- keys held as Cloudflare secrets (v3.14.0) ----
-   GS_TOKEN, ANTHROPIC_API_KEY, WETHR_API_KEY, WINDY_WEBCAMS_KEY and LIGHTNING_KEY never reach the browser. Each route below
+   GS_TOKEN, ANTHROPIC_API_KEY, WETHR_API_KEY, WINDY_WEBCAMS_KEY, WI511_KEY and LIGHTNING_KEY never reach the browser. Each route below
    answers only this site's own pages, and, when APP_PASSCODE is set, only a browser that has entered it. */
 async function sha256hex(s) {
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -343,6 +346,87 @@ function isSameOriginRead(request) {
   if (origin) return origin === self;
   const ref = request.headers.get('Referer');
   try { return !!ref && new URL(ref).origin === self; } catch { return false; }
+}
+
+/* ---- Wisconsin 511 road cameras (v3.66.0) ----
+   WisDOT's developer API (511wi.gov). The key is the WI511_KEY secret. The API hands back every camera in the state and allows
+   ten calls a minute, so the list is read at most once in ten minutes, trimmed to what the app shows, and kept; each request is
+   then answered from that copy by distance. Only two kinds of address are passed on: a still, rebuilt here from the view number
+   (511wi.gov/map/Cctv/<n>), and a video playlist on a dot.wi.gov host. */
+const WI511 = 'https://511wi.gov', WI_KEEP_MS = 600000;
+let wiMem = null;   // { at, list }
+function wiVideo(u) {
+  u = typeof u === 'string' && /^https:\/\/[^\s"'<>]+$/i.test(u) ? u : '';
+  if (!u) return '';
+  try { const x = new URL(u); return (x.hostname === 'dot.wi.gov' || x.hostname.endsWith('.dot.wi.gov')) && /\.m3u8$/i.test(x.pathname) ? u : ''; } catch { return ''; }
+}
+function wiTrim(raw) {
+  const out = [], seen = new Set();
+  for (const c of Array.isArray(raw) ? raw : []) {
+    if (!c) continue;
+    const lat = Number(c.Latitude), lon = Number(c.Longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0)) continue;
+    const road = String(c.Roadway || c.RoadwayName || '').trim().slice(0, 40);
+    const place = String(c.Location || road || 'Road camera').trim().slice(0, 120);
+    const dir = String(c.Direction || c.DirectionOfTravel || '').trim();
+    // one record per view; an older, flat record carries its one view on the camera itself
+    const views = Array.isArray(c.Views) && c.Views.length ? c.Views : [{ Id: c.Id, Url: c.Url, Status: c.Status, Description: '', VideoUrl: c.VideoUrl }];
+    for (const v of views) {
+      if (!v || /^disabled$/i.test(String(v.Status || '').trim())) continue;
+      const m = /\/map\/Cctv\/(\d+)/i.exec(String(v.Url || '')), id = m ? m[1] : (/^\d+$/.test(String(v.Id)) ? String(v.Id) : '');
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const d = String(v.Description || '').trim().slice(0, 60);
+      out.push({ id, title: d && d.toLowerCase() !== place.toLowerCase() ? place + ' · ' + d : place, road, dir: /^(none|unknown|)$/i.test(dir) ? '' : dir.slice(0, 20),
+                 lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5, county: String(c.County || '').trim().slice(0, 40), video: wiVideo(v.VideoUrl) });
+    }
+  }
+  return out;
+}
+async function wiList(env, ctx) {
+  const now = Date.now();
+  if (wiMem && now - wiMem.at < WI_KEEP_MS) return wiMem.list;
+  const cache = typeof caches !== 'undefined' && caches.default ? caches.default : null, cacheKey = new Request(WI511 + '/api/v2/get/cameras?format=json');   // the key is left out of what is stored
+  const hit = cache ? await cache.match(cacheKey) : null;
+  if (hit) { try { const list = await hit.json(); if (Array.isArray(list)) { wiMem = { at: Number(hit.headers.get('X-Fetched-At')) || now, list }; return list; } } catch { /* read it again below */ } }
+  const stop = (status, why) => { const e = new Error(why); e.status = status; return e; };   // never carries the address, which holds the key
+  let res;
+  const ask = (p) => fetch(WI511 + p + '?key=' + encodeURIComponent(env.WI511_KEY) + '&format=json', { headers: { Accept: 'application/json', 'User-Agent': UA }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+  try { res = await ask('/api/v2/get/cameras'); if (res.status === 404) res = await ask('/api/getcameras'); }   // the documented address, then the one it replaced
+  catch (err) { if (wiMem) return wiMem.list; throw stop(err && err.name === 'TimeoutError' ? 504 : 502, 'no answer'); }
+  if (!res.ok) { if (wiMem && res.status !== 401 && res.status !== 403) return wiMem.list; throw stop(res.status, 'refused'); }
+  let raw = null; try { raw = await res.json(); } catch { raw = null; }
+  if (!Array.isArray(raw)) { if (wiMem) return wiMem.list; throw stop(502, 'no list'); }
+  const list = wiTrim(raw);
+  wiMem = { at: now, list };
+  if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(list), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=600', 'X-Fetched-At': String(now) } })));
+  return list;
+}
+async function wicams(request, env, ctx) {
+  const NS = { 'Cache-Control': 'no-store' };
+  if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, NS);
+  if (!env.WI511_KEY) return json({ error: 'No Wisconsin 511 key on the server. Add the WI511_KEY secret in Cloudflare.' }, 401, NS);
+  if (!isSameOriginRead(request)) return json({ error: 'This route only answers the app itself.' }, 401, NS);
+  if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
+  const u = new URL(request.url), lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon'));
+  if (!u.searchParams.get('lat') || !u.searchParams.get('lon') || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return json({ error: 'lat/lon required' }, 400, NS);
+  const r = Math.min(250, Math.max(1, Math.round(Number(u.searchParams.get('r')) || 50)));          // km
+  const limit = Math.min(60, Math.max(1, Math.round(Number(u.searchParams.get('limit')) || 24)));
+  const rad = Math.PI / 180, dLat = r / 111, dLon = r / (111 * Math.max(0.2, Math.cos(lat * rad)));
+  // a place whose circle cannot reach Wisconsin is answered without asking WisDOT
+  if (lat < 42.4 - dLat || lat > 47.4 + dLat || lon < -93.0 - dLon || lon > -86.6 + dLon) return json({ radiusKm: r, total: 0, more: false, cams: [] }, 200, NS);
+  let list;
+  try { list = await wiList(env, ctx); }
+  catch (err) {
+    const s = err && err.status;
+    if (s === 401 || s === 403) return json({ error: 'Wisconsin 511 did not accept the key in WI511_KEY.' }, 401, NS);
+    if (s === 429) return json({ error: 'Wisconsin 511 allows ten requests a minute and that was reached. Try again shortly.' }, 429, NS);
+    if (s === 504) return json({ error: 'Wisconsin 511 did not answer in time.' }, 504, NS);
+    return json({ error: err && err.message === 'no list' ? 'Wisconsin 511 did not send a camera list. The key may not be active yet.' : 'Wisconsin 511 cameras are unavailable' + (s ? ' (' + s + ').' : '.') }, 502, NS);
+  }
+  const km = (la, lo) => { const a = Math.sin((la - lat) * rad / 2) ** 2 + Math.cos(lat * rad) * Math.cos(la * rad) * Math.sin((lo - lon) * rad / 2) ** 2; return 12742 * Math.asin(Math.sqrt(a)); };
+  const near = list.map((c) => ({ c, d: km(c.lat, c.lon) })).filter((x) => x.d <= r).sort((a, b) => a.d - b.d);
+  return json({ radiusKm: r, total: near.length, more: near.length > limit, cams: near.slice(0, limit).map((x) => x.c) }, 200, NS);
 }
 
 const WINDY_API = 'https://api.windy.com';
@@ -572,6 +656,10 @@ export default {
         return json({ error: 'Webcams request failed: ' + err.message }, status, { 'Cache-Control': 'no-store' });
       }
     }
+    if (path === '/api/wicams') {
+      try { return await wicams(request, env, ctx); }
+      catch (err) { return json({ error: 'Wisconsin 511 request failed.' }, err && err.name === 'TimeoutError' ? 504 : 502, { 'Cache-Control': 'no-store' }); }   // no detail: an upstream address would carry the key
+    }
     if (path === '/api/chat') {
       try { return await chat(request, env); }
       catch (err) { return json({ error: { message: 'Assistant request failed: ' + err.message } }, err.name === 'TimeoutError' ? 504 : 502, { 'Cache-Control': 'no-store' }); }
@@ -594,7 +682,7 @@ export default {
     }
     if (path === '/api/unlock') return unlock(request, env);
     if (path === '/api/config') {
-      return json({ gsServerToken: !!env.GS_TOKEN, lightningServerKey: !!env.LIGHTNING_KEY, radarServerKey: !!env.RADAR_TILES_KEY, camsServerKey: !!env.WINDY_WEBCAMS_KEY, claudeServerKey: !!env.ANTHROPIC_API_KEY, wethrServerKey: !!env.WETHR_API_KEY,
+      return json({ gsServerToken: !!env.GS_TOKEN, lightningServerKey: !!env.LIGHTNING_KEY, radarServerKey: !!env.RADAR_TILES_KEY, camsServerKey: !!env.WINDY_WEBCAMS_KEY, wi511ServerKey: !!env.WI511_KEY, claudeServerKey: !!env.ANTHROPIC_API_KEY, wethrServerKey: !!env.WETHR_API_KEY,
                     passcode: !!env.APP_PASSCODE, locked: !(await unlocked(request, env)), version: VERSION }, 200, { 'Cache-Control': 'no-store' });
     }
     if (path === '/api/health') {

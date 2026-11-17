@@ -3867,14 +3867,14 @@ function loadServerConfig() {
       gsServerToken = !!(c && c.gsServerToken);
       lightningServerKey = !!(c && c.lightningServerKey);
       radarServerKey = !!(c && c.radarServerKey); if (radarServerKey && typeof RADAROV !== 'undefined') RADAROV.refresh(false);   // a place may have loaded before this answer came
-      camsServerKey = !!(c && c.camsServerKey);
+      camsServerKey = !!(c && c.camsServerKey); wi511ServerKey = !!(c && c.wi511ServerKey);
       claudeServerKey = !!(c && c.claudeServerKey); wethrServerKey = !!(c && c.wethrServerKey); appLocked = !!(c && c.locked);
       if (typeof renderServerKeys === 'function') renderServerKeys(c || {});
       if (chatAvailable()) { var _fab = document.getElementById('chatFab'); if (_fab) _fab.style.display = 'flex'; }
       if (typeof updateConnDots === 'function') updateConnDots();
       if (typeof initWindyCamsKeyUI === 'function') initWindyCamsKeyUI();
       // The config can land after the tab was opened from a deep link.
-      if (camsServerKey && _currentSection === 'cams' && typeof CAMS !== 'undefined') CAMS.ensure();
+      if ((camsServerKey || wi511ServerKey) && _currentSection === 'cams' && typeof CAMS !== 'undefined') CAMS.ensure();
     })
     .catch(function () {});
 }
@@ -7326,7 +7326,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.65.0';
+var APP_VERSION = '3.66.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -7484,7 +7484,7 @@ function renderHealth() {
   document.getElementById('statusSources').innerHTML = rows;
 
   var keys = [['GribStream token', gsAvailable(), 'Model guidance'], ['Anthropic key', chatAvailable(), 'Chat assistant'],
-              ['wethr.net key', wethrAvailable(), 'Kalshi markets'], ['Windy Webcams key', camsAvailable(), 'Webcams']];
+              ['wethr.net key', wethrAvailable(), 'Kalshi markets'], ['Windy Webcams key', camsAvailable(), 'Webcams'], ['Wisconsin 511 key', roadCamsAvailable(), 'Road cameras']];
   document.getElementById('statusKeys').innerHTML = keys.map(function (k) {
     return '<li class="src-row s-' + (k[1] ? 'ok' : 'idle') + '"><i class="src-dot" aria-hidden="true"></i><div class="src-main"><div class="src-name">' +
       k[0] + '</div><div class="src-what">' + k[2] + '</div></div><div class="src-state"><div class="src-label">' + (k[1] ? 'Connected' : 'Not set') + '</div></div></li>';
@@ -9446,6 +9446,8 @@ function renderHourlyCharts() { HOURLY.draw(); }
 function getWindyCamsKey() { return lsGet('windy_cams_key', '') || ''; }
 var camsServerKey = false;
 function camsAvailable() { return !!getWindyCamsKey() || camsServerKey; }
+var wi511ServerKey = false;   // WI511_KEY is set on the server: Wisconsin road cameras on Webcams (v3.66.0)
+function roadCamsAvailable() { return wi511ServerKey; }
 function saveWindyCamsKey() {
   var inp = document.getElementById('windyCamsKeyInput'), st = document.getElementById('windyCamsKeyStatus');
   var val = inp.value.trim();
@@ -9620,6 +9622,17 @@ var CAMS = (function () {
   var radius = +lsGet('nws_cams_r', '50'), view = 'current', useStation = false;
   if (!RADII.some(function (r) { return r[0] === radius; })) radius = 50;
   var data = null, dataMore = false, dataKey = '', dataAt = 0, seq = 0, busy = false, lastErrRetry = 0, openCam = null;
+  /* v3.66.0: Wisconsin 511 road cameras (WisDOT) sit beside the Windy webcams. Each camera carries src: 'windy' or 'wis'. */
+  var ROAD_REFRESH_MS = 30000;    // an open road camera re-reads its still this often; WisDOT lets a still be kept 10 s
+  var srcPick = lsGet('nws_cams_src', 'all'), notes = [], stillTimer = null;
+  if (['all', 'windy', 'wis'].indexOf(srcPick) < 0) srcPick = 'all';
+  var HLS = (function () { try { return !!document.createElement('video').canPlayType('application/vnd.apple.mpegurl'); } catch (e) { return false; } })();   // Safari and every iPad browser play the stream; most desktop browsers do not
+  function isRoad(c) { return c.src === 'wis'; }
+  function bothKinds() { return !!data && data.some(isRoad) && data.some(function (c) { return !isRoad(c); }); }
+  function roadVideo(u) {
+    u = httpsURL(u); if (!u) return '';
+    try { var x = new URL(u); return (x.hostname === 'dot.wi.gov' || /\.dot\.wi\.gov$/.test(x.hostname)) && /\.m3u8$/i.test(x.pathname) ? u : ''; } catch (e) { return ''; }
+  }
 
   // Kalshi settles on an airport station, often miles from the city centre that was searched.
   function station() {
@@ -9660,6 +9673,14 @@ var CAMS = (function () {
       on.innerHTML = '<button type="button" class="cpc-nav-btn' + (!useStation ? ' active' : '') + '" aria-pressed="' + !useStation + '" data-o="loc">Near ' + esc(nm) + '</button>' +
                      '<button type="button" class="cpc-nav-btn' + (useStation ? ' active' : '') + '" aria-pressed="' + useStation + '" data-o="stn">Near ' + esc(s.id) + ' (settlement station)</button>';
     }
+    var sn = document.getElementById('camsSrcNav'), both = bothKinds();
+    if (sn) {
+      sn.classList.toggle('hidden', !both);
+      sn.innerHTML = !both ? '' : [['all', 'All cameras'], ['windy', 'Webcams'], ['wis', 'Road cameras']].map(function (s) {
+        return '<button type="button" class="cpc-nav-btn' + (s[0] === srcPick ? ' active' : '') + '" aria-pressed="' + (s[0] === srcPick) + '" data-s="' + s[0] + '">' + s[1] + '</button>'; }).join('');
+    }
+    vn.classList.toggle('hidden', !!data && (!data.some(function (c) { return !isRoad(c); }) || (both && srcPick === 'wis')));   // "last daylight" is a Windy image; road cameras have none
+    var wn = document.getElementById('camsWindyNote'); if (wn) wn.classList.toggle('hidden', !!data && !data.some(function (c) { return !isRoad(c); }));
     vn.innerHTML = '<button type="button" class="cpc-nav-btn' + (view === 'current' ? ' active' : '') + '" aria-pressed="' + (view === 'current') + '" data-v="current">Latest image</button>' +
                    '<button type="button" class="cpc-nav-btn' + (view === 'daylight' ? ' active' : '') + '" aria-pressed="' + (view === 'daylight') + '" data-v="daylight">Last daylight</button>';
   }
@@ -9667,20 +9688,31 @@ var CAMS = (function () {
   function render() {
     var el = box(); if (!el) return;
     if (!data) return;
-    var o = origin();
-    var list = data.map(function (c) {
+    var o = origin(), both = bothKinds(), stamp = Math.floor(dataAt / 60000);
+    var list = data.filter(function (c) { return !both || srcPick === 'all' || (srcPick === 'wis') === isRoad(c); }).map(function (c) {
       var d = haversine(o.lat, o.lon, c.lat, c.lon);
       return { c: c, d: d, b: degToCompass(bearing(o.lat, o.lon, c.lat, c.lon)) };
     }).sort(function (a, b) { return a.d - b.d; });
     if (!list.length) {
       var next = null;
       for (var i = 0; i < RADII.length; i++) if (RADII[i][0] > radius) { next = RADII[i]; break; }
-      el.innerHTML = '<div class="card empty-key">No webcams within ' + esc(RADII.filter(function (r) { return r[0] === radius; })[0][1]) + ' of ' + esc(o.label) + '.' +
+      el.innerHTML = '<div class="card empty-key">No cameras within ' + esc(RADII.filter(function (r) { return r[0] === radius; })[0][1]) + ' of ' + esc(o.label) + '.' +
         (next ? ' <button type="button" class="btn-link" data-widen="' + next[0] + '">Widen to ' + next[1] + '</button>' : '') + '</div>';
       return;
     }
-    el.innerHTML = '<div class="cams-grid">' + list.map(function (x) {
+    var roads = list.some(function (x) { return isRoad(x.c); });
+    el.innerHTML = (roads ? '<div class="source-note cams-credit">Road cameras: Wisconsin Department of Transportation (WisDOT), <a href="https://511wi.gov/" target="_blank" rel="noopener">511wi.gov</a>. &copy; WisDOT. ' +
+        'The time is printed on each image. Tap one for the latest image' + (HLS ? ' or live video' : '') + '.</div>' : '') +
+      '<div class="cams-grid">' + list.map(function (x) {
       var c = x.c, img = view === 'daylight' ? (c.day || c.img) : c.img;
+      if (isRoad(c)) {
+        var rsub = [x.d < 10 ? x.d.toFixed(1) + ' mi ' + x.b : Math.round(x.d) + ' mi ' + x.b, c.county ? c.county + ' County' : ''].filter(Boolean).map(esc).join(' \u00B7 ');
+        return '<article class="cam-card">' +
+          '<button type="button" class="cam-shot is-road" data-cam="' + esc(c.id) + '" aria-label="Open road camera: ' + esc(c.title) + '">' +
+            '<img loading="lazy" decoding="async" alt="" src="' + esc(c.img + '?t=' + stamp) + '"></button>' +
+          '<div class="cam-meta"><div class="cam-title">' + esc(c.title) + '</div><div class="cam-sub">' + rsub + '</div>' +
+          '<div class="cam-sub">Road camera \u00B7 WisDOT 511</div></div></article>';
+      }
       var upd = c.updated ? Date.parse(c.updated) : NaN, old = !isNaN(upd) && Date.now() - upd > OLD_IMAGE_MS;
       var place = [c.city, c.region].filter(Boolean).join(', ');
       var sub = [x.d < 10 ? x.d.toFixed(1) + ' mi ' + x.b : Math.round(x.d) + ' mi ' + x.b, place].filter(Boolean).map(esc).join(' · ');
@@ -9694,7 +9726,8 @@ var CAMS = (function () {
         (isNaN(upd) ? '' : '<div class="cam-sub' + (old ? ' is-old' : '') + '">' + (view === 'daylight' ? 'Last daylight frame' : 'Image ' + esc(agoText(upd))) + '</div>') +
         '</div></article>';
     }).join('') + '</div>' +
-      (dataMore ? '<div class="source-note">Showing the ' + list.length + ' cameras nearest ' + esc(o.label) + '. More lie farther out within this radius.</div>' : '');
+      (dataMore ? '<div class="source-note">Showing the ' + list.length + ' cameras nearest ' + esc(o.label) + '. More lie farther out within this radius.</div>' : '') +
+      notes.map(function (n) { return '<div class="source-note cams-miss">' + esc(n) + '</div>'; }).join('');
   }
 
   function fail(msg, needsKey) {
@@ -9704,59 +9737,117 @@ var CAMS = (function () {
                 : '<button type="button" class="btn-link" onclick="CAMS.load(true)">Try again</button>') + '</div>';
   }
 
-  function load(force) {
-    renderBar();
-    var el = box(); if (!el) return;
-    if (!currentLat || !currentLon) { el.innerHTML = '<div class="card state-load">Load a location to list nearby webcams.</div>'; return; }
-    if (!camsAvailable()) {
-      data = null; dataKey = '';
-      el.innerHTML = '<div class="card empty-key">Webcams need a free Windy Webcams API key. ' +
-        '<button type="button" class="btn-link" onclick="openDrawer()">Add it in Settings &amp; keys</button></div>';
-      return;
-    }
-    var o = origin(), key = o.lat.toFixed(3) + ',' + o.lon.toFixed(3) + ',' + radius;
-    if (!force && data && key === dataKey && Date.now() - dataAt < REFRESH_MS) { render(); return; }
-    if (busy && key === dataKey) return;
-    if (key !== dataKey || !data) el.innerHTML = '<div class="card state-load">Finding webcams near ' + esc(o.label) + '…</div>';
-    var my = ++seq; busy = true; dataKey = key;
+  function both2(r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); }
+  function offlineOr(msg) { return !navigator.onLine ? 'Webcams need a connection. This device is offline.' : msg; }
+  function windyJob(o) {
     var k = getWindyCamsKey();
-    netFetch('/api/cams?lat=' + o.lat.toFixed(4) + '&lon=' + o.lon.toFixed(4) + '&r=' + radius + '&limit=24',
+    return netFetch('/api/cams?lat=' + o.lat.toFixed(4) + '&lon=' + o.lon.toFixed(4) + '&r=' + radius + '&limit=24',
              { headers: k ? { 'X-Windy-Key': k } : {}, cache: 'no-store' })
-      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+      .then(both2)
       .then(function (res) {
-        if (my !== seq) return;
-        busy = false;
-        if (!res.ok) {
-          data = null;
-          if (res.status === 401) fail(res.j.error || 'Windy did not accept the Webcams API key.', true);
-          else fail(res.j.error || ('Webcams are unavailable (HTTP ' + res.status + ').'), false);
-          return;
-        }
-        data = (res.j.webcams || []).map(function (c) {
-          return { id: String(c.id), title: String(c.title || 'Webcam'), lat: +c.lat, lon: +c.lon, city: c.city || '', region: c.region || '',
+        if (!res.ok) return { ok: false, needsKey: res.status === 401, err: res.status === 401 ? (res.j.error || 'Windy did not accept the Webcams API key.') : (res.j.error || ('Webcams are unavailable (HTTP ' + res.status + ').')) };
+        return { ok: true, more: !!res.j.more, list: (res.j.webcams || []).map(function (c) {
+          return { src: 'windy', id: String(c.id), title: String(c.title || 'Webcam'), lat: +c.lat, lon: +c.lon, city: c.city || '', region: c.region || '',
                    updated: c.updated || '', img: httpsURL(c.img), day: httpsURL(c.day), w: +c.w || 0, h: +c.h || 0,
                    detail: windyURL(c.detail),
                    player: { live: windyURL(c.player && c.player.live), day: windyURL(c.player && c.player.day),
                              month: windyURL(c.player && c.player.month), year: windyURL(c.player && c.player.year) } };
-        }).filter(function (c) { return isFinite(c.lat) && isFinite(c.lon); });
-        dataMore = !!res.j.more;
-        dataAt = Date.now();
-        stampSection('cams', dataAt, 'Checked');
-        render();
+        }).filter(function (c) { return isFinite(c.lat) && isFinite(c.lon); }) };
       })
-      .catch(function (e) {
-        if (my !== seq) return;
-        busy = false; data = null;
-        fail(!navigator.onLine ? 'Webcams need a connection. This device is offline.' : 'Webcams could not be loaded (' + ((e && e.message) || 'network error') + ').', false);
-      });
+      .catch(function (e) { return { ok: false, needsKey: false, err: offlineOr('Webcams could not be loaded (' + ((e && e.message) || 'network error') + ').') }; });
+  }
+  function roadJob(o) {
+    return netFetch('/api/wicams?lat=' + o.lat.toFixed(4) + '&lon=' + o.lon.toFixed(4) + '&r=' + radius + '&limit=24', { cache: 'no-store' })
+      .then(both2)
+      .then(function (res) {
+        if (!res.ok) return { ok: false, needsKey: res.status === 401, err: res.j.error || ('Wisconsin road cameras are unavailable (HTTP ' + res.status + ').') };
+        return { ok: true, more: !!res.j.more, list: (res.j.cams || []).map(function (c) {
+          var id = String(c && c.id || ''); if (!/^\d+$/.test(id)) return null;
+          return { src: 'wis', id: 'wi-' + id, title: String(c.title || 'Road camera'), lat: +c.lat, lon: +c.lon, county: String(c.county || ''), road: String(c.road || ''), dir: String(c.dir || ''),
+                   img: 'https://511wi.gov/map/Cctv/' + id, video: roadVideo(c.video) };
+        }).filter(function (c) { return c && isFinite(c.lat) && isFinite(c.lon); }) };
+      })
+      .catch(function (e) { return { ok: false, needsKey: false, err: offlineOr('Wisconsin road cameras could not be loaded (' + ((e && e.message) || 'network error') + ').') }; });
+  }
+  function load(force) {
+    renderBar();
+    var el = box(); if (!el) return;
+    if (!currentLat || !currentLon) { el.innerHTML = '<div class="card state-load">Load a location to list nearby webcams.</div>'; return; }
+    var useW = camsAvailable(), useT = roadCamsAvailable();
+    if (!useW && !useT) {
+      data = null; dataKey = ''; renderBar();
+      el.innerHTML = '<div class="card empty-key">Webcams need a free Windy Webcams API key; Wisconsin road cameras need a Wisconsin 511 key. ' +
+        '<button type="button" class="btn-link" onclick="openDrawer()">Add it in Settings &amp; keys</button></div>';
+      return;
+    }
+    var o = origin(), key = o.lat.toFixed(3) + ',' + o.lon.toFixed(3) + ',' + radius + ',' + (useW ? 'w' : '') + (useT ? 't' : '');
+    if (!force && data && key === dataKey && Date.now() - dataAt < REFRESH_MS) { render(); return; }
+    if (busy && key === dataKey) return;
+    if (key !== dataKey || !data) el.innerHTML = '<div class="card state-load">Finding webcams near ' + esc(o.label) + '…</div>';
+    var my = ++seq; busy = true; dataKey = key;
+    Promise.all([useW ? windyJob(o) : null, useT ? roadJob(o) : null]).then(function (res) {
+      if (my !== seq) return;
+      busy = false;
+      var got = res.filter(function (x) { return x && x.ok; }), bad = res.filter(function (x) { return x && !x.ok; });
+      if (!got.length) { data = null; renderBar(); fail(bad[0].err, bad[0].needsKey); return; }
+      data = []; dataMore = false;
+      got.forEach(function (x) { data = data.concat(x.list); if (x.more) dataMore = true; });
+      notes = bad.map(function (x) { return x.err; });   // one source down: say so under the cameras the other one sent
+      dataAt = Date.now();
+      stampSection('cams', dataAt, 'Checked');
+      renderBar(); render();
+    });
   }
   function ensure() { load(false); }
   function reset() { data = null; dataKey = ''; dataAt = 0; seq++; busy = false; }
 
   /* ---- timelapse player ---- */
   var _opener = null;
+  function setRoad(kind) {
+    if (!openCam) return;
+    clearInterval(stillTimer); stillTimer = null;
+    if (kind === 'video' && !(openCam.video && HLS)) kind = 'still';
+    document.querySelectorAll('#camModalTabs .cpc-nav-btn').forEach(function (b) {
+      var on = b.getAttribute('data-p') === kind; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var stage = document.getElementById('camPlayer'), cam = openCam;
+    stage.innerHTML = '';
+    if (kind === 'video') {
+      var v = document.createElement('video');
+      v.controls = true; v.autoplay = true; v.muted = true; v.setAttribute('playsinline', ''); v.setAttribute('aria-label', 'Live video: ' + cam.title);
+      v.addEventListener('error', function () {
+        if (openCam !== cam || !v.parentNode) return;
+        stage.innerHTML = '<div class="cam-novid">Live video is not coming from this camera right now. <button type="button" class="btn-link" data-p="still">Show the latest image</button></div>';
+      });
+      v.src = cam.video; stage.appendChild(v);
+      return;
+    }
+    var im = document.createElement('img');
+    im.alt = 'Latest image: ' + cam.title; im.src = cam.img + '?t=' + Date.now();
+    im.addEventListener('error', function () { if (openCam === cam && im.parentNode) stage.innerHTML = '<div class="cam-novid">The image could not be loaded.</div>'; });
+    stage.appendChild(im);
+    stillTimer = setInterval(function () {   // the next still is fetched aside and swapped in whole, so the picture never blanks
+      if (openCam !== cam || document.hidden || !im.parentNode) return;
+      var n = new Image(); n.onload = function () { if (openCam === cam && im.parentNode) im.src = n.src; }; n.src = cam.img + '?t=' + Date.now();
+    }, ROAD_REFRESH_MS);
+  }
+  function openRoad(c) {
+    openCam = c; _opener = document.activeElement;
+    document.getElementById('camModalTitle').textContent = c.title;
+    var kinds = [['still', 'Latest image']].concat(c.video && HLS ? [['video', 'Live video']] : []);
+    document.getElementById('camModalTabs').innerHTML = kinds.map(function (k) {
+      return '<button type="button" class="cpc-nav-btn" aria-pressed="false" data-p="' + k[0] + '">' + k[1] + '</button>'; }).join('');
+    document.getElementById('camModalFoot').innerHTML = [c.road, c.dir, c.county ? c.county + ' County' : ''].filter(Boolean).map(esc).join(' · ') + (c.road || c.dir || c.county ? '<br>' : '') +
+      'Camera: Wisconsin Department of Transportation (WisDOT), <a href="https://511wi.gov/" target="_blank" rel="noopener">511wi.gov</a>. &copy; WisDOT. The image is re-read every 30 seconds.' +
+      (c.video && !HLS ? ' This browser cannot play the camera’s live video; Safari can.' : '');
+    document.getElementById('camPlayer').classList.add('is-road');
+    document.getElementById('camModal').classList.add('open');
+    setRoad('still');
+    var cb = document.getElementById('camModalClose'); if (cb) cb.focus();
+  }
   function setPlayer(kind) {
     if (!openCam) return;
+    if (isRoad(openCam)) { setRoad(kind); return; }
     var src = openCam.player[kind]; if (!src) return;
     document.querySelectorAll('#camModalTabs .cpc-nav-btn').forEach(function (b) {
       var on = b.getAttribute('data-p') === kind; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -9775,6 +9866,8 @@ var CAMS = (function () {
   function open(id) {
     var c = null; (data || []).forEach(function (x) { if (x.id === String(id)) c = x; });
     if (!c) return;
+    if (isRoad(c)) { openRoad(c); return; }
+    document.getElementById('camPlayer').classList.remove('is-road');
     var kinds = [['live', 'Live'], ['day', 'Past day'], ['month', 'Past month'], ['year', 'Past year']].filter(function (k) { return c.player[k[0]]; });
     if (!kinds.length) { if (c.detail) window.open(c.detail, '_blank', 'noopener'); return; }
     openCam = c; _opener = document.activeElement;
@@ -9793,7 +9886,9 @@ var CAMS = (function () {
     var m = document.getElementById('camModal');
     if (!m || !m.classList.contains('open')) return;
     m.classList.remove('open');
+    clearInterval(stillTimer); stillTimer = null;
     document.getElementById('camPlayer').innerHTML = '';   // stops playback
+    document.getElementById('camPlayer').classList.remove('is-road');
     openCam = null;
     if (_opener && _opener.focus) _opener.focus();
   }
@@ -9809,6 +9904,7 @@ var CAMS = (function () {
         if (b.hasAttribute('data-widen')) { radius = +b.getAttribute('data-widen'); lsSet('nws_cams_r', String(radius)); load(false); return; }
         if (b.hasAttribute('data-o')) { useStation = b.getAttribute('data-o') === 'stn'; load(false); return; }
         if (b.hasAttribute('data-v')) { view = b.getAttribute('data-v'); renderBar(); render(); return; }
+        if (b.hasAttribute('data-s')) { srcPick = b.getAttribute('data-s'); lsSet('nws_cams_src', srcPick); renderBar(); render(); return; }
       });
       /* An expired token answers 401 and the <img> errors. Re-fetch for fresh
          URLs, at most once a minute so a dead camera cannot cause a loop. */
@@ -9836,7 +9932,7 @@ var CAMS = (function () {
     if (!data) return 'No webcam list is loaded.';
     var o = origin();
     return data.length + ' webcams near ' + o.label + ': ' + data.slice(0, 12).map(function (c) {
-      return c.title + ' (' + Math.round(haversine(o.lat, o.lon, c.lat, c.lon)) + ' mi)';
+      return c.title + (isRoad(c) ? ' [WisDOT road camera]' : '') + ' (' + Math.round(haversine(o.lat, o.lon, c.lat, c.lon)) + ' mi)';
     }).join('; ');
   }
   return { init: init, load: load, ensure: ensure, reset: reset, open: open, close: close, describe: describe };
@@ -14370,6 +14466,7 @@ function renderServerKeys(c) {
   var ul = document.getElementById('serverKeys'); if (!ul) return;
   var rows = [['GribStream', 'GS_TOKEN', c.gsServerToken, getGsToken(), 'Model tabs and the model map layers'], ['Anthropic', 'ANTHROPIC_API_KEY', c.claudeServerKey, getClaudeKey(), 'The chat assistant'],
               ['wethr.net', 'WETHR_API_KEY', c.wethrServerKey, getWethrKey(), 'Kalshi settlement data and the live station stream'], ['Windy Webcams', 'WINDY_WEBCAMS_KEY', c.camsServerKey, getWindyCamsKey(), 'The Webcams tab'],
+              ['Wisconsin 511', 'WI511_KEY', c.wi511ServerKey, '', 'Road cameras on Webcams, from the Wisconsin Department of Transportation (511wi.gov)'],
               ['Lightning', 'LIGHTNING_KEY', c.lightningServerKey, '', 'Live lightning flashes on the radar, from the WarPulse Lightning API (lightningapi.dev). Without it the radar shows the free 15-minute lightning grid'],
               ['Radar over you', 'RADAR_TILES_KEY', c.radarServerKey, '', 'The radar line on Current: what is over the loaded spot and how it changed in the last 15 minutes, from the WarPulse radar service (lightningapi.dev). One lookup is one radar tile; lookups stop before the month\u2019s free tiles run out']];
   ul.innerHTML = rows.map(function (r) {

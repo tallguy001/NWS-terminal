@@ -2677,3 +2677,12 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 #regMapMenu .pick-opt.active::before { content: none; }                                            /* the tick rides with the name, so it never sits on a line of its own */
 #regMapMenu .pick-opt.active .pick-l::before { content: '\2713'; font-size: 13px; margin-right: 6px; }
 @media (min-width: 761px) { #regMapMenu .pick-cols { column-width: 210px; } }                      /* room for a name and its tag on one line */
+
+/* ── v3.66.0: Wisconsin 511 road cameras on Webcams. WisDOT's image is shown whole, never cropped. ── */
+.cam-shot.is-road { position: relative; aspect-ratio: 4 / 3; background: #000; }                      /* WisDOT stills are near 4:3; the box is that shape so nothing is cut off */
+.cam-shot.is-road img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: contain; }
+.cams-credit { margin: 0 0 var(--s3); }
+.cams-miss { color: var(--warn-c); }
+.cam-player.is-road img, .cam-player.is-road video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+.cam-novid { position: absolute; inset: 0; display: grid; place-content: center; gap: var(--s2); padding: var(--s4); text-align: center; color: #C8CCD4; font-size: var(--fs-sm); }
+.cam-novid .btn-link { color: #9CC9FF; }

@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.65.0">
+<link rel="stylesheet" href="/app.css?v=3.66.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -326,17 +326,18 @@
       </div>
     </div>
 
-    <!-- WEBCAMS SECTION (Windy Webcams API via /api/cams) -->
+    <!-- WEBCAMS SECTION (Windy Webcams API via /api/cams; Wisconsin 511 road cameras via /api/wicams) -->
     <div id="section-cams" class="section-panel hidden">
       <div class="section">
         <h2 class="section-label">Webcams nearby<span class="sec-age" data-age="cams"></span><button type="button" class="gs-refresh-btn" onclick="CAMS.load(true)">Refresh</button></h2>
         <div class="cams-bar">
           <div class="cpc-nav hidden" id="camsOriginNav" role="group" aria-label="Search around"></div>
           <div class="cpc-nav" id="camsRadiusNav" role="group" aria-label="Search radius"></div>
+          <div class="cpc-nav hidden" id="camsSrcNav" role="group" aria-label="Camera type"></div>
           <div class="cpc-nav" id="camsViewNav" role="group" aria-label="Image"></div>
         </div>
         <div id="camsContainer"><div class="card state-load">Load a location to list nearby webcams.</div></div>
-        <div class="source-note">
+        <div class="source-note" id="camsWindyNote">
           Webcams provided by <a href="https://www.windy.com/" target="_blank" rel="noopener">windy.com</a> &mdash; <a href="https://www.windy.com/webcams/add" target="_blank" rel="noopener">add a webcam</a>.
           Most cameras post a still every few minutes rather than live video; check each image's age. Tap an image for the timelapse player.
         </div>
@@ -1818,6 +1819,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.65.0" defer></script>
+<script src="/app.js?v=3.66.0" defer></script>
 </body>
 </html>
