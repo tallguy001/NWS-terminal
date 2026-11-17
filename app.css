@@ -2631,3 +2631,8 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 @media (pointer: coarse) { #sndModal .hsm-close { width: 40px; height: 40px; } }
 @media (max-width: 640px) { #sndModal { padding: var(--s2); } .snd-modal-content { padding: 0 var(--s3) var(--s3); max-height: 96vh; max-height: 96dvh; } .snd-modal-head { margin: 0 calc(-1 * var(--s3)) var(--s2); padding: var(--s3); } }
 @media print { #sndModal { display: none !important; } }
+
+/* ── v3.60.0: the sounding for the selected location: its marker on the Forecast maps can be tapped, and its button stands under the map ── */
+.regmap-homehit { cursor: pointer; }
+.regmap-homehit:focus-visible { stroke: #5EEAD4; stroke-width: 2px; }
+.regmap-sndnote b { color: var(--text-2); font-weight: 600; }

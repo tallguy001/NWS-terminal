@@ -7325,7 +7325,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.59.0';
+var APP_VERSION = '3.60.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -12446,6 +12446,9 @@ var REGMAP = (function () {
     });
     if (symHits.length) s.push(symHits.join(''));
     if (!view.noHome) s.push('<circle cx="' + cx + '" cy="' + cy + '" r="5.5" style="fill:rgba(7,11,20,0.6);stroke:#5EEAD4;stroke-width:2"></circle><circle cx="' + cx + '" cy="' + cy + '" r="1.6" style="fill:#5EEAD4"></circle>');
+    var hm = !view.noHome && sndCan(true) ? sndHome() : null;   // v3.60.0
+    if (hm) { taps.push(sndHomeDetail(hm)); tapO[taps.length - 1] = hm;
+      s.push('<circle class="regmap-stn regmap-homehit" data-i="' + (taps.length - 1) + '" tabindex="0" role="button" aria-label="' + esc(hm.alt + ', the selected location') + '" cx="' + cx + '" cy="' + cy + '" r="' + Math.min(32, Math.max(18, Math.round(18 * W / cw))) + '" style="fill:transparent"></circle>'); }   // about 36 px across on screen at any size
     // title block
     var sub = view.subText;
     if (!sub) {
@@ -12511,13 +12514,14 @@ var REGMAP = (function () {
     stage.appendChild(cv);
     stage.insertAdjacentHTML('beforeend', s.join(''));
     var det = document.getElementById('regMapDetail');
-    if (det && !det.getAttribute('data-keep')) det.textContent = (view.sub2 ? view.sub2.charAt(0).toUpperCase() + view.sub2.slice(1) + '. ' : '') + (taps.length ? (view.counties ? 'Tap a shaded county for its alerts.' : 'Tap a station or marker for its full report.') : '');
+    if (det && !det.getAttribute('data-keep')) { det.textContent = (view.sub2 ? view.sub2.charAt(0).toUpperCase() + view.sub2.slice(1) + '. ' : '') + (taps.length ? (view.counties ? 'Tap a shaded county for its alerts.' : 'Tap a station or marker for its full report.') : '');
+      var hp = sndCan(true) ? sndHome() : null; if (hp) det.insertAdjacentHTML('beforeend', sndBtn(hp, true)); }   // v3.60.0
   }
 
   function detail(i) {
     var det = document.getElementById('regMapDetail'); if (!det || !view || !view.taps || !view.taps[i]) return;
     det.setAttribute('data-keep', '1'); det.innerHTML = view.taps[i];
-    if (view.tapO && view.tapO[i] && sndCan()) det.insertAdjacentHTML('beforeend', sndBtn(view.tapO[i]));   // v3.59.0
+    if (view.tapO && view.tapO[i] && sndCan(view.tapO[i].home)) det.insertAdjacentHTML('beforeend', sndBtn(view.tapO[i]));   // v3.59.0
     if (view.more && view.more[i]) { try { det.insertAdjacentHTML('beforeend', '<div class="regmap-below">' + (view.more[i]() || '') + '</div>'); } catch (e) {} }
   }
   function fail(msg, needsKey) {
@@ -12601,21 +12605,29 @@ var REGMAP = (function () {
   var SQ_REACH = { hrrr: ' Its hourly runs reach 18 hours and its 00, 06, 12 and 18 UTC runs 48.', rrfs: ' It runs every three hours.', rap: ' Its runs reach 21 hours, and 51 hours four times a day.' };
   function sndEl(id) { return document.getElementById(id); }
   function sndKey(o) { return o.id || ((+o.lat).toFixed(3) + ',' + (+o.lon).toFixed(3)); }
-  function sndCan() { return modeOf(st.layer) === 'fc' && st.layer !== 'stormpot' && gsAvailable(); }
+  function sndCan(place) { return modeOf(st.layer) === 'fc' && (place || st.layer !== 'stormpot') && gsAvailable(); }
+  /* v3.60.0: the selected location itself. It is asked for under the name the Storm potential map already uses for it, so that map's hours are reused. */
+  function sndHome() {
+    if (!currentLat || !currentLon || !isFinite(+currentLat) || !isFinite(+currentLon)) return null;
+    var ln = document.getElementById('locName'), nm = ((ln && ln.textContent) || '').replace(/\s+/g, ' ').trim() || 'Selected location';
+    return { id: 'home', home: true, lat: +currentLat, lon: +currentLon, alt: nm, city: nm };
+  }
+  function sndHomeDetail(o) { return '<div class="rg-head"><b>' + esc(o.alt) + '</b></div><div class="rg-cap">The selected location · ' + (+o.lat).toFixed(2) + ', ' + (+o.lon).toFixed(2) + '</div>'; }
   function sndStart() {   // the model and hour the map is showing, where it shows one
     var h0 = Math.ceil(Date.now() / HOUR) * HOUR, m = 'hrrr', t = h0, n = (L[st.layer] && L[st.layer].needs) || '';
     if (st.layer === 'model') { t = validTime(); if (SPM[st.model]) m = st.model; }
     else if (st.layer === 'spread') t = validTime();
     else if (n.indexOf('mf:') === 0) { t = mfTime(); m = mfModel(); }
     else if (st.layer === 'fradar') { t = Math.round(frInfo().t / HOUR) * HOUR; if (frSrc() === 'r') m = 'rrfs'; }
+    else if (st.layer === 'stormpot') { spModel(); m = st.sm; t = +spWin().w.v; }   // the place on the Storm potential map (v3.60.0)
     var i = Math.round((t - h0) / HOUR);
     return { m: SPM[m] ? m : 'hrrr', t0: h0, i: i >= 0 && i <= SQ_MAX ? i : 0 };
   }
   function sndWhen(v, t0) { return hrDay(t0 + v * HOUR) + (v ? ' · +' + v + ' h' : ''); }
-  function sndBtn(o) {
+  function sndBtn(o, named) {   // named: say whose sounding it is beside the button (the row under the map has no heading of its own)
     var s = sndStart();
     return '<div class="regmap-sndrow"><button type="button" class="regmap-sndbtn" data-snd="' + esc(o.id || '') + '" data-lat="' + (+o.lat) + '" data-lon="' + (+o.lon) + '" data-nm="' + esc(o.alt || o.city || o.id || '') + '">Sounding</button>' +
-           '<span class="regmap-sndnote">' + SPM[s.m].label + ' · ' + esc(hrDay(s.t0 + s.i * HOUR)) + '</span></div>';
+           '<span class="regmap-sndnote">' + (named ? '<b>' + esc(o.alt || '') + '</b> · ' : '') + SPM[s.m].label + ' · ' + esc(hrDay(s.t0 + s.i * HOUR)) + '</span></div>';
   }
   function sndHave(m, t, o) {   // a sounding already in hand for this model, hour and station, or null
     var k = sndKey(o), ck = m + ':' + t, w = SP && SP.key.indexOf(D.key + ':') === 0 ? SP.win[ck] : null, x = w && w.st && Date.now() - w.at < HOUR ? w.st.by[k] : null;
@@ -12636,7 +12648,7 @@ var REGMAP = (function () {
       c = SQC.set[ck] = { at: Date.now(), by: {}, ids: {}, none: {}, p: null };
     }
     var seen = {}, list = [];
-    [o].concat(shown || []).forEach(function (s) { var id = sndKey(s); if (seen[id] || c.by[id] || list.length >= 60 || !isFinite(+s.lat) || !isFinite(+s.lon)) return; seen[id] = 1; list.push({ lat: +(+s.lat).toFixed(4), lon: +(+s.lon).toFixed(4), name: id }); });
+    [o, sndHome()].concat(shown || []).forEach(function (s) { if (!s) return; var id = sndKey(s); if (seen[id] || c.by[id] || list.length >= 60 || !isFinite(+s.lat) || !isFinite(+s.lon)) return; seen[id] = 1; list.push({ lat: +(+s.lat).toFixed(4), lon: +(+s.lon).toFixed(4), name: id }); });
     list.forEach(function (x) { c.ids[x.name] = 1; });
     var span = { fromTime: new Date(t - 20 * 6e4).toISOString(), untilTime: new Date(t + 20 * 6e4).toISOString() };
     var ask = function (feed, vars) { return gsOwn(feed, { fromTime: span.fromTime, untilTime: span.untilTime, coordinates: list, variables: vars }); };
@@ -12670,7 +12682,7 @@ var REGMAP = (function () {
   }
   function sndTitle() {
     var h = sndEl('sndModalTitle'), o = SQ.o; if (!h || !o) return;
-    h.innerHTML = esc(SPM[SQ.m].label + ' sounding') + ' · ' + esc(o.alt || o.id || '') + (o.id && o.id !== o.alt ? ' <span class="regmap-id">' + esc(o.id) + '</span>' : '');
+    h.innerHTML = esc(SPM[SQ.m].label + ' sounding') + ' · ' + esc(o.alt || o.id || '') + (o.id && !o.home && o.id !== o.alt ? ' <span class="regmap-id">' + esc(o.id) + '</span>' : '');
   }
   function sndShow(r) {
     var body = sndEl('sndModalBody'), run = sndEl('sndModalRun'), M = SPM[SQ.m], o = SQ.o, my = SQ.seq, x = null;
@@ -12735,7 +12747,7 @@ var REGMAP = (function () {
     var card = document.getElementById('regMapCard'); if (!card) return;
     card.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null;
-      if (b && b.hasAttribute('data-snd')) { sndOpen({ id: b.getAttribute('data-snd'), lat: +b.getAttribute('data-lat'), lon: +b.getAttribute('data-lon'), alt: b.getAttribute('data-nm') }, b); return; }   // v3.59.0
+      if (b && b.hasAttribute('data-snd')) { sndOpen({ id: b.getAttribute('data-snd'), home: b.getAttribute('data-snd') === 'home', lat: +b.getAttribute('data-lat'), lon: +b.getAttribute('data-lon'), alt: b.getAttribute('data-nm') }, b); return; }   // v3.59.0
       if (b && b.hasAttribute('data-mode')) { setMode(b.getAttribute('data-mode')); return; }
       if (b && b.id === 'regMapPlay') { frToggle(); return; }
       if (b && b.hasAttribute('data-stepby')) { var row0 = b.closest('.regmap-row'), sl0 = row0 ? row0.querySelector('.regmap-stepin') : null; frStop(); if (sl0) stepSet(sl0.getAttribute('data-key'), +sl0.value + +b.getAttribute('data-stepby'), true); return; }
