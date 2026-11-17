@@ -1,0 +1,1817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="NWS Terminal — forecast, radar, satellite, model maps, webcams, SPC/CPC outlooks and numerical model guidance direct from the weather.gov API.">
+<title>NWS Terminal</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://api.weather.gov" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0B0E14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NWS Terminal">
+<link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
+<script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
+<link rel="stylesheet" href="/app.css?v=3.58.0">
+<!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
+     the tabs that need them (radar / hourly / models). See loadVendor(). -->
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ══════════════ SIDEBAR ══════════════ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 16.7"/><path d="m8 20 2-4M13 20l2-4"/></svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">NWS Terminal</div>
+        <div class="brand-sub">weather.gov · SPC · CPC</div>
+      </div>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <div class="nav-group">
+        <button class="nav-item" type="button" id="navHome" title="The United States right now">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg>
+          <span class="nl">US map</span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Now</div>
+        <button class="nav-item active" type="button" aria-current="page" data-section="forecast">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/></svg>
+          <span class="nl">Current</span>
+        </button>
+        <button class="nav-item" type="button" data-section="alerts">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4m0 4h.01"/></svg>
+          <span class="nl">Alerts</span>
+          <span id="alertBadge" class="nav-badge hidden"></span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Maps</div>
+        <button class="nav-item" type="button" data-section="regional">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 1 1 14 0c0 4.8-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          <span class="nl">Maps</span>
+        </button>
+        <button class="nav-item" type="button" data-section="radar">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/></svg>
+          <span class="nl">Radar and satellite</span>
+        </button>
+        <button class="nav-item" type="button" data-section="maps">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 4-6 2.5v13L9 17l6 3 6-2.5v-13L15 7 9 4Z"/><path d="M9 4v13M15 7v13"/></svg>
+          <span class="nl">Windy Map</span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">Forecast</div>
+        <button class="nav-item" type="button" data-section="hourly">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <span class="nl">Hourly</span>
+        </button>
+        <button class="nav-item" type="button" data-section="models">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m7 14 4-4 3 3 5-5"/></svg>
+          <span class="nl">Models</span>
+        </button>
+        <button class="nav-item" type="button" data-section="afd">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>
+          <span class="nl">Discussion</span>
+        </button>
+        <button class="nav-item" type="button" data-group="spc wpc cpc" data-section="spc">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 14h7l-1 8 9-12h-7Z"/></svg>
+          <span class="nl">Outlooks</span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">More</div>
+        <button class="nav-item" type="button" data-section="aqi">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 19.6A2 2 0 1 0 14 16H2"/><path d="M17.5 8a2.5 2.5 0 1 1 2 4H2"/><path d="M9.8 4.4A2 2 0 1 1 11 8H2"/></svg>
+          <span class="nl">Air Quality</span>
+        </button>
+        <button class="nav-item" type="button" data-group="climate astro" data-section="climate">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4a2 2 0 0 0-4 0v10.5a4 4 0 1 0 4 0Z"/></svg>
+          <span class="nl">Climate and sun</span>
+        </button>
+        <button class="nav-item" type="button" data-section="cams">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="m16 10.5 5-3v9l-5-3"/></svg>
+          <span class="nl">Webcams</span>
+        </button>
+      </div>
+      <div class="nav-group hidden" id="kalshiNavGroup">
+        <div class="nav-group-label">Markets</div>
+        <button class="nav-item" type="button" data-section="kalshi" id="kalshiNavBtn">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <span class="nl">Kalshi</span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="sidebar-foot">
+      <button type="button" class="health-btn" id="healthBtn" aria-haspopup="dialog" title="Data source status">
+        <i aria-hidden="true"></i><span class="health-text">No requests yet</span>
+      </button>
+      <button class="settings-btn" id="settingsBtn" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6 1.65 1.65 0 0 0 10 3.09V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        <span>Settings</span>
+      </button>
+      <button type="button" class="theme-btn" data-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
+        <svg class="t-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.1m0 15.4v2.1M4.1 4.1l1.5 1.5m12.8 12.8 1.5 1.5M2.2 12h2.1m15.4 0h2.1M5.6 18.4l-1.5 1.5M19.9 4.1l-1.5 1.5"/></svg>
+        <svg class="t-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2a6.6 6.6 0 0 0 8.8 8.8A9 9 0 1 1 12 3.2Z"/></svg>
+      </button>
+      <div class="app-version" id="appVersion"></div>
+    </div>
+  </aside>
+
+  <!-- ══════════════ MAIN ══════════════ -->
+  <div class="main">
+    <div id="offlineBar" class="offline-bar hidden" role="status">You are offline. What is on screen is the last data that loaded.</div>
+
+    <header class="topbar">
+      <button class="btn-icon mobile-nav-toggle" id="navToggle" aria-label="Open navigation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <label for="locationInput" class="sr-only">Location — city and state, ZIP, or airport code</label>
+        <input type="text" id="locationInput" placeholder="City and state, ZIP, or airport code" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search">
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn-icon" id="placesBtn" title="Saved places and browse by state" aria-label="Saved places and browse by state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        </button>
+        <button class="btn-icon" id="geoBtn" title="Use my location" aria-label="Use my location">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
+        </button>
+        <button class="btn-icon btn-fav" id="favToggle" title="Save to favorites" aria-label="Save to favorites">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.9 5.9 6.6.9-4.8 4.6 1.2 6.5-5.9-3.1-5.9 3.1 1.2-6.5L2.5 9.8l6.6-.9Z"/></svg>
+        </button>
+        <button class="btn" id="fetchBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          Go
+        </button>
+        <span class="clock" id="clock"></span>
+      </div>
+
+      <div class="favorites-bar" id="favoritesBar"></div>
+    </header>
+
+    <main class="content">
+
+      <div id="loadingEl" class="loading hidden">
+        <div class="spinner"></div>
+        <div>
+          <div class="loading-text" id="loadingText">Querying weather.gov</div>
+          <div class="loading-sub" id="loadingSub">Geocoding location</div>
+        </div>
+      </div>
+
+      <div id="errorEl" class="error hidden" role="alert"></div>
+
+      <div id="resultsEl" class="hidden">
+        <div class="loc-head">
+          <div class="loc-title">
+            <h1 class="loc-name" id="locName"></h1>
+            <div class="loc-office" id="locOffice"></div>
+          </div>
+          <div class="now-strip" id="nowStrip" aria-label="Conditions now"></div>
+          <div class="loc-actions">
+            <span class="fresh" id="freshChip" title="Time of last full refresh"><i></i><span id="updatedAt"></span></span>
+            <button class="btn-ghost btn" id="refreshAllBtn" title="Re-fetch all NWS + model data">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+              <span class="rf-t">Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="alertsContainer" aria-live="polite"></div>
+
+    <!-- FORECAST SECTION -->
+    <div id="section-forecast" class="section-panel">
+      <div class="section">
+        <h2 class="section-label">Current conditions<span class="sec-age" data-age="forecast"></span></h2>
+        <div class="card"><div id="currentText"></div><div id="rtmaCurrent"></div><div id="radarOverhead"></div></div>
+      </div>
+
+      <div class="section">
+        <h2 class="section-label">Seven-day outlook</h2>
+        <div class="card week-strip" id="weekStrip"></div>
+      </div>
+
+      <div class="section">
+        <h2 class="section-label">Forecast by period</h2>
+        <div class="tab-row" id="tabsContainer"></div>
+        <div class="tab-panel" id="periodDetail"></div>
+      </div>
+    </div>
+
+    <!-- HOURLY SECTION -->
+    <div id="section-hourly" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label">Hourly forecast<span class="sec-age" data-age="hourly"></span></h2>
+        <div class="mg-bar">
+          <div class="mg-seg" id="mgRange" role="group" aria-label="Time range"></div>
+          <div class="mg-hint" id="mgHint">Drag across the chart to read any hour.</div>
+        </div>
+        <div class="card mg-card">
+          <div class="mg-readout" id="mgReadout"></div>
+          <div class="mg-chart" id="mgChart"></div>
+          <div class="mg-foot" id="mgFoot"></div>
+        </div>
+        <div id="mgDays"></div>
+        <div class="card mg-table-card">
+          <div class="hourly-scroll">
+            <table class="hourly-table mg-table" id="hourlyTable"></table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RADAR SECTION -->
+    <div id="section-radar" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label sec-quiet">Radar, high resolution</h2>
+        <div class="card regmap-card" id="hrMap-radar"></div>
+        <div class="source-note">Radar: NOAA MRMS base reflectivity mosaic; Site radar and Velocity are one NWS radar's own super-resolution scan. Lightning: NWS Ocean Prediction Center strike density from the NLDN and GLD360 ground networks, 15 minutes at a time, by way of NOAA nowCOAST; with a lightning key on the server, live flashes on the newest frames from the WarPulse Lightning API. Satellite: GOES, served by NOAA nowCOAST. Each frame is requested at the size and projection of the map, so it is not stretched. Highways, lakes and neighbouring countries: Natural Earth. City names: GeoNames (CC BY 4.0).</div>
+        <h2 class="section-label" style="margin-top:var(--s5);">Radar, NEXRAD base reflectivity</h2>
+        <div class="card" style="padding:0; overflow:hidden;">
+          <div id="radarMap"></div>
+        </div>
+        <div class="radar-controls">
+          <button type="button" id="radarPlayBtn" onclick="toggleRadarPlay()" aria-pressed="false">Play</button>
+          <button type="button" onclick="stepRadar(-1)" aria-label="Previous frame"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back</span></button>
+          <button type="button" onclick="stepRadar(1)" aria-label="Next frame"><span>Forward</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <span class="radar-time" id="radarTime"></span>
+        </div>
+        <div class="radar-legend">
+          <span>Light</span>
+          <div class="radar-legend-bar" style="background:linear-gradient(to right,#04e9e7,#019ff4,#0300f4,#02fd02,#01c501,#008e00,#fdf802,#e5bc00,#fd9500,#fd0000,#d40000,#bc0000,#f800fd,#9854c6);"></div>
+          <span>Heavy</span>
+        </div>
+        <div class="source-note">
+          <span id="radarSource">Source: NWS NEXRAD base reflectivity mosaic</span><br>
+          No echoes on the map means no precipitation in range. Play steps through the last hour.
+        </div>
+      </div>
+    </div>
+
+    <!-- SATELLITE SECTION -->
+    <div id="section-satellite" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label sec-quiet">Satellite, high resolution</h2>
+        <div class="card regmap-card" id="hrMap-satellite"></div>
+        <div class="source-note">Radar: NOAA MRMS base reflectivity mosaic; Site radar and Velocity are one NWS radar's own super-resolution scan. Lightning: NWS Ocean Prediction Center strike density from the NLDN and GLD360 ground networks, 15 minutes at a time, by way of NOAA nowCOAST; with a lightning key on the server, live flashes on the newest frames from the WarPulse Lightning API. Satellite: GOES, served by NOAA nowCOAST. Each frame is requested at the size and projection of the map, so it is not stretched. Highways, lakes and neighbouring countries: Natural Earth. City names: GeoNames (CC BY 4.0).</div>
+        <h2 class="section-label" style="margin-top:var(--s5);">Satellite, GOES imagery</h2>
+        <div class="cpc-nav" id="satModeNav">
+          <button class="cpc-nav-btn active" onclick="switchSatMode('ir', this)">Infrared</button>
+          <button class="cpc-nav-btn" onclick="switchSatMode('visible', this)">Visible</button>
+          <button class="cpc-nav-btn" onclick="switchSatMode('vapor', this)">Water vapor</button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <div class="panel-head"><h3>Latest image</h3><span id="satStaticLabel"></span></div>
+          <div class="sat-stage">
+            <img loading="lazy" decoding="async" id="satStaticImg" src="" alt="Latest GOES image" style="max-width:100%;display:none;" onload="this.style.display='block';this.nextElementSibling.style.display='none';">
+            <div id="satStaticFallback" class="state-load">Loading the latest image…</div>
+          </div>
+        </div>
+        <div class="card" style="padding:0;margin-top:12px;overflow:hidden;">
+          <div class="panel-head"><h3>Loop</h3><span id="satLoopLabel"></span></div>
+          <div class="sat-stage">
+            <img loading="lazy" decoding="async" id="satLoopImg" src="" alt="GOES loop" style="max-width:100%;display:none;">
+            <div id="satGifFallback" class="state-load">Loading the loop…</div>
+          </div>
+          <div class="sat-controls">
+            <button type="button" onclick="toggleSatPlay()" id="satPlayBtn" aria-pressed="false">Play</button>
+            <button type="button" onclick="stepSatFrame(-1)" aria-label="Previous frame"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button type="button" onclick="stepSatFrame(1)" aria-label="Next frame"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <span id="satFrameInfo" class="sat-info"></span>
+          </div>
+        </div>
+        <div class="radar-legend" id="satLegend">
+          <span>Cold / High</span>
+          <div class="radar-legend-bar" style="background:linear-gradient(to right, #000000, #1a1a4e, #333399, #6666cc, #9999dd, #ccccee, #ffffff);"></div>
+          <span>Warm / Low</span>
+        </div>
+        <div class="source-note">
+          Source: NOAA STAR, GOES-19 and GOES-18 regional sectors. The sector is chosen from the location.
+        </div>
+      </div>
+    </div>
+
+    <!-- MAPS SECTION (Windy embed) -->
+    <div id="section-maps" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label sec-quiet">Maps, model layers and radar</h2>
+        <div class="cpc-nav" id="mapsLayerNav" role="group" aria-label="Map layer"></div>
+        <div class="maps-opts">
+          <div class="cpc-nav" id="mapsModelNav" role="group" aria-label="Forecast model"></div>
+          <div class="cpc-nav" id="mapsTimeNav" role="group" aria-label="Valid time"></div>
+          <div class="cpc-nav" id="mapsOptNav" role="group" aria-label="Map options"></div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <div class="maps-stage" id="mapsStage"><div class="state-load">Load a location to open the map.</div></div>
+        </div>
+        <div class="source-note">
+          <span id="mapsNote"></span>
+          Map by <a href="https://www.windy.com/" target="_blank" rel="noopener">Windy.com</a>, centered on the loaded location; the marker reads the layer value there. Drag the timeline on the map for other hours.
+          Model output for situational awareness, not an observation and not settlement data.
+          <a id="mapsOpenLink" href="https://www.windy.com/" target="_blank" rel="noopener">Open in Windy</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- WEBCAMS SECTION (Windy Webcams API via /api/cams) -->
+    <div id="section-cams" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label">Webcams nearby<span class="sec-age" data-age="cams"></span><button type="button" class="gs-refresh-btn" onclick="CAMS.load(true)">Refresh</button></h2>
+        <div class="cams-bar">
+          <div class="cpc-nav hidden" id="camsOriginNav" role="group" aria-label="Search around"></div>
+          <div class="cpc-nav" id="camsRadiusNav" role="group" aria-label="Search radius"></div>
+          <div class="cpc-nav" id="camsViewNav" role="group" aria-label="Image"></div>
+        </div>
+        <div id="camsContainer"><div class="card state-load">Load a location to list nearby webcams.</div></div>
+        <div class="source-note">
+          Webcams provided by <a href="https://www.windy.com/" target="_blank" rel="noopener">windy.com</a> &mdash; <a href="https://www.windy.com/webcams/add" target="_blank" rel="noopener">add a webcam</a>.
+          Most cameras post a still every few minutes rather than live video; check each image's age. Tap an image for the timelapse player.
+        </div>
+      </div>
+    </div>
+
+    <!-- REGIONAL SECTION -->
+    <div id="section-regional" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label sec-quiet">Regional maps</h2>
+        <div class="card regmap-card" id="regMapCard">
+          <div class="regmap-top pick-row">
+            <div class="regmap-modes" id="regMapModeNav" role="group" aria-label="Current or forecast maps"></div>
+            <div class="regmap-pick" id="regMapLayerNav"></div>
+            <div class="regmap-area">
+              <div class="cpc-nav" id="regMapRangeNav" role="group" aria-label="Map half-width"></div>
+              <button type="button" class="gs-refresh-btn regmap-save" id="regMapSave" title="Save the map as an image" aria-label="Save the map as an image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg><span>Save image</span></button>
+            </div>
+          </div>
+          <div class="pick-panel hidden" id="regMapMenu" role="dialog" aria-label="Choose a map"></div>
+          <div class="regmap-opts"><div class="regmap-sub" id="regMapSub"></div></div>
+          <div class="regmap-stage" id="regMapStage"><div class="state-load">Load a location to draw the map.</div></div>
+          <div class="regmap-detail" id="regMapDetail" aria-live="polite"></div>
+        </div>
+        <div class="source-note">Station reports: aviationweather.gov (latest) and Iowa Environmental Mesonet (25-hour history). Forecasts, including rain and snow amounts: NWS digital forecast. Alerts: NWS. Storm and observer snow reports: Iowa Environmental Mesonet. Rainfall: NWS river forecast centre analysis. Model values: GribStream. Market prices: Kalshi public data, not advice. The colour field blends the plotted values and is not an analysis. Town names on the map: GeoNames (CC BY 4.0) and US Census Bureau; tap a label for the station's own name. County and state lines: US Census Bureau.</div>
+        <div id="regStationsBlock">
+        <h2 class="section-label" style="margin-top:var(--s5);">Nearest observation stations<span class="sec-age" data-age="regional"></span></h2>
+        <div id="regionalContainer">
+          <div class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Loading nearby stations...
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUN/MOON SECTION -->
+    <div id="section-astro" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label sec-quiet">Sun and moon</h2>
+        <div id="astroContainer"><div class="card state-load">Computing sun and moon…</div></div>
+        <div class="source-note">Computed on this device for the location's time zone. Sun: NOAA solar equations. Moon: Astronomical Almanac series and Meeus phase algorithm. Rise and set times assume a level horizon.</div>
+      </div>
+    </div>
+
+    <!-- AIR QUALITY SECTION -->
+    <div id="section-aqi" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label">Air quality<span class="sec-age" data-age="aqi"></span></h2>
+        <div id="aqiContainer"><div class="card state-load">Loading air quality…</div></div>
+        <div class="source-note">Source: Open-Meteo air quality API (Copernicus CAMS model), US AQI scale. Concentrations in µg/m³.</div>
+      </div>
+    </div>
+
+    <!-- ALERTS SECTION -->
+    <div id="section-alerts" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label">Active watches, warnings and advisories</h2>
+        <div id="alertsFullContainer">
+          <div class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            No active alerts for this location.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CPC SECTION -->
+    <div id="section-cpc" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label sec-quiet">Climate Prediction Center outlooks</h2>
+        <div class="card regmap-card" id="olMap-cpc"></div>
+        <div class="source-note">Drawn from the centre's published outlook shapes, so it stays sharp at any size. The official images follow.</div>
+        <h2 class="section-label" style="margin-top:var(--s5);">Official images</h2>
+        <div class="cpc-nav" id="cpcNav">
+          <button class="cpc-nav-btn active" onclick="switchCPC('6-10')">6-10 day</button>
+          <button class="cpc-nav-btn" onclick="switchCPC('8-14')">8-14 day</button>
+          <button class="cpc-nav-btn" onclick="switchCPC('monthly')">Monthly</button>
+          <button class="cpc-nav-btn" onclick="switchCPC('seasonal')">Seasonal</button>
+        </div>
+
+        <!-- 6-10 Day -->
+        <div class="cpc-panel" id="cpc-6-10">
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Temperature outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.cpc.ncep.noaa.gov/products/predictions/610day/610temp.new.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="6-10 Day Temperature Outlook" onerror="this.parentElement.innerHTML='<div class=\'cpc-err\'>Image unavailable</div>'">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Precipitation outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.cpc.ncep.noaa.gov/products/predictions/610day/610prcp.new.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="6-10 Day Precipitation Outlook" onerror="this.parentElement.innerHTML='<div class=\'cpc-err\'>Image unavailable</div>'">
+            </div>
+          </div>
+          <div class="spc-discuss-toggle" onclick="toggleCPCDiscuss('610')">
+            <span class="spc-dt-chevron" id="cpcDiscChev-610">&#9654;</span>
+            <span class="spc-dt-label">Forecast discussion</span>
+          </div>
+          <div class="spc-discuss-body" id="cpcDiscBody-610">
+            <div class="spc-discuss-text" id="cpcDiscText-610">Loading discussion...</div>
+          </div>
+        </div>
+
+        <!-- 8-14 Day -->
+        <div class="cpc-panel hidden" id="cpc-8-14">
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Temperature outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.cpc.ncep.noaa.gov/products/predictions/814day/814temp.new.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="8-14 Day Temperature Outlook" onerror="this.parentElement.innerHTML='<div class=\'cpc-err\'>Image unavailable</div>'">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Precipitation outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.cpc.ncep.noaa.gov/products/predictions/814day/814prcp.new.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="8-14 Day Precipitation Outlook" onerror="this.parentElement.innerHTML='<div class=\'cpc-err\'>Image unavailable</div>'">
+            </div>
+          </div>
+          <div class="spc-discuss-toggle" onclick="toggleCPCDiscuss('814')">
+            <span class="spc-dt-chevron" id="cpcDiscChev-814">&#9654;</span>
+            <span class="spc-dt-label">Forecast discussion</span>
+          </div>
+          <div class="spc-discuss-body" id="cpcDiscBody-814">
+            <div class="spc-discuss-text" id="cpcDiscText-814">Loading discussion...</div>
+          </div>
+        </div>
+
+        <!-- Monthly -->
+        <div class="cpc-panel hidden" id="cpc-monthly">
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Temperature outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.cpc.ncep.noaa.gov/products/predictions/long_range/lead01/off01_temp.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Monthly Temperature Outlook" onerror="this.parentElement.innerHTML='<div class=\'cpc-err\'>Image unavailable</div>'">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Precipitation outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.cpc.ncep.noaa.gov/products/predictions/long_range/lead01/off01_prcp.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Monthly Precipitation Outlook" onerror="this.parentElement.innerHTML='<div class=\'cpc-err\'>Image unavailable</div>'">
+            </div>
+          </div>
+          <div class="spc-discuss-toggle" onclick="toggleCPCDiscuss('monthly')">
+            <span class="spc-dt-chevron" id="cpcDiscChev-monthly">&#9654;</span>
+            <span class="spc-dt-label">Forecast discussion</span>
+          </div>
+          <div class="spc-discuss-body" id="cpcDiscBody-monthly">
+            <div class="spc-discuss-text" id="cpcDiscText-monthly">Loading discussion...</div>
+          </div>
+        </div>
+
+        <!-- Seasonal -->
+        <div class="cpc-panel hidden" id="cpc-seasonal">
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Temperature outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.cpc.ncep.noaa.gov/products/predictions/long_range/lead14/off14_temp.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Seasonal Temperature Outlook" onerror="this.parentElement.innerHTML='<div class=\'cpc-err\'>Image unavailable</div>'">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Precipitation outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.cpc.ncep.noaa.gov/products/predictions/long_range/lead14/off14_prcp.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Seasonal Precipitation Outlook" onerror="this.parentElement.innerHTML='<div class=\'cpc-err\'>Image unavailable</div>'">
+            </div>
+          </div>
+          <div class="spc-discuss-toggle" onclick="toggleCPCDiscuss('seasonal')">
+            <span class="spc-dt-chevron" id="cpcDiscChev-seasonal">&#9654;</span>
+            <span class="spc-dt-label">Forecast discussion</span>
+          </div>
+          <div class="spc-discuss-body" id="cpcDiscBody-seasonal">
+            <div class="spc-discuss-text" id="cpcDiscText-seasonal">Loading discussion...</div>
+          </div>
+        </div>
+
+        <div class="source-note">
+          Source: NOAA Climate Prediction Center (cpc.ncep.noaa.gov)<br>
+          Probabilities shown relative to climatological normals. Green/blue = above normal, brown/orange = below normal.
+        </div>
+      </div>
+    </div>
+
+    <!-- WPC SECTION -->
+    <div id="section-wpc" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label sec-quiet">Weather Prediction Center</h2>
+        <div class="card regmap-card" id="olMap-wpc"></div>
+        <div class="source-note">Drawn from the centre's published outlook shapes, so it stays sharp at any size. The official images follow.</div>
+        <h2 class="section-label" style="margin-top:var(--s5);">Official images</h2>
+        <div class="cpc-nav" id="wpcNav">
+          <button type="button" class="cpc-nav-btn active" onclick="switchWPC('qpf', this)">Rainfall</button>
+          <button type="button" class="cpc-nav-btn" onclick="switchWPC('ero', this)">Flood risk</button>
+          <button type="button" class="cpc-nav-btn" onclick="switchWPC('winter', this)">Snow and ice</button>
+          <button type="button" class="cpc-nav-btn" onclick="switchWPC('charts', this)">Forecast charts</button>
+          <button type="button" class="cpc-nav-btn" onclick="switchWPC('hazards', this)">Days 3 to 7</button>
+        </div>
+        <div class="wpc-panel" id="wpc-qpf">
+          <div class="cpc-row" style="margin-bottom:12px;">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Next 24 hours</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/qpf/fill_94qwbg.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="WPC day 1 precipitation forecast">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 2</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/qpf/fill_98qwbg.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="WPC day 2 precipitation forecast">
+            </div>
+          </div>
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 3</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/qpf/fill_99qwbg.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="WPC day 3 precipitation forecast">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Seven-day total</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/qpf/p168i.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="WPC seven-day precipitation total">
+            </div>
+          </div>
+        </div>
+        <div class="wpc-panel hidden" id="wpc-ero">
+          <div class="cpc-row" style="margin-bottom:12px;">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Excessive rainfall, day 1</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/qpf/94ewbg.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="WPC day 1 excessive rainfall outlook">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Excessive rainfall, day 2</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/qpf/98ewbg.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="WPC day 2 excessive rainfall outlook">
+            </div>
+          </div>
+          <div class="cpc-map-wrap">
+            <div class="cpc-map-label">Excessive rainfall, day 3</div>
+            <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/qpf/99ewbg.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="WPC day 3 excessive rainfall outlook">
+          </div>
+        </div>
+        <div class="wpc-panel hidden" id="wpc-winter">
+          <div class="cpc-row" style="margin-bottom:12px;">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Chance of 4 inches of snow, day 1</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/wwd/day1_psnow_gt_04_conus.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Probability of at least 4 inches of snow, day 1">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 2</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/wwd/day2_psnow_gt_04_conus.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Probability of at least 4 inches of snow, day 2">
+            </div>
+          </div>
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 3</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/wwd/day3_psnow_gt_04_conus.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Probability of at least 4 inches of snow, day 3">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Chance of a quarter inch of ice, day 1</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/wwd/day1_pice_gt_25_conus.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Probability of at least a quarter inch of ice, day 1">
+            </div>
+          </div>
+        </div>
+        <div class="wpc-panel hidden" id="wpc-charts">
+          <div class="cpc-row" style="margin-bottom:12px;">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Today</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/noaa/noaad1.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="National forecast chart, day 1">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Tomorrow</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/noaa/noaad2.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="National forecast chart, day 2">
+            </div>
+          </div>
+          <div class="cpc-map-wrap">
+            <div class="cpc-map-label">Day 3</div>
+            <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/noaa/noaad3.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="National forecast chart, day 3">
+          </div>
+        </div>
+        <div class="wpc-panel hidden" id="wpc-hazards">
+          <div class="cpc-map-wrap">
+            <div class="cpc-map-label">Hazards outlook, days 3 to 7</div>
+            <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/threats/final/hazards_d3_7_contours.png" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="WPC hazards outlook for days 3 to 7">
+          </div>
+        </div>
+        <div class="source-note">Source: NOAA Weather Prediction Center. Rainfall maps show forecast liquid totals. Tap any map to enlarge it.</div>
+      </div>
+    </div>
+
+    <!-- SPC SECTION -->
+    <div id="section-spc" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label sec-quiet">Storm Prediction Center</h2>
+        <div class="card regmap-card" id="olMap-spc"></div>
+        <div class="source-note">Drawn from the centre's published outlook shapes, so it stays sharp at any size. The official images follow.</div>
+        <h2 class="section-label" style="margin-top:var(--s5);">Official images</h2>
+        <div class="cpc-nav" id="spcNav" style="flex-wrap:wrap;">
+          <button class="cpc-nav-btn active" onclick="switchSPC('day1')">Day 1</button>
+          <button class="cpc-nav-btn" onclick="switchSPC('day2')">Day 2</button>
+          <button class="cpc-nav-btn" onclick="switchSPC('day3')">Day 3</button>
+          <button class="cpc-nav-btn" onclick="switchSPC('day48')">Day 4-8</button>
+          <button class="cpc-nav-btn" onclick="switchSPC('fire')">Fire weather</button>
+          <button class="cpc-nav-btn" onclick="switchSPC('meso')">Mesoscale</button>
+          <button class="cpc-nav-btn" onclick="switchSPC('watches')">Watches</button>
+          <button class="cpc-nav-btn" onclick="switchSPC('reports')">Reports</button>
+        </div>
+
+        <!-- Day 1 -->
+        <div class="spc-panel" id="spc-day1">
+          <div class="cpc-map-wrap" style="margin-bottom:12px;">
+            <div class="cpc-map-label">Day 1 convective outlook — categorical</div>
+            <img loading="lazy" decoding="async" class="cpc-map" data-spc="day1otlk" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 1 Categorical">
+          </div>
+          <div class="spc-sub-label">Probabilistic outlooks <span class="kv-note" style="display:inline">with conditional intensity hatching</span></div>
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Tornado</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-spc="day1probotlk_torn" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 1 Tornado">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Wind</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-spc="day1probotlk_wind" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 1 Wind">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Hail</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-spc="day1probotlk_hail" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 1 Hail">
+            </div>
+          </div>
+          <div class="spc-discuss-toggle" onclick="toggleSPCDiscuss('day1')">
+            <span class="spc-dt-chevron" id="spcDiscChev-day1">&#9654;</span>
+            <span class="spc-dt-label">Forecast discussion</span>
+            <span class="spc-dt-meta" id="spcDiscMeta-day1"></span>
+          </div>
+          <div class="spc-discuss-body" id="spcDiscBody-day1">
+            <div class="spc-discuss-text" id="spcDiscText-day1">Loading discussion...</div>
+          </div>
+        </div>
+
+        <!-- Day 2 -->
+        <div class="spc-panel hidden" id="spc-day2">
+          <div class="cpc-map-wrap" style="margin-bottom:12px;">
+            <div class="cpc-map-label">Day 2 convective outlook — categorical</div>
+            <img loading="lazy" decoding="async" class="cpc-map" data-spc="day2otlk" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 2 Categorical">
+          </div>
+          <div class="spc-sub-label">Probabilistic outlooks <span class="kv-note" style="display:inline">with conditional intensity hatching</span></div>
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Tornado</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-spc="day2probotlk_torn" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 2 Tornado">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Wind</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-spc="day2probotlk_wind" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 2 Wind">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Hail</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-spc="day2probotlk_hail" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 2 Hail">
+            </div>
+          </div>
+          <div class="spc-discuss-toggle" onclick="toggleSPCDiscuss('day2')">
+            <span class="spc-dt-chevron" id="spcDiscChev-day2">&#9654;</span>
+            <span class="spc-dt-label">Forecast discussion</span>
+            <span class="spc-dt-meta" id="spcDiscMeta-day2"></span>
+          </div>
+          <div class="spc-discuss-body" id="spcDiscBody-day2">
+            <div class="spc-discuss-text" id="spcDiscText-day2">Loading discussion...</div>
+          </div>
+        </div>
+
+        <!-- Day 3 -->
+        <div class="spc-panel hidden" id="spc-day3">
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 3 convective outlook — categorical</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-spc="day3otlk" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 3 Categorical">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 3 probabilistic</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-spc="day3prob" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 3 Probabilistic">
+            </div>
+          </div>
+          <div class="spc-discuss-toggle" onclick="toggleSPCDiscuss('day3')">
+            <span class="spc-dt-chevron" id="spcDiscChev-day3">&#9654;</span>
+            <span class="spc-dt-label">Forecast discussion</span>
+            <span class="spc-dt-meta" id="spcDiscMeta-day3"></span>
+          </div>
+          <div class="spc-discuss-body" id="spcDiscBody-day3">
+            <div class="spc-discuss-text" id="spcDiscText-day3">Loading discussion...</div>
+          </div>
+        </div>
+
+        <!-- Day 4-8 -->
+        <div class="spc-panel hidden" id="spc-day48">
+          <div class="cpc-row" style="margin-bottom:12px;">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 4 severe outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/exper/day4-8/day4prob.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 4">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 5 severe outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/exper/day4-8/day5prob.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 5">
+            </div>
+          </div>
+          <div class="cpc-row" style="margin-bottom:12px;">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 6 severe outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/exper/day4-8/day6prob.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 6">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 7 severe outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/exper/day4-8/day7prob.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 7">
+            </div>
+          </div>
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 8 severe outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/exper/day4-8/day8prob.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 8">
+            </div>
+            <div class="cpc-map-wrap"></div>
+          </div>
+          <div class="spc-discuss-toggle" onclick="toggleSPCDiscuss('day48')">
+            <span class="spc-dt-chevron" id="spcDiscChev-day48">&#9654;</span>
+            <span class="spc-dt-label">Forecast discussion</span>
+            <span class="spc-dt-meta" id="spcDiscMeta-day48"></span>
+          </div>
+          <div class="spc-discuss-body" id="spcDiscBody-day48">
+            <div class="spc-discuss-text" id="spcDiscText-day48">Loading discussion...</div>
+          </div>
+        </div>
+
+        <!-- Fire Weather -->
+        <div class="spc-panel hidden" id="spc-fire">
+          <div class="cpc-row" style="margin-bottom:12px;">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 1 fire weather outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/fire_wx/day1otlk_fire.png" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 1 fire weather outlook">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Day 2 fire weather outlook</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/fire_wx/day2otlk_fire.png" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Day 2 fire weather outlook">
+            </div>
+          </div>
+          <div class="cpc-map-wrap">
+            <div class="cpc-map-label">Days 3 to 8 fire weather outlook</div>
+            <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/exper/fire_wx/imgs/day38otlk_fire.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Days 3 to 8 fire weather outlook">
+          </div>
+        </div>
+
+        <!-- Mesoscale -->
+        <div class="spc-panel hidden" id="spc-meso">
+          <div class="cpc-map-wrap" style="margin-bottom:12px;">
+            <div class="cpc-map-label">Current mesoscale discussions</div>
+            <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/md/validmd.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Mesoscale Discussions">
+          </div>
+          <div id="spcMesoTextArea" class="card" style="margin-bottom:12px;padding:14px;">
+            <div class="panel-title">Active mesoscale discussions</div>
+            <div id="spcMesoTexts" style="font-size:15px;color:var(--text-dim);">Loading active MDs...</div>
+          </div>
+          <div class="cpc-row" style="margin-bottom:12px;">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Surface analysis</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.wpc.ncep.noaa.gov/sfc/namussfc12wbg.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="WPC surface analysis">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Surface-based CAPE and CIN</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/exper/mesoanalysis/s19/sbcp/sbcp.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="SPC mesoanalysis surface-based CAPE">
+            </div>
+          </div>
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">0 to 6 km bulk shear</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/exper/mesoanalysis/s19/shr6/shr6.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="SPC mesoanalysis 0 to 6 km shear">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Significant tornado parameter</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/exper/mesoanalysis/s19/stpc/stpc.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="SPC mesoanalysis significant tornado parameter">
+            </div>
+          </div>
+        </div>
+
+        <!-- Watches -->
+        <div class="spc-panel hidden" id="spc-watches">
+          <div class="cpc-map-wrap">
+            <div class="cpc-map-label">Watches in effect</div>
+            <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/products/watch/validww.png" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Severe thunderstorm and tornado watches in effect">
+          </div>
+        </div>
+
+        <!-- Storm Reports -->
+        <div class="spc-panel hidden" id="spc-reports">
+          <div class="cpc-row" style="margin-bottom:12px;">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Today's storm reports</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/climo/reports/today.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Today's storm reports">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Yesterday's storm reports</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/climo/reports/yesterday.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Yesterday's storm reports">
+            </div>
+          </div>
+          <div class="cpc-row">
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Today, filtered for duplicates</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/climo/reports/today_filtered.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Today's filtered storm reports">
+            </div>
+            <div class="cpc-map-wrap">
+              <div class="cpc-map-label">Yesterday, filtered for duplicates</div>
+              <img loading="lazy" decoding="async" class="cpc-map" data-live="https://www.spc.noaa.gov/climo/reports/yesterday_filtered.gif" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Yesterday's filtered storm reports">
+            </div>
+          </div>
+        </div>
+        <div class="source-note">
+          Source: NOAA Storm Prediction Center (spc.noaa.gov)<br>
+          Categorical risk runs thunderstorm, marginal, slight, enhanced, moderate, high. Tap any map to enlarge it.
+        </div>
+      </div>
+    </div>
+
+    <!-- MODELS SECTION (GribStream-powered) -->
+    <div id="section-models" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label">Model guidance</h2>
+        <div class="gs-sub-nav" id="modelsSubNav">
+          <button class="gs-sub-btn active" data-mtab="hrrr15" onclick="switchModelsTab('hrrr15', this)">HRRR</button>
+          <button class="gs-sub-btn" data-mtab="rap" onclick="switchModelsTab('rap', this)">RAP</button>
+          <button class="gs-sub-btn" data-mtab="rrfs" onclick="switchModelsTab('rrfs', this)">RRFS</button>
+          <button class="gs-sub-btn" data-mtab="rtma" onclick="switchModelsTab('rtma', this)">RTMA</button>
+          <button class="gs-sub-btn" data-mtab="sounding" onclick="switchModelsTab('sounding', this)">Sounding</button>
+          <button class="gs-sub-btn" data-mtab="severe" onclick="switchModelsTab('severe', this)">Severe</button>
+          <button class="gs-sub-btn" data-mtab="thunder" onclick="switchModelsTab('thunder', this)">Thunder</button>
+          <button class="gs-sub-btn" data-mtab="odds" onclick="switchModelsTab('odds', this)">Snow odds</button>
+          <button class="gs-sub-btn" data-mtab="trend" onclick="switchModelsTab('trend', this)">Trend</button>
+          <button class="gs-sub-btn" data-mtab="verify" onclick="switchModelsTab('verify', this)">Verify</button>
+          <button class="gs-sub-btn" data-mtab="runs" onclick="switchModelsTab('runs', this)">Model runs</button>
+          <button class="gs-sub-btn" data-mtab="gfs" onclick="switchModelsTab('gfs', this)">GFS</button>
+          <button class="gs-sub-btn" data-mtab="ecmwf" onclick="switchModelsTab('ecmwf', this)">ECMWF IFS</button>
+          <button class="gs-sub-btn" data-mtab="nbm" onclick="switchModelsTab('nbm', this)">NBM probabilities</button>
+          <button class="gs-sub-btn" data-mtab="ensemble" onclick="switchModelsTab('ensemble', this)">Ensemble</button>
+          <button class="gs-sub-btn" data-mtab="aifs" onclick="switchModelsTab('aifs', this)">AIFS</button>
+          <button class="gs-sub-btn" data-mtab="graphcast" onclick="switchModelsTab('graphcast', this)">AIGFS (GraphCast)</button>
+          <button class="gs-sub-btn" data-mtab="fourcast" onclick="switchModelsTab('fourcast', this)">FourCastNet</button>
+        </div>
+
+        <!-- ======== GFS ======== -->
+        <div id="gs-panel-gfs" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">GFS &mdash; global forecast system</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
+              NOAA&rsquo;s flagship global model. FV3 dynamical core, 13km inner nest (25km global), 4&times; daily cycling (00/06/12/18Z) with hybrid 4D-EnVar assimilation. Forecasts to 384h (16 days). Primary input to NBM and downstream models. Best for: medium-range planning, large-scale pattern recognition, tropical cyclone tracks.
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="gs-sub-btn active" onclick="gsGfsRange(3,this)" style="padding:5px 10px;">3D</button>
+              <button class="gs-sub-btn" onclick="gsGfsRange(7,this)" style="padding:5px 10px;">7D</button>
+              <button class="gs-sub-btn" onclick="gsGfsRange(10,this)" style="padding:5px 10px;">10D</button>
+              <button class="gs-sub-btn" onclick="gsGfsRange(16,this)" style="padding:5px 10px;">16D</button>
+              <button class="gs-refresh-btn" onclick="gsRefresh('gfs')" title="Re-fetch latest run">Refresh</button>
+            </div>
+          </div>
+          <div id="gsGfsLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">Fetch a location to load GFS data...</div>
+          <div id="gsGfsContent" class="hidden">
+            <div id="gsGfsSnapshot" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div id="gsGfsDailySummary" class="card" style="margin-bottom:8px;padding:0;"></div>
+            <div id="gsGfsNarrative" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div class="card" style="padding:10px;"><div class="panel-title">Temperature &amp; dewpoint (&deg;F)</div><div style="position:relative;height:260px;"><canvas id="gsGfsTempChart"></canvas></div></div>
+            <div class="card" style="padding:10px;margin-top:8px;"><div class="panel-title">Wind speed (mph)</div><div style="position:relative;height:240px;"><canvas id="gsGfsWindChart"></canvas></div></div>
+            <div class="card" style="padding:10px;margin-top:8px;"><div class="panel-title">Precipitation (in)</div><div style="position:relative;height:220px;"><canvas id="gsGfsPrecipChart"></canvas></div></div>
+            <div class="card" style="padding:10px;margin-top:8px;"><div class="panel-title">CAPE (J/kg)</div><div style="position:relative;height:220px;"><canvas id="gsGfsCapeChart"></canvas></div></div>
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div onclick="toggleGfsTable(this)" style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);">
+                <span id="gsGfsTableChev" style="font-size:12px;color:var(--accent);transition:transform 0.2s;">&#9654;</span>
+                <span class="panel-title">GFS data table</span>
+                <span style="font-size:14px;color:var(--text-muted);margin-left:auto;" id="gsGfsTableHint">tap to expand</span>
+              </div>
+              <div id="gsGfsTableBody" class="hidden" style="overflow-x:auto;max-height:500px;overflow-y:auto;"><div id="gsGfsTable"></div></div>
+            </div>
+          </div>
+          <div class="source-note">Source: GribStream.com &mdash; NOAA GFS (13km, 16-day). Imperial units.</div>
+        </div>
+
+        <!-- ======== ECMWF IFS ======== -->
+        <div id="gs-panel-ecmwf" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">ECMWF IFS &mdash; integrated forecasting system</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
+              European Centre&rsquo;s operational physics-based global model. Spectral transform core at TCo1279 (~9km), 4D-Var assimilation cycling 4&times; daily. Consistently ranked the world&rsquo;s most accurate medium-range NWP model. Forecasts to 360h (15 days). Best for: medium-range accuracy, European weather, tropical cyclones, jet-stream patterns.
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="gs-sub-btn active" onclick="gsEcmwfRange(5,this)" style="padding:5px 10px;">5D</button>
+              <button class="gs-sub-btn" onclick="gsEcmwfRange(10,this)" style="padding:5px 10px;">10D</button>
+              <button class="gs-sub-btn" onclick="gsEcmwfRange(15,this)" style="padding:5px 10px;">15D</button>
+              <button class="gs-refresh-btn" onclick="gsRefresh('ecmwf')" title="Re-fetch latest run">Refresh</button>
+            </div>
+          </div>
+          <div id="gsEcmwfLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">Fetch a location to load ECMWF IFS data...</div>
+          <div id="gsEcmwfContent" class="hidden">
+            <div id="gsEcmwfSnapshot" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div id="gsEcmwfDailySummary" class="card" style="margin-bottom:8px;padding:0;"></div>
+            <div id="gsEcmwfNarrative" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div class="card" style="padding:10px;"><div class="panel-title">Temperature &amp; dewpoint (&deg;F)</div><div style="position:relative;height:260px;"><canvas id="gsEcmwfTempChart"></canvas></div></div>
+            <div class="card" style="padding:10px;margin-top:8px;"><div class="panel-title">Wind speed (mph)</div><div style="position:relative;height:240px;"><canvas id="gsEcmwfWindChart"></canvas></div></div>
+            <div class="card" style="padding:10px;margin-top:8px;"><div class="panel-title">Precipitation (in) &amp; cloud cover (%)</div><div style="position:relative;height:220px;"><canvas id="gsEcmwfPrecipChart"></canvas></div></div>
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div onclick="toggleEcmwfTable(this)" style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);">
+                <span id="gsEcmwfTableChev" style="font-size:12px;color:var(--accent);transition:transform 0.2s;">&#9654;</span>
+                <span class="panel-title">ECMWF IFS data table</span>
+                <span style="font-size:14px;color:var(--text-muted);margin-left:auto;" id="gsEcmwfTableHint">tap to expand</span>
+              </div>
+              <div id="gsEcmwfTableBody" class="hidden" style="overflow-x:auto;max-height:500px;overflow-y:auto;"><div id="gsEcmwfTable"></div></div>
+            </div>
+          </div>
+          <div class="source-note">Source: GribStream.com &mdash; ECMWF IFS (9km, 15-day). Imperial units.</div>
+        </div>
+
+        <!-- ======== ENSEMBLE: GEFS spaghetti ======== -->
+        <div id="gs-panel-ensemble" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">GEFS ensemble &mdash; 30 members</div>
+            <div style="font-size:14px;color:var(--text-dim);">
+              NOAA Global Ensemble Forecast System. 30 perturbed members + control run, each starting from slightly different initial conditions. Wider spaghetti spread = more uncertainty. 0.25&deg; global, 10-day range.
+            </div>
+            <button class="gs-refresh-btn" onclick="gsRefresh('ensemble')" title="Re-fetch latest run" style="margin-top:8px;">Refresh</button>
+          </div>
+          <div id="gsEnsembleLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load ensemble data...
+          </div>
+          <div id="gsEnsembleContent" class="hidden">
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">Temperature spaghetti (&deg;F) &mdash; 10 days</div>
+              <div style="position:relative;height:300px;"><canvas id="gsEnsembleTempChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Wind speed spaghetti (mph)</div>
+              <div style="position:relative;height:260px;"><canvas id="gsEnsembleWindChart"></canvas></div>
+            </div>
+            <div id="gsEnsembleSpread" class="card" style="margin-top:8px;padding:14px;"></div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; GEFS Atmospheric Members (NOAA)<br>
+            30 perturbed members + control. Wider spread = more forecast uncertainty.
+          </div>
+        </div>
+
+        <!-- ======== HRRR 15m ======== -->
+        <div id="gs-panel-hrrr15" class="gs-panel">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">HRRR sub-hourly (15-minute resolution)</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
+              NOAA High-Resolution Rapid Refresh. 3km convection-allowing with hourly radar assimilation. Sub-hourly surface fields at 15-min intervals for precise storm timing. Falls back to standard HRRR (hourly) if 15-min unavailable.
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="gs-sub-btn active" data-hrs="12" onclick="gsHrrr15Range(12,this)" style="padding:5px 10px;">12H</button>
+              <button class="gs-sub-btn" data-hrs="24" onclick="gsHrrr15Range(24,this)" style="padding:5px 10px;">24H</button>
+              <button class="gs-sub-btn" data-hrs="48" onclick="gsHrrr15Range(48,this)" style="padding:5px 10px;">48H</button>
+              <button class="gs-refresh-btn" onclick="gsRefresh('hrrr15')" title="Re-fetch latest run">Refresh</button>
+            </div>
+          </div>
+          <div id="gsHrrr15Loading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load HRRR 15m data...
+          </div>
+          <div id="gsHrrr15Content" class="hidden">
+            <div id="gsHrrr15Narrative" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div class="stat-row" id="gsHrrr15Kpis" style="margin-bottom:8px;"></div>
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">Temperature and dew point <span class="gs-unit">&deg;F</span></div>
+              <div style="position:relative;height:300px;"><canvas id="gsHrrr15TempChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Wind and gusts <span class="gs-unit">mph</span></div>
+              <div style="position:relative;height:250px;"><canvas id="gsHrrr15WindChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Precipitation rate <span class="gs-unit">in/hr</span></div>
+              <div style="position:relative;height:200px;"><canvas id="gsHrrr15PrecipChart"></canvas></div>
+            </div>
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div style="padding:10px 14px;border-bottom:1px solid var(--border);">
+                <span class="panel-title">15-minute data table</span>
+              </div>
+              <div id="gsHrrr15Table" style="overflow-x:auto;max-height:400px;overflow-y:auto;"></div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; HRRR Sub-Hourly / HRRR (NOAA)
+          </div>
+        </div>
+
+        <!-- ======== RTMA ======== -->
+        <div id="gs-panel-rtma" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">RTMA rapid update analysis (15-min)</div>
+            <div style="font-size:14px;color:var(--text-dim);">
+              NOAA Real-Time Mesoscale Analysis. 2D-Var assimilation fusing surface/mesonet/buoy obs with model background on 2.5km NDFD grid. Provides &ldquo;actuals now&rdquo; at any coordinate &mdash; no station gaps. 15-min rapid update cadence.
+            </div>
+            <button class="gs-refresh-btn" onclick="gsRefresh('rtma')" title="Re-fetch latest data" style="margin-top:8px;">Refresh</button>
+          </div>
+          <div id="gsRtmaLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load RTMA analysis...
+          </div>
+          <div id="gsRtmaContent" class="hidden">
+            <div id="gsRtmaCurrent" class="card" style="margin-bottom:8px;"></div>
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">RTMA temperature (last 24h)</div>
+              <div style="position:relative;height:240px;"><canvas id="gsRtmaTempChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">RTMA wind (last 24h)</div>
+              <div style="position:relative;height:220px;"><canvas id="gsRtmaWindChart"></canvas></div>
+            </div>
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div style="padding:10px 14px;border-bottom:1px solid var(--border);">
+                <span class="panel-title">RTMA 15-minute history</span>
+              </div>
+              <div id="gsRtmaTable" style="overflow-x:auto;max-height:400px;overflow-y:auto;"></div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; RTMA Rapid Update / RTMA (NOAA)
+          </div>
+        </div>
+
+        <!-- ======== VERIFY: URMA vs HRRR ======== -->
+        <div id="gs-panel-runs" class="gs-panel hidden">
+          <div class="card">
+            <div class="panel-title">Model runs &mdash; when each model runs, how far it reaches, and the run answering you</div>
+            <div id="gsRunsBox"><div class="state-load">Open this view to read the model catalogue.</div></div>
+          </div>
+        </div>
+        <div id="gs-panel-verify" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">Forecast verification &mdash; HRRR + RRFS vs URMA</div>
+            <div style="font-size:14px;color:var(--text-dim);">
+              Compares what HRRR and RRFS forecast, a chosen number of hours ahead, with what URMA analysed for the same hour, over the past 24 hours. URMA is NOAA&rsquo;s analysis of record &mdash; a higher-quality rerun of RTMA with late-arriving observations, issued about 7 hours after the hour it describes. MAE (mean absolute error) is the average size of the miss.
+            </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;">
+              <span style="font-family:var(--font-mono);font-size:var(--fs-micro);letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);">Forecast made</span>
+              <div class="gs-sub-nav" style="margin-bottom:0;" role="group" aria-label="How far ahead the forecast was made">
+                <button type="button" class="gs-sub-btn" aria-pressed="false" onclick="gsVerifyLeadSet(0, this)">Newest run</button>
+                <button type="button" class="gs-sub-btn" aria-pressed="false" onclick="gsVerifyLeadSet(3, this)">3 h before</button>
+                <button type="button" class="gs-sub-btn active" aria-pressed="true" onclick="gsVerifyLeadSet(6, this)">6 h before</button>
+                <button type="button" class="gs-sub-btn" aria-pressed="false" onclick="gsVerifyLeadSet(12, this)">12 h before</button>
+                <button type="button" class="gs-sub-btn" aria-pressed="false" onclick="gsVerifyLeadSet(18, this)">18 h before</button>
+              </div>
+            </div>
+            <button class="gs-refresh-btn" onclick="gsRefresh('verify')" title="Re-fetch latest data" style="margin-top:8px;">Refresh</button>
+          </div>
+          <div id="gsVerifyLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load verification data...
+          </div>
+          <div id="gsVerifyContent" class="hidden">
+            <div id="gsVerifyStats" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div class="card" style="padding:0;margin-bottom:8px;">
+              <div style="padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);" onclick="var b=document.getElementById('gsVerifyTableBody');var c=document.getElementById('gsVerifyTableChev');var h=document.getElementById('gsVerifyTableHint');b.classList.toggle('hidden');c.style.transform=b.classList.contains('hidden')?'':'rotate(90deg)';h.textContent=b.classList.contains('hidden')?'tap to expand':'tap to collapse';">
+                <span id="gsVerifyTableChev" style="font-size:12px;color:var(--accent);transition:transform 0.2s;">&#9654;</span>
+                <span class="panel-title">Hourly verification table</span>
+                <span style="font-size:12px;color:var(--text-muted);margin-left:auto;" id="gsVerifyTableHint">tap to expand</span>
+              </div>
+              <div id="gsVerifyTableBody" class="hidden" style="overflow-x:auto;max-height:500px;overflow-y:auto;">
+                <div id="gsVerifyTable"></div>
+              </div>
+            </div>
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">Temp: forecast vs URMA observed (&deg;F)</div>
+              <div style="position:relative;height:280px;"><canvas id="gsVerifyTempChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Wind: forecast vs URMA observed (mph)</div>
+              <div style="position:relative;height:260px;"><canvas id="gsVerifyWindChart"></canvas></div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; HRRR + RRFS forecasts + URMA analysis-of-record (NOAA)
+          </div>
+        </div>
+
+        <!-- ======== SEVERE ======== -->
+        <div id="gs-panel-severe" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">Severe weather condition search</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:12px;">
+              Uses GribStream&rsquo;s server-side <code>filter</code> expressions to scan 48h of HRRR output. Only timesteps exceeding your thresholds are returned &mdash; no wasted data. Adjust CAPE and gust minimums below.
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);letter-spacing:0.5px;">MIN CAPE (J/kg)</label>
+                <input type="number" id="gsSevCape" value="1000" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text-bright);padding:6px 8px;border-radius:2px;font-family:inherit;font-size:14px;margin-top:3px;">
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);letter-spacing:0.5px;">MIN WIND GUST (m/s)</label>
+                <input type="number" id="gsSevGust" value="20" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text-bright);padding:6px 8px;border-radius:2px;font-family:inherit;font-size:14px;margin-top:3px;">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn" onclick="fetchGsSevere()" style="padding:6px 16px;">SCAN 48H</button>
+              <span style="font-size:14px;color:var(--text-dim);">Filter: CAPE &ge; threshold OR Gusts &ge; threshold</span>
+            </div>
+          </div>
+          <div id="gsSevereLoading" class="card hidden" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Scanning HRRR forecast...
+          </div>
+          <div id="gsSevereContent"></div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; HRRR with server-side expression filtering (NOAA)
+          </div>
+        </div>
+
+        <!-- ======== THUNDER ======== -->
+        <div id="gs-panel-thunder" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">Storm chances &mdash; SPC calibrated guidance</div>
+            <div style="font-size:14px;color:var(--text-dim);">
+              Storm Prediction Center guidance built on the REFS ensemble: the chance of at least one cloud-to-ground lightning strike within about 12 miles of this location, for each hour, each 4-hour window and each outlook day, out to 60 hours. The table adds SPC&rsquo;s calibrated chances of a tornado, severe hail and damaging wind. New runs four times a day. The same guidance is mapped under Forecast Maps &rsaquo; SPC guidance.
+            </div>
+            <button class="gs-refresh-btn" onclick="gsRefresh('thunder')" title="Re-fetch latest run" style="margin-top:8px;">Refresh</button>
+          </div>
+          <div id="gsThunderLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load thunderstorm guidance...
+          </div>
+          <div id="gsThunderContent" class="hidden">
+            <div id="gsThunderKpis" class="stat-row"></div>
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">Chance of a thunderstorm (%)</div>
+              <div style="position:relative;height:240px;"><canvas id="gsThunderChart"></canvas></div>
+              <div class="ts-cap">Each point is the chance during the 1 hour, and during the 4 hours, ending at that time.</div>
+            </div>
+            <div class="card ts-table" style="margin-top:8px;">
+              <div class="panel-title">By 4-hour window and outlook day</div>
+              <div id="gsThunderTable"></div>
+              <div id="gsThunderSevNote" class="ts-cap"></div>
+              <div class="ts-cap">Thunder is the thunderstorm chance for the 4 hours shown; Peak hour is the highest single hour inside them. An outlook day runs from 12 UTC to 12 UTC. Its chance is for the whole day, so it is at least as high as any window in it.</div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; SPC REFS calibrated thunderstorm guidance and SPC GREFS calibrated severe-weather guidance (NOAA Storm Prediction Center). Guidance, not a forecast or a warning.
+          </div>
+        </div>
+
+        <!-- ======== SNOW ODDS ======== -->
+        <div id="gs-panel-odds" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">Snow and ice odds &mdash; National Blend of Models</div>
+            <div style="font-size:14px;color:var(--text-dim);">
+              For this location, hour by hour for about two days and then in 6-hour blocks out to 7 days: the snowfall the blend expects, the range it is likely to fall in, the chance of passing set amounts, the chance of each precipitation type, and ice. Days 1 to 3 are mapped under Forecast Maps &rsaquo; Winter.
+            </div>
+            <button class="gs-refresh-btn" onclick="gsRefresh('odds')" title="Re-fetch latest run" style="margin-top:8px;">Refresh</button>
+          </div>
+          <div id="gsOddsLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load snow and ice odds...
+          </div>
+          <div id="gsOddsContent" class="hidden">
+            <div id="gsOddsKpis" class="stat-row"></div>
+            <div class="card ts-table">
+              <div class="panel-title">By hour, then by 6-hour block</div>
+              <div id="gsOddsTable"></div>
+              <div id="gsOddsNote" class="ts-cap"></div>
+              <div class="ts-cap">Expected is the blend's single best amount for the hour or block, in inches. Range runs from the 10th to the 90th percentile: one time in ten it comes in under the low figure and one time in ten over the high one. The columns headed 0.1 in+ to 4 in+ are the percent chance of at least that much snow within that one hour or block; they cannot be added across rows. Ice is the expected freezing-rain ice in inches. Type is the percent chance that each kind of precipitation is falling at the end of the hour or block, likeliest first.</div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; NOAA National Blend of Models, probabilistic snow, ice and precipitation-type fields. Guidance, not the official forecast.
+          </div>
+        </div>
+
+        <!-- ======== TREND ======== -->
+        <div id="gs-panel-trend" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">Forecast trend &mdash; how the blend has changed</div>
+            <div style="font-size:14px;color:var(--text-dim);">
+              The National Blend of Models forecast for this location as it stands now and as it stood 12, 24 and 48 hours ago, side by side: temperature every three hours for five days, and rain and snow totals for the next three days. A forecast that keeps moving the same way is still settling; one that holds steady has earned more trust.
+            </div>
+            <button class="gs-refresh-btn" onclick="gsRefresh('trend')" title="Re-fetch" style="margin-top:8px;">Refresh</button>
+          </div>
+          <div id="gsTrendLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load the forecast trend...
+          </div>
+          <div id="gsTrendContent" class="hidden">
+            <div id="gsTrendKpis" class="stat-row"></div>
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">Temperature, each version of the forecast (&deg;F)</div>
+              <div style="position:relative;height:260px;"><canvas id="gsTrendChart"></canvas></div>
+              <div class="ts-cap">The thick line is the current forecast. Where the older lines sit above or below it, the forecast has since cooled or warmed.</div>
+            </div>
+            <div class="card ts-table" style="margin-top:8px;">
+              <div class="panel-title">Warmest and coldest of each day, by version</div>
+              <div id="gsTrendTable"></div>
+              <div id="gsTrendNote" class="ts-cap"></div>
+              <div class="ts-cap">Warmest and coldest are the highest and lowest of the three-hourly temperatures in each calendar day, so they can sit a degree or two inside the true high and low. Every version is sampled at the same times. &minus;12 h, &minus;24 h and &minus;48 h are the forecast as it stood that long ago.</div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; NOAA National Blend of Models, current run and the runs available 12, 24 and 48 hours ago.
+          </div>
+        </div>
+
+        <!-- ======== RAP ======== -->
+        <div id="gs-panel-rap" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">RAP &mdash; rapid refresh (13km, hourly)</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
+              NOAA&rsquo;s hourly-cycling mesoscale model for North America. 13km grid, hybrid ensemble-3DVar assimilation ingesting radar, satellite, aircraft &amp; surface obs every hour. Key input to NBM. Forecasts to 51h. Best for: aviation, convective initiation, frontal passages, renewable energy ramps.
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="gs-sub-btn active" onclick="gsRapRange(18,this)" style="padding:5px 10px;">18H</button>
+              <button class="gs-sub-btn" onclick="gsRapRange(36,this)" style="padding:5px 10px;">36H</button>
+              <button class="gs-sub-btn" onclick="gsRapRange(51,this)" style="padding:5px 10px;">51H</button>
+              <button class="gs-refresh-btn" onclick="gsRefresh('rap')" title="Re-fetch latest run">Refresh</button>
+            </div>
+          </div>
+          <div id="gsRapLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load RAP data...
+          </div>
+          <div id="gsRapContent" class="hidden">
+            <!-- Current snapshot grid -->
+            <div id="gsRapCurrentGrid" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div id="gsRapNarrative" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <!-- Charts -->
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">Temperature &amp; dewpoint (&deg;F)</div>
+              <div style="position:relative;height:260px;"><canvas id="gsRapTempChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Wind speed &amp; gusts (mph)</div>
+              <div style="position:relative;height:240px;"><canvas id="gsRapWindChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Precipitation (in) &amp; visibility (mi)</div>
+              <div style="position:relative;height:220px;"><canvas id="gsRapPrecipChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">CAPE (J/kg) &amp; reflectivity (dBZ)</div>
+              <div style="position:relative;height:220px;"><canvas id="gsRapSevereChart"></canvas></div>
+            </div>
+            <!-- Hourly table -->
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div onclick="toggleRapTable(this)" style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);">
+                <span id="gsRapTableChev" style="font-size:12px;color:var(--accent);transition:transform 0.2s;">&#9654;</span>
+                <span class="panel-title">RAP hourly data table</span>
+                <span style="font-size:12px;color:var(--text-muted);margin-left:auto;" id="gsRapTableHint">tap to expand</span>
+              </div>
+              <div id="gsRapTableBody" class="hidden" style="overflow-x:auto;max-height:500px;overflow-y:auto;">
+                <div id="gsRapTable"></div>
+              </div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; RAP (NOAA)<br>
+            13km resolution, hourly cycling. Surface/near-surface parameters converted to imperial.
+          </div>
+        </div>
+
+        <!-- ======== RRFS ======== -->
+        <div id="gs-panel-rrfs" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">RRFS &mdash; rapid refresh forecast system (3km)</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
+              NOAA&rsquo;s next-gen storm-scale model replacing HRRR &amp; RAP. FV3 dynamical core, 3km convection-allowing, hourly cycling with radar/satellite/aircraft assimilation. Unified North America domain. Forecasts to 84h. <span style="color:var(--warn);">EXPERIMENTAL</span> &mdash; 15-day archive, may change without notice. Best for: severe storms, lightning, hail, updraft helicity, aviation ceilings.
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="gs-sub-btn active" onclick="gsRrfsRange(24,this)" style="padding:5px 10px;">24H</button>
+              <button class="gs-sub-btn" onclick="gsRrfsRange(48,this)" style="padding:5px 10px;">48H</button>
+              <button class="gs-sub-btn" onclick="gsRrfsRange(84,this)" style="padding:5px 10px;">84H</button>
+              <button class="gs-refresh-btn" onclick="gsRefresh('rrfs')" title="Re-fetch latest run">Refresh</button>
+            </div>
+          </div>
+          <div id="gsRrfsLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load RRFS data...
+          </div>
+          <div id="gsRrfsContent" class="hidden">
+            <div id="gsRrfsCurrentGrid" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div id="gsRrfsNarrative" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">Temperature &amp; dewpoint (&deg;F)</div>
+              <div style="position:relative;height:260px;"><canvas id="gsRrfsTempChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Wind speed &amp; gusts (mph)</div>
+              <div style="position:relative;height:240px;"><canvas id="gsRrfsWindChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Precipitation (in) &amp; visibility (mi)</div>
+              <div style="position:relative;height:220px;"><canvas id="gsRrfsPrecipChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">CAPE &amp; reflectivity</div>
+              <div style="position:relative;height:220px;"><canvas id="gsRrfsCapeChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Severe: helicity &bull; lightning &bull; echo tops</div>
+              <div style="position:relative;height:220px;"><canvas id="gsRrfsSevereChart"></canvas></div>
+            </div>
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div onclick="toggleRrfsTable(this)" style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);">
+                <span id="gsRrfsTableChev" style="font-size:12px;color:var(--accent);transition:transform 0.2s;">&#9654;</span>
+                <span class="panel-title">RRFS hourly data table</span>
+                <span style="font-size:12px;color:var(--text-muted);margin-left:auto;" id="gsRrfsTableHint">tap to expand</span>
+              </div>
+              <div id="gsRrfsTableBody" class="hidden" style="overflow-x:auto;max-height:500px;overflow-y:auto;">
+                <div id="gsRrfsTable"></div>
+              </div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; RRFS (NOAA) &mdash; EXPERIMENTAL<br>
+            3km convection-allowing, FV3 core. Replaces HRRR/RAP. Imperial units. 15-day archive window.
+          </div>
+        </div>
+
+        <!-- ======== AIFS ======== -->
+        <div id="gs-panel-aifs" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">AIFS &mdash; ECMWF AI forecast system</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
+              ECMWF&rsquo;s machine-learning weather model, trained on ERA5 reanalysis. Runs on ECMWF&rsquo;s GPU cluster at 0.25&deg; resolution (25km). Produces 15-day forecasts in seconds vs hours for IFS. Uses graph neural networks to learn atmospheric dynamics directly from data. Competitive with IFS on many metrics, especially in the tropics and for medium-range.
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="gs-sub-btn active" onclick="gsAifsRange(5,this)" style="padding:5px 10px;">5D</button>
+              <button class="gs-sub-btn" onclick="gsAifsRange(10,this)" style="padding:5px 10px;">10D</button>
+              <button class="gs-sub-btn" onclick="gsAifsRange(15,this)" style="padding:5px 10px;">15D</button>
+              <button class="gs-refresh-btn" onclick="gsRefresh('aifs')" title="Re-fetch latest run">Refresh</button>
+            </div>
+          </div>
+          <div id="gsAifsLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load AIFS data...
+          </div>
+          <div id="gsAifsContent" class="hidden">
+            <div id="gsAifsSnapshot" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div id="gsAifsDailySummary" class="card" style="margin-bottom:8px;padding:0;"></div>
+            <div id="gsAifsNarrative" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">Temperature &amp; dewpoint (&deg;F)</div>
+              <div style="position:relative;height:260px;"><canvas id="gsAifsTempChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Wind speed (mph)</div>
+              <div style="position:relative;height:240px;"><canvas id="gsAifsWindChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Precipitation (in) &amp; cloud cover (%)</div>
+              <div style="position:relative;height:220px;"><canvas id="gsAifsPrecipChart"></canvas></div>
+            </div>
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div onclick="toggleAifsTable(this)" style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);">
+                <span id="gsAifsTableChev" style="font-size:12px;color:var(--accent);transition:transform 0.2s;">&#9654;</span>
+                <span class="panel-title">AIFS data table</span>
+                <span style="font-size:14px;color:var(--text-muted);margin-left:auto;" id="gsAifsTableHint">tap to expand</span>
+              </div>
+              <div id="gsAifsTableBody" class="hidden" style="overflow-x:auto;max-height:500px;overflow-y:auto;">
+                <div id="gsAifsTable"></div>
+              </div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; ECMWF AIFS (Artificial Intelligence Forecast System)<br>
+            0.25&deg; global, 6h steps, 15-day range. Imperial units.
+          </div>
+        </div>
+
+        <!-- ======== GRAPHCAST ======== -->
+        <div id="gs-panel-graphcast" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">AIGFS &mdash; NOAA operational GraphCast</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
+              NOAA&rsquo;s operational AI Global Forecast System, built on Google DeepMind&rsquo;s GraphCast. It replaced the experimental GraphCastGFS feed, which stopped on May 5, 2026. Four runs a day, 6-hour steps to 16 days, 0.25&deg; grid. Temperature and wind are shown here.
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="gs-sub-btn active" onclick="gsGraphcastRange(5,this)" style="padding:5px 10px;">5D</button>
+              <button class="gs-sub-btn" onclick="gsGraphcastRange(10,this)" style="padding:5px 10px;">10D</button>
+              <button class="gs-sub-btn" onclick="gsGraphcastRange(16,this)" style="padding:5px 10px;">16D</button>
+              <button class="gs-refresh-btn" onclick="gsRefresh('graphcast')" title="Re-fetch latest run">Refresh</button>
+            </div>
+          </div>
+          <div id="gsGraphcastLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load AIGFS data...
+          </div>
+          <div id="gsGraphcastContent" class="hidden">
+            <div id="gsGraphcastSnapshot" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">Temperature (&deg;F)</div>
+              <div style="position:relative;height:260px;"><canvas id="gsGraphcastTempChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Wind speed (mph)</div>
+              <div style="position:relative;height:240px;"><canvas id="gsGraphcastWindChart"></canvas></div>
+            </div>
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div onclick="toggleGraphcastTable(this)" style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);">
+                <span id="gsGraphcastTableChev" style="font-size:12px;color:var(--accent);transition:transform 0.2s;">&#9654;</span>
+                <span class="panel-title">AIGFS data table</span>
+                <span style="font-size:14px;color:var(--text-muted);margin-left:auto;" id="gsGraphcastTableHint">tap to expand</span>
+              </div>
+              <div id="gsGraphcastTableBody" class="hidden" style="overflow-x:auto;max-height:500px;overflow-y:auto;">
+                <div id="gsGraphcastTable"></div>
+              </div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; NOAA AIGFS surface (GraphCast-based). 0.25&deg; global, 6-hour steps, 16-day range. Imperial units.
+          </div>
+        </div>
+
+        <!-- ======== FOURCASTNET ======== -->
+        <div id="gs-panel-fourcast" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">FourCastNet v2 &mdash; CIRA AIWP run</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
+              NVIDIA&rsquo;s FourCastNet v2-small, run by CIRA and NOAA GSL from GFS analyses (the AIWP archive). NOAA&rsquo;s own FourCastNetGFS feed stopped on March 1, 2026. Two runs a day, 6-hour steps to 10 days, 0.25&deg; grid. This is a research feed and can lag; check the run time shown with the data.
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="gs-sub-btn active" onclick="gsFourcastRange(5,this)" style="padding:5px 10px;">5D</button>
+              <button class="gs-sub-btn" onclick="gsFourcastRange(10,this)" style="padding:5px 10px;">10D</button>
+              <button class="gs-refresh-btn" onclick="gsRefresh('fourcast')" title="Re-fetch latest run">Refresh</button>
+            </div>
+          </div>
+          <div id="gsFourcastLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">Fetch a location to load FourCastNet data...</div>
+          <div id="gsFourcastContent" class="hidden">
+            <div id="gsFourcastSnapshot" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div id="gsFourcastDailySummary" class="card" style="margin-bottom:8px;padding:0;"></div>
+            <div class="card" style="padding:10px;"><div class="panel-title">Temperature (&deg;F)</div><div style="position:relative;height:260px;"><canvas id="gsFourcastTempChart"></canvas></div></div>
+            <div class="card" style="padding:10px;margin-top:8px;"><div class="panel-title">Wind speed (mph)</div><div style="position:relative;height:240px;"><canvas id="gsFourcastWindChart"></canvas></div></div>
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div onclick="toggleFourcastTable(this)" style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);">
+                <span id="gsFourcastTableChev" style="font-size:12px;color:var(--accent);transition:transform 0.2s;">&#9654;</span>
+                <span class="panel-title">FourCastNet data table</span>
+                <span style="font-size:14px;color:var(--text-muted);margin-left:auto;" id="gsFourcastTableHint">tap to expand</span>
+              </div>
+              <div id="gsFourcastTableBody" class="hidden" style="overflow-x:auto;max-height:500px;overflow-y:auto;"><div id="gsFourcastTable"></div></div>
+            </div>
+          </div>
+          <div class="source-note">Source: GribStream.com &mdash; AIWP FourCastNet v2-small (0.25&deg;, GFS-initialized, CIRA / NOAA GSL). Imperial units.</div>
+        </div>
+
+        <!-- ======== NBM PROBS ======== -->
+        <div id="gs-panel-nbm" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">NBM probabilistic guidance</div>
+            <div style="font-size:14px;color:var(--text-dim);">
+              NOAA National Blend of Models. Statistically calibrated blend of GFS, HRRR, RAP, GEFS, ECMWF IFS and more, bias-corrected against URMA. 2.5km CONUS, hourly updates, 264h range. Outputs deterministic fields + probabilities (thunderstorm %, precip type, exceedance).
+            </div>
+            <button class="gs-refresh-btn" onclick="gsRefresh('nbm')" title="Re-fetch latest run" style="margin-top:8px;">Refresh</button>
+          </div>
+          <div id="gsNbmLoading" class="card" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load NBM data...
+          </div>
+          <div id="gsNbmContent" class="hidden">
+            <div id="gsNbmSnapshot" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div id="gsNbmDailySummary" class="card" style="margin-bottom:8px;padding:0;"></div>
+            <div id="gsNbmNarrative" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div class="card" style="padding:10px;">
+              <div class="panel-title">NBM temperature (&deg;F)</div>
+              <div style="position:relative;height:240px;"><canvas id="gsNbmTempChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Thunderstorm probability (%)</div>
+              <div style="position:relative;height:220px;"><canvas id="gsNbmTstmChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">Precipitation</div>
+              <div style="position:relative;height:220px;"><canvas id="gsNbmPrecipChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-top:8px;">
+              <div class="panel-title">NBM wind &amp; gusts (mph)</div>
+              <div style="position:relative;height:220px;"><canvas id="gsNbmWindChart"></canvas></div>
+            </div>
+            <div class="card" style="margin-top:8px;padding:0;overflow-x:auto;">
+              <div style="padding:10px 14px;border-bottom:1px solid var(--border);">
+                <span class="panel-title">NBM hourly data</span>
+              </div>
+              <div id="gsNbmTable" style="overflow-x:auto;max-height:400px;overflow-y:auto;"></div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; NBM CONUS (NOAA NWS)
+          </div>
+        </div>
+
+        <!-- ======== SOUNDING ======== -->
+        <div id="gs-panel-sounding" class="gs-panel hidden">
+          <div class="card" style="margin-bottom:8px;padding:10px 14px;">
+            <div class="panel-title">Atmospheric sounding profile</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
+              HRRR hourly: a full sounding every 25 mb for any of the next 48 hours, with parcels, shear, composites, winter fields and analogs. RAP and GFS: the simpler profile at eight standard levels.
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+              <span style="font-size:13px;color:var(--text-muted);margin-right:4px;">MODEL:</span>
+              <button class="gs-sub-btn active" onclick="gsSoundingModel('hrrr',this)" style="padding:5px 10px;">HRRR hourly</button>
+              <button class="gs-sub-btn" onclick="gsSoundingModel('rap',this)" style="padding:5px 10px;">RAP</button>
+              <button class="gs-sub-btn" onclick="gsSoundingModel('gfs',this)" style="padding:5px 10px;">GFS</button>
+              <button class="gs-refresh-btn" onclick="gsRefresh('sounding')" title="Re-fetch latest run">Refresh</button>
+            </div>
+          </div>
+          <div id="sndHrrr"></div>
+          <div id="gsSoundingLoading" class="card hidden" style="color:var(--text-dim);text-align:center;padding:30px;">
+            Fetch a location to load sounding data...
+          </div>
+          <div id="gsSoundingContent" class="hidden">
+            <div id="gsSoundingAssessment" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div id="gsSoundingIndices" class="card" style="margin-bottom:8px;padding:14px;"></div>
+            <div class="card" style="padding:10px;margin-bottom:8px;">
+              <div class="panel-title">Temperature &amp; dewpoint profile</div>
+              <div style="position:relative;height:350px;"><canvas id="gsSoundingProfileChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:10px;margin-bottom:8px;">
+              <div class="panel-title">Wind profile (hodograph)</div>
+              <div style="position:relative;height:310px;"><canvas id="gsSoundingWindChart"></canvas></div>
+            </div>
+            <div class="card" style="padding:0;overflow-x:auto;">
+              <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:15px;letter-spacing:1.5px;color:var(--accent);">LEVEL DATA</div>
+              <div style="overflow-x:auto;"><div id="gsSoundingTable"></div></div>
+            </div>
+          </div>
+          <div class="source-note">
+            Source: GribStream.com &mdash; Pressure-level data from selected model.<br>
+            <span id="sndStdNote" class="hidden">Standard levels: 1000, 925, 850, 700, 500, 300, 250, 200 mb. </span>Indices computed on this device.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CLIMATE SECTION -->
+    <div id="section-climate" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label">Daily climate report (CLI)<button type="button" class="gs-refresh-btn" onclick="if(currentLat&&currentLon)fetchCLI(currentLat,currentLon)">Refresh</button></h2>
+        <div id="cliContainer">
+          <div class="card" style="color:var(--text-dim);text-align:center;padding:30px;">Loading CLI product...</div>
+        </div>
+        <h2 class="section-label" style="margin-top:24px;">Yesterday in detail</h2>
+        <div id="climateContainer">
+          <div class="card" style="color:var(--text-dim);text-align:center;padding:30px;">Loading climate data...</div>
+        </div>
+      </div>
+      <div class="source-line" id="climateSource"></div>
+    </div>
+
+    <!-- KALSHI SECTION -->
+    <div id="section-kalshi" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label">Kalshi settlement data<button type="button" class="gs-refresh-btn" onclick="if(window._wethrStation)fetchWethr(window._wethrStation)">Refresh</button></h2>
+        <div id="kalshiLive" class="card hidden" style="padding:10px 14px;margin-bottom:8px;border-left:3px solid #FB923C;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span id="kalshiLiveDot" style="width:8px;height:8px;border-radius:50%;background:#F87171;display:inline-block;"></span>
+            <span class="panel-title">Live stream</span>
+            <span id="kalshiLiveStation" style="font-size:13px;color:var(--text-dim);"></span>
+            <span id="kalshiLiveTime" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>
+          </div>
+          <div id="kalshiLiveData" style="font-size:14px;color:var(--text-soft);line-height:1.8;"></div>
+          <div id="kalshiLiveLog" style="font-size:12px;color:var(--text-muted);max-height:150px;overflow-y:auto;margin-top:6px;border-top:1px solid var(--border);padding-top:6px;"></div>
+        </div>
+        <div id="kalshiContainer">
+          <div class="card" style="color:var(--text-dim);text-align:center;padding:30px;">Set Wethr.net API key and fetch a supported Kalshi station to load market data.</div>
+        </div>
+        <div class="source-note">
+          Source: wethr.net API v2 &mdash; observations, running high and low, model and NWS forecasts, precipitation. The current-temperature range, crossover, model highs and lows and pacing are worked out in this app from those answers.<br>
+          Supports 27 US Kalshi temperature market stations. API key required (Professional tier).
+        </div>
+      </div>
+    </div>
+
+    <!-- AFD SECTION -->
+    <div id="section-afd" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label">Forecast discussion<span class="sec-age" data-age="afd"></span></h2>
+        <div class="afd-bar">
+          <div class="afd-meta" id="afdMeta"></div>
+          <div class="afd-tools">
+            <label for="afdVersion" class="sr-only">Issuance</label>
+            <select id="afdVersion" disabled></select>
+            <button type="button" class="btn btn-ghost btn-sm" id="afdRawBtn" aria-pressed="false">Original text</button>
+            <a id="afdLink" href="https://forecast.weather.gov/" target="_blank" rel="noopener">Open on weather.gov</a>
+          </div>
+        </div>
+        <nav class="afd-nav" id="afdNav" aria-label="Discussion sections"></nav>
+        <div id="afdSections"><div class="card state-load">Open a location to load its discussion.</div></div>
+        <pre class="afd-text hidden" id="afdText"></pre>
+      </div>
+    </div>
+
+        <div class="source">
+          Forecasts, observations and alerts: National Weather Service (api.weather.gov). Outlooks: SPC, WPC and CPC.
+          Model guidance: GribStream. Air quality and climate history: Open-Meteo. This is an independent display of public data, not an official NWS product.
+        </div>
+      </div><!-- /#resultsEl -->
+
+      <!-- ══════════════ OPENING PAGE: the US right now (v3.42.0) ══════════════ -->
+      <div id="homeEl" class="home hidden">
+        <div class="section">
+          <h2 class="section-label">United States, right now</h2>
+          <div id="homePick" class="home-pick hidden" role="status">Pick a place first: search above, or tap a city or a star on the map. The tabs then show that place.</div>
+          <div class="card regmap-card usn-card">
+            <div class="regmap-layers usn-bar">
+              <div class="cpc-nav usn-layers" role="group" aria-label="What the map shows"></div>
+              <button type="button" class="gs-refresh-btn" data-usn-refresh="1" title="Fetch the newest of everything on the map">Refresh</button>
+            </div>
+            <div class="regmap-stage usn-stage is-loading" style="aspect-ratio:1000 / 640"><div class="usn-bg"></div><canvas class="usn-temp" width="500" height="320" aria-hidden="true"></canvas><div class="usn-radar" aria-hidden="true"></div><div class="usn-top"></div></div>
+            <div class="regmap-detail" aria-live="polite">Tap a star to open a saved place (the Favorites button shows or hides them). Tap a station, a warning or anywhere else on the map for the report there and a button to open its forecast.</div>
+            <div class="usn-key" aria-label="Key"></div>
+            <div class="usn-status" role="status"></div>
+          </div>
+        </div>
+        <div class="section">
+          <h2 class="section-label">Your places now</h2>
+          <div class="usn-places"></div>
+          <div class="source-note">
+            Radar: NOAA MRMS mosaic. Fronts, highs and lows: Weather Prediction Center coded surface analysis, issued every three hours. Isobars and temperature shading: RAP model, newest hour, through GribStream.com. Station reports: Aviation Weather Center. Warnings: National Weather Service. Each station shows temperature over dew point in &deg;F, a circle filled by how cloudy it is, a wind barb pointing where the wind comes from (a long barb is 10 knots, a short one 5), and RA, SN, TS, FG or the like when something is falling or in the air.
+          </div>
+        </div>
+      </div>
+
+      <div id="emptyEl" class="empty">
+        <div class="empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 16.7"/><path d="m8 20 2-4M13 20l2-4"/></svg>
+        </div>
+        <div class="empty-title">Enter a US location</div>
+        <div class="empty-sub">
+          City and state, ZIP code, or airport identifier.<br>
+          Forecast, hourly, radar, satellite, discussions, SPC/CPC outlooks,
+          model guidance and climate — direct from the weather.gov API.
+        </div>
+        <div class="empty-actions">
+          <button type="button" class="btn" id="emptyGeoBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
+            Use my location
+          </button>
+        </div>
+        <div class="empty-recents" id="emptyRecents"></div>
+      </div>
+
+    </main>
+  </div><!-- /.main -->
+</div><!-- /.app -->
+
+<!-- ══════════════ SETTINGS DRAWER ══════════════ -->
+<div class="drawer-scrim" id="drawerScrim"></div>
+<aside class="drawer" id="settingsDrawer" role="dialog" aria-labelledby="drawerTitle" inert>
+  <div class="drawer-head">
+    <h2 id="drawerTitle">Settings &amp; connections</h2>
+    <button class="btn-icon" id="drawerClose" aria-label="Close settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+    <h3>Appearance</h3>
+    <div class="theme-seg" role="group" aria-label="Appearance"><button type="button" data-theme-set="dark" aria-pressed="true">Dark</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button></div>
+
+    <div class="drawer-note">
+      <b>API keys live in Cloudflare, not in this browser.</b> Each service is switched on by a secret in the
+      Cloudflare dashboard for this site (Settings, then Variables and Secrets), followed by a new deployment.
+    </div>
+    <ul class="src-list" id="serverKeys"><li class="keyrow"><div class="field-hint">Checking the server…</div></li></ul>
+    <div class="field" id="accessCodeField" hidden>
+      <div class="field-head"><label for="accessCodeInput">Access code</label></div>
+      <div class="field-hint">This site is protected by an access code (the APP_PASSCODE secret). Enter it once on each device.</div>
+      <div class="field-row"><input type="password" id="accessCodeInput" autocomplete="current-password"><button class="btn" id="accessCodeBtn">Unlock</button></div>
+      <div class="field-hint" id="accessCodeStatus" style="margin-top:6px;"></div>
+    </div>
+    <div id="legacyKeyFields" hidden>
+    <div class="field">
+      <div class="field-head">
+        <label for="gsTokenInput">GribStream token</label>
+        <span class="gs-status off" id="gsStatus">NO TOKEN</span>
+      </div>
+      <div class="field-hint">Powers every numerical model panel. Free tier at <a href="https://gribstream.com" target="_blank" rel="noopener">gribstream.com</a>.</div>
+      <div class="field-row">
+        <input type="password" id="gsTokenInput" placeholder="Paste API token" autocomplete="off">
+        <button class="btn" id="gsSaveBtn">Save</button>
+        <button class="btn btn-ghost" id="gsTestBtn">Test</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><label for="gsWorkerInput">Proxy worker URL</label></div>
+      <div class="field-hint">Optional. A same-origin Cloudflare Worker that forwards model requests — avoids CORS failures on iPad and keeps your token off third-party relays.</div>
+      <div class="field-row">
+        <input type="text" id="gsWorkerInput" placeholder="https://your-worker.workers.dev" autocomplete="off">
+        <button class="btn btn-ghost" id="gsWorkerBtn">Set</button>
+      </div>
+      <div class="field-hint" id="gsWorkerStatus" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><label for="claudeKeyInput">Anthropic API key</label></div>
+      <div class="field-hint">Enables the chat assistant. Sent from the browser directly to api.anthropic.com — it is visible in devtools and to any script on this page. Scope it to a workspace with a spend limit.</div>
+      <div class="field-row">
+        <input type="password" id="claudeKeyInput" placeholder="sk-ant-..." autocomplete="off">
+        <button class="btn" id="claudeSaveBtn">Save</button>
+      </div>
+      <div class="field-hint" id="claudeKeyStatus" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><label for="wethrKeyInput">wethr.net API key</label></div>
+      <div class="field-hint">Kalshi market data and live station streams. The Markets tab appears when you are within ~2° of a covered station.</div>
+      <div class="field-row">
+        <input type="password" id="wethrKeyInput" placeholder="Paste API key" autocomplete="off">
+        <button class="btn" id="wethrSaveBtn">Save</button>
+      </div>
+      <div class="field-hint" id="wethrKeyStatus" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><label for="windyCamsKeyInput">Windy Webcams API key</label></div>
+      <div class="field-hint">Powers the Webcams tab. Free at <a href="https://api.windy.com/keys" target="_blank" rel="noopener">api.windy.com/keys</a> &mdash; choose the <b>Webcams</b> product; Map and Point Forecast keys do not work here. Sent only to this app's own server, which calls Windy. Not needed if the server already holds a key. The Maps tab needs no key.</div>
+      <div class="field-row">
+        <input type="password" id="windyCamsKeyInput" placeholder="Paste Webcams API key" autocomplete="off">
+        <button class="btn" id="windyCamsSaveBtn">Save</button>
+      </div>
+      <div class="field-hint" id="windyCamsKeyStatus" style="margin-top:6px;"></div>
+    </div>
+
+    </div>
+    <div class="field">
+      <div class="field-head"><label>Stored data</label></div>
+      <div class="field-hint">Clears your favorites and any keys an older version saved in this browser.</div>
+      <div class="field-row"><button class="btn btn-ghost" id="clearKeysBtn">Clear saved keys and favorites</button></div>
+    </div>
+
+  </div>
+</aside>
+
+<!-- ══════════════ STATUS DRAWER ══════════════ -->
+<aside class="drawer" id="statusDrawer" role="dialog" aria-labelledby="statusTitle" inert>
+  <div class="drawer-head">
+    <h2 id="statusTitle">Data sources</h2>
+    <button class="btn-icon" id="statusClose" aria-label="Close data sources">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+    <h3>Sources</h3>
+    <ul class="src-list" id="statusSources"></ul>
+    <h3>Connections</h3>
+    <ul class="src-list" id="statusKeys"></ul>
+    <h3>This app</h3>
+    <div class="kv-list" id="statusApp"></div>
+    <h3>Errors this session</h3>
+    <ul class="log-list" id="statusLog"></ul>
+  </div>
+</aside>
+
+<!-- ══════════════ OVERLAYS ══════════════ -->
+<div id="hourSoundingModal">
+  <div class="hsm-content">
+    <button class="hsm-close" id="hsmCloseBtn" aria-label="Close">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <div id="hsmBody"></div>
+  </div>
+</div>
+
+<button id="chatFab" style="display:none;" aria-label="Open assistant">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 21l1.9-4.9A8.4 8.4 0 0 1 4 11.5a8.4 8.4 0 0 1 8.5-8.4 8.4 8.4 0 0 1 8.5 8.4Z"/></svg>
+</button>
+
+<div id="chatPanel" class="hidden">
+  <div id="chatHeader">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--violet)"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 21l1.9-4.9A8.4 8.4 0 0 1 4 11.5a8.4 8.4 0 0 1 8.5-8.4 8.4 8.4 0 0 1 8.5 8.4Z"/></svg>
+    <span id="chatModel">Assistant</span>
+    <button class="btn-icon" id="chatCloseBtn" style="margin-left:auto;width:26px;height:26px;" aria-label="Close assistant">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div id="chatMessages" aria-live="polite"></div>
+  <div id="chatOptsRow"><label><input type="checkbox" id="chatPicsToggle" checked> See maps and images</label><span>sends pictures of what is on screen</span></div>
+  <div id="chatOptsRow2" class="chat-opts-row"><label><input type="checkbox" id="chatWebToggle"> Web search</label><span>about 1 cent per search, billed to your API key</span></div>
+  <div id="chatInputRow">
+    <label for="chatInput" class="sr-only">Message the assistant</label>
+    <input type="text" id="chatInput" placeholder="Ask about this location's weather…" autocomplete="off">
+    <button id="chatSendBtn">Send</button>
+  </div>
+</div>
+
+<div id="camModal" role="dialog" aria-modal="true" aria-labelledby="camModalTitle">
+  <div class="cam-modal-content">
+    <div class="cam-modal-head">
+      <h3 id="camModalTitle"></h3>
+      <button type="button" class="hsm-close" id="camModalClose" aria-label="Close webcam">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="cpc-nav" id="camModalTabs" role="group" aria-label="Timelapse range"></div>
+    <div class="cam-player" id="camPlayer"></div>
+    <div class="cam-modal-foot" id="camModalFoot"></div>
+  </div>
+</div>
+
+<div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
+
+<script src="/app.js?v=3.58.0" defer></script>
+</body>
+</html>
