@@ -1,4 +1,4 @@
-/* NWS Terminal edge worker (v3.63.0)
+/* NWS Terminal edge worker (v3.64.0)
    - serves the app shell from static assets with security + cache headers
    - /p/<kind>/...   same-origin read-only proxy for NOAA hosts without CORS
    - /p/gs/...       GribStream POST proxy (keeps the token off third parties)
@@ -7,7 +7,7 @@
    - /api/config     what the server can do for the client
    - /api/health     liveness for uptime checks */
 
-const VERSION = '3.63.0';
+const VERSION = '3.64.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',

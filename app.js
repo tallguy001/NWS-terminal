@@ -7326,7 +7326,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.63.0';
+var APP_VERSION = '3.64.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -13424,18 +13424,18 @@ var HRMAP = (function () {
   function chip(label, on, attrs) { return '<button type="button" class="cpc-nav-btn' + (on ? ' active' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" ' + attrs + '>' + esc(label) + '</button>'; }
   function zoomStep(k, dir) {   // + and -: one rung of the ladder, about the middle of the frame
     var s = state(k); if (!(currentLat && currentLon)) return;
-    if (s.view === 'us') { if (dir > 0) { s.view = 'loc'; s.half = 380; s.off = [0, 0]; show(k); } return; }
+    if (s.view === 'us') { if (dir > 0) { s.view = 'loc'; s.half = 380; s.off = [0, 0]; show(k, true); } return; }
     var h = null, i;
     if (dir > 0) { for (i = 0; i < LADDER.length; i++) if (LADDER[i] < s.half * 0.97 && LADDER[i] >= zmin(s)) { h = LADDER[i]; break; } if (h == null) return; }
-    else { for (i = LADDER.length - 1; i >= 0; i--) if (LADDER[i] > s.half * 1.03 && LADDER[i] <= zmax(s)) { h = LADDER[i]; break; } if (h == null) { if (isSite(s)) return; s.view = 'us'; show(k); return; } }
-    s.half = h; show(k);
+    else { for (i = LADDER.length - 1; i >= 0; i--) if (LADDER[i] > s.half * 1.03 && LADDER[i] <= zmax(s)) { h = LADDER[i]; break; } if (h == null) { if (isSite(s)) return; s.view = 'us'; show(k, true); return; } }
+    s.half = h; show(k, true);
   }
   /* A pinch or drag: what was under p0 ends up under p1, magnified kf (frame units, 1000 by 640). V is the frame it was made on. */
   function moveTo(k, V, p0, p1, kf) {
     var s = state(k); if (!(currentLat && currentLon)) return false;
     var was = V.mpp * W / 2 / MI, half = was / kf;
     if (V.v === 'us') { if (kf < 1.12) return false; half = Math.min(half, zmax(s)); }
-    else if (half > zmax(s) * 1.08 && !isSite(s)) { s.view = 'us'; show(k); return true; }
+    else if (half > zmax(s) * 1.08 && !isSite(s)) { s.view = 'us'; show(k, true); return true; }
     half = clampHalf(s, half); kf = was / half;
     var dx = (p0[0] - W / 2) - (p1[0] - W / 2) / kf, dy = (p0[1] - H / 2) - (p1[1] - H / 2) / kf;
     var c = albers(+currentLon, +currentLat), nx = V.cx + (V.ca * dx + V.sa * dy) * V.mpp, ny = V.cy + (V.sa * dx - V.ca * dy) * V.mpp;
@@ -13443,7 +13443,7 @@ var HRMAP = (function () {
     var ll = invAlbers(nx, ny), lo = Math.max(Math.min(-128, +currentLon), Math.min(Math.max(-64, +currentLon), ll[0])), la = Math.max(Math.min(22, +currentLat), Math.min(Math.max(51, +currentLat), ll[1]));
     if (lo !== ll[0] || la !== ll[1]) { var cl = albers(lo, la); nx = cl[0]; ny = cl[1]; }
     s.view = 'loc'; s.half = half; s.off = [nx - c[0], ny - c[1]]; s.loc = (+currentLat).toFixed(3) + ',' + (+currentLon).toFixed(3);
-    show(k); return true;
+    show(k, true); return true;
   }
   function gestures(k, stage) {
     var g = null, wheel = null;
@@ -13501,7 +13501,7 @@ var HRMAP = (function () {
       '<div class="regmap-bar hr-bar"><button type="button" class="gs-refresh-btn" data-play="1">Play loop</button><input type="range" class="hr-slider" min="0" max="0" value="0" step="1" aria-label="Frame time">' +
       '<span class="hr-time"></span><button type="button" class="gs-refresh-btn" data-refresh="1">Refresh</button><button type="button" class="gs-refresh-btn regmap-save" data-save="1">Save image</button></div>' +
       '<div class="regmap-stage hr-stage" style="aspect-ratio:' + W + ' / ' + H + '"><div class="state-load">Loading imagery…</div></div><div class="regmap-detail" aria-live="polite"></div>' +
-      '<div class="source-note hr-hint">Zoom with + and −, or pinch. Two fingers move the map, as does dragging with a mouse; the target button re-centres it on your location.</div>';
+      '<div class="source-note hr-hint">Zoom with + and −, or pinch; the picture stays on the map and sharpens when the closer imagery arrives. Two fingers move the map, as does dragging with a mouse; the target button re-centres it on your location.</div>';
     el.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null, s = state(k); if (!b) return;
       if (b.hasAttribute('data-b')) { s.base = b.getAttribute('data-b'); show(k); }
@@ -13510,8 +13510,8 @@ var HRMAP = (function () {
       else if (b.hasAttribute('data-s')) { s.site = +b.getAttribute('data-s'); show(k); }
       else if (b.hasAttribute('data-w')) { s.weak = !s.weak; show(k); }
       else if (b.hasAttribute('data-f')) { s.fast = !s.fast; lsSet('hr_fast', s.fast ? '1' : '0'); show(k); }
-      else if (b.hasAttribute('data-v')) { var nv = b.getAttribute('data-v'); if (nv === 'us') s.view = 'us'; else { s.view = 'loc'; s.half = HALF[nv]; } s.off = [0, 0]; show(k); }
-      else if (b.hasAttribute('data-z')) { var z = b.getAttribute('data-z'); if (z === 'home') { s.off = [0, 0]; show(k); } else zoomStep(k, z === 'in' ? 1 : -1); }
+      else if (b.hasAttribute('data-v')) { var nv = b.getAttribute('data-v'); if (nv === 'us') s.view = 'us'; else { s.view = 'loc'; s.half = HALF[nv]; } s.off = [0, 0]; show(k, true); }
+      else if (b.hasAttribute('data-z')) { var z = b.getAttribute('data-z'); if (z === 'home') { s.off = [0, 0]; show(k, true); } else zoomStep(k, z === 'in' ? 1 : -1); }
       else if (b.hasAttribute('data-play')) { if (s.timer || s.loading) stop(k, true); else play(k); }
       else if (b.hasAttribute('data-refresh')) { meta = {}; liveBox = null; show(k); }
       else if (b.hasAttribute('data-save')) saveImage(k);
@@ -13528,9 +13528,36 @@ var HRMAP = (function () {
     el.querySelector('[data-play]').textContent = s.timer ? 'Pause' : s.loading ? (s.prog || 'Loading…') : 'Play loop';
   }
 
-  function show(k) {
+  /* Keeping the picture through a zoom (v3.64.0). The frame the imagery was drawn for and the new frame are both plain
+     views of one projection, so what is on the map can be put exactly where it belongs in the new frame by turning,
+     scaling and shifting it. toNew() takes a point of the old frame to the new one; cssFor() is that as a CSS transform. */
+  function toNew(Vo, Vn, x, y) {
+    var dx = x - W / 2, dy = y - H / 2, X = Vo.cx + (Vo.ca * dx + Vo.sa * dy) * Vo.mpp, Y = Vo.cy + (Vo.sa * dx - Vo.ca * dy) * Vo.mpp, ex = (X - Vn.cx) / Vn.mpp, ny = (Y - Vn.cy) / Vn.mpp;
+    return [W / 2 + Vn.ca * ex + Vn.sa * ny, H / 2 + Vn.sa * ex - Vn.ca * ny];
+  }
+  function cssFor(Vo, Vn) {
+    var p0 = toNew(Vo, Vn, 0, 0), p1 = toNew(Vo, Vn, W, 0), p2 = toNew(Vo, Vn, 0, H);
+    return 'translate(' + (p0[0] / W * 100).toFixed(4) + '%,' + (p0[1] / H * 100).toFixed(4) + '%) matrix(' + [(p1[0] - p0[0]) / W, (p1[1] - p0[1]) / W, (p2[0] - p0[0]) / H, (p2[1] - p0[1]) / H].map(function (v) { return v.toFixed(6); }).join(',') + ',0,0)';
+  }
+  function stageParts(stage) { return Array.prototype.filter.call(stage.children, function (c) { return !/hr-zoom|hr-legend|map-pop|state-load/.test(c.className && c.className.baseVal != null ? c.className.baseVal : c.className || ''); }); }
+  function preview(stage, Vo, Vn) {   // at once, before anything is fetched: the whole drawn frame goes where the new one will be
+    var t = cssFor(Vo, Vn); stageParts(stage).forEach(function (c) { c.style.transformOrigin = '0 0'; c.style.transform = t; });
+  }
+  /* The imagery on the map, lifted out before the frame is redrawn and set down in the new one. A second zoom before the
+     sharper imagery has arrived carries the same imagery on, still measured from the frame it was drawn for. */
+  function carryOf(k, stage, Vold) {
+    var s = state(k), box = stage.querySelector('.hr-layers'), old = stage.querySelector('.hr-carry'), inner = null;
+    if (box && box.firstChild) { s.carryV = Vold; inner = document.createElement('div'); inner.className = 'hr-carry-in'; box.parentNode.removeChild(box); box.className = 'hr-old'; inner.appendChild(box); }
+    else if (old && old.firstChild && s.carryV) inner = old.firstChild;
+    if (!inner) { s.carryV = null; return null; }
+    var c = document.createElement('div'); c.className = 'hr-carry'; inner.style.transform = cssFor(s.carryV, s.V); c.appendChild(inner); return c;
+  }
+  function dropCarry(k, stage) { var c = stage && stage.querySelector('.hr-carry'); if (c) c.parentNode.removeChild(c); state(k).carryV = null; }
+
+  function show(k, quiet) {   // quiet: only the frame changed (a zoom or a move), so the picture is kept while the new one is fetched
     var s = state(k), el = build(k); if (!el) return;
-    stop(k, false);
+    var st0 = el.querySelector('.hr-stage'), keep = quiet && s.V && s.shown && st0 && (st0.querySelector('.hr-layers') || st0.querySelector('.hr-carry')) ? { V: s.V, loop: !!s.timer, at: s.frames[s.idx] ? s.frames[s.idx].at : null } : null;
+    if (!(keep && keep.loop)) stop(k, false);   // a loop keeps playing through a zoom
     /* v3.54.0: each newly loaded city opens on Site radar with Lightning on, framed 240 miles wide on the city. Whatever is
        chosen after that is kept for as long as that city stays loaded. A city more than 150 miles from any radar opens on
        the national mosaic instead, since one radar's scan would not reach it. */
@@ -13547,17 +13574,18 @@ var HRMAP = (function () {
     if (isSite(s) && Math.sqrt(s.off[0] * s.off[0] + s.off[1] * s.off[1]) > 240000) s.off = [0, 0];   // one radar reaches about 140 miles: a frame moved further than that goes back to the location
     s.V = viewOf(s); s.shown = true; bar(k);
     var stage = el.querySelector('.hr-stage'), my = ++s.seq;
-    if (stage.querySelector('svg')) stage.classList.add('is-loading');
+    if (keep) { stage.classList.remove('is-loading'); preview(stage, keep.V, s.V); } else if (stage.querySelector('svg')) stage.classList.add('is-loading');
     s.liveErr = '';
     Promise.all([frameTimes(s), REGMAP.geo(), overlay(), BASEMAP.load(), s.ltg ? ltgTimes().catch(function () { return null; }) : null,
                  s.ltg && liveOn(s.V) ? liveFlashes(s.V).catch(function (e) { s.liveErr = (e && e.message) || 'no answer'; return null; }) : null]).then(function (res) {
       if (my !== s.seq) return;
-      s.frames = res[0]; s.idx = s.frames.length - 1;
+      var loopOn = !!(keep && keep.loop && s.timer);   // the loop in hand keeps its own frames until their sharper copies are in
+      if (!loopOn) { s.frames = res[0]; s.idx = s.frames.length - 1; if (keep && keep.at != null) s.frames.forEach(function (f, i) { if (f.at === keep.at) s.idx = i; }); }
       s.ltgDown = s.ltg && !res[4]; s.frames.forEach(function (f) { f.ltg = s.ltg && res[4] ? ltgFor(res[4], f.at) : null; });
       s.live = res[5] || null; liveSlots(s.frames, s.live);
-      frame(k, res[1], res[2]);
+      frame(k, res[1], res[2], keep);
       var sl = el.querySelector('.hr-slider'); sl.max = String(s.frames.length - 1); sl.value = String(s.idx);
-      still(k);
+      if (loopOn) reloop(k); else still(k, !!keep);
     }).catch(function (e) {
       if (my !== s.seq) return;
       stage.classList.remove('is-loading');
@@ -13567,7 +13595,7 @@ var HRMAP = (function () {
   }
 
   /* the fixed parts: background, boundary lines, labels, title, legend */
-  function frame(k, geo, ov) {
+  function frame(k, geo, ov, kept) {   // kept: the frame the imagery on the map was drawn for, when it is to be carried over (v3.64.0)
     var s = state(k), el = document.getElementById('hrMap-' + k), stage = el.querySelector('.hr-stage'), V = s.V, proj = V.proj, b = baseOf(s.base), sat = !!b[3], one = isSite(s) ? siteOf(s) : null;
     var F = "Inter, system-ui, sans-serif", M = F, lat0 = +currentLat, lon0 = +currentLon, latC = V.latC, lonC = V.lonC, hf = V.half || 380,
         dx = Math.max(2, hf / (69 * Math.max(0.3, Math.cos(latC * D2R))) * 1.35 + 1.2), dy = Math.max(1.5, hf / 69 * 1.35 + 0.8);
@@ -13658,7 +13686,9 @@ var HRMAP = (function () {
     var zoom = '<div class="hr-zoom" role="group" aria-label="Zoom">' + zb('in', 'Zoom in', '+', canIn) + zb('out', V.v !== 'us' && !isSite(s) && s.half >= 590 ? 'Zoom out to the national view' : 'Zoom out', '\u2212', canOut) +
       (moved ? zb('home', 'Centre on ' + esc((((document.getElementById('locName') || {}).textContent) || 'the loaded location').split(',')[0]), '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"></circle><circle cx="12" cy="12" r="1.6" style="fill:currentColor"></circle><path d="M12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22"></path></svg>', true) : '') + '</div>';
     stage.classList.toggle('can-move', V.v !== 'us');
+    var carry = kept ? carryOf(k, stage, kept.V) : null; if (!carry) s.carryV = null;   // v3.64.0
     stage.innerHTML = bg + '<div class="hr-layers"></div>' + o.join('') + zoom + (one ? '<img class="hr-legend" alt="Colour key' + (s.base === 'site' ? ', dBZ' : '') + '" src="' + esc(legendUrl(one.id, b[4])) + '">' : '');
+    if (carry) stage.insertBefore(carry, stage.querySelector('.hr-layers'));
     stage.classList.remove('is-loading');
   }
 
@@ -13883,14 +13913,17 @@ var HRMAP = (function () {
         ' Bolts mark lightning picked up by the ground networks during the 15 minutes named in the title box, a period that ends roughly 10 to 25 minutes before now. A bigger bolt means more strikes.' + (s.liveErr ? ' Live flashes did not load (' + s.liveErr + ').' : '')) +
       (s.ltg && !dark && st1 ? ' This is one radar’s picture, so lightning is drawn only within ' + SITE_REACH_MI + ' miles of it; the Radar view shows it everywhere.' : '');
   }
-  function still(k) {   // one frame at full resolution
+  function still(k, quiet) {   // one frame at full resolution; quiet when it follows a zoom or a move (v3.64.0)
     var s = state(k), el = document.getElementById('hrMap-' + k), box = el && el.querySelector('.hr-layers'), f = s.frames[s.idx]; if (!box || !f) return;
     var stage = el.querySelector('.hr-stage'), my = s.seq, tok = s.tok = (s.tok || 0) + 1;
-    stage.classList.add('is-loading');
-    s.curLtg = null;
+    if (!quiet) { stage.classList.add('is-loading'); s.curLtg = null; }
+    var olds = stage.querySelectorAll('.hr-carry .hr-old > .hr-frame');   // a carried loop, stopped: it shows the frame asked for
+    if (olds.length === s.frames.length) for (var q = 0; q < olds.length; q++) olds[q].style.visibility = q === s.idx ? 'visible' : 'hidden';
     load(k, f, [W * 2, H * 2], true).then(function (r) {
       if (my !== s.seq || tok !== s.tok) return;
-      stage.classList.remove('is-loading'); box.innerHTML = ''; r.els.forEach(function (x) { box.appendChild(x); }); s.cur = r.els; s.curLtg = r.ltg; label(k);
+      stage.classList.remove('is-loading');
+      if (!r.els.length && stage.querySelector('.hr-carry')) { label(k); el.querySelector('.regmap-detail').textContent = 'The sharper picture for this frame did not load, so the one on the map is the earlier one, magnified. Use Refresh to try again.'; return; }
+      dropCarry(k, stage); box.innerHTML = ''; r.els.forEach(function (x) { box.appendChild(x); }); s.cur = r.els; s.curLtg = r.ltg; label(k);
       if (r.failed) el.querySelector('.regmap-detail').textContent = 'Part of this frame did not load. Use Refresh to try again.';
     });
     label(k);
@@ -13905,12 +13938,30 @@ var HRMAP = (function () {
     s.prog = 'Loading 0 of ' + s.frames.length;
     Promise.all([worker(), worker(), worker(), worker()]).then(function () { return sets0; }).then(function (sets) {
       if (my !== s.seq || !s.loading) return;
-      s.loading = false; s.prog = ''; box.innerHTML = '';
-      sets.forEach(function (r) { var g = document.createElement('div'); g.className = 'hr-frame'; g.style.visibility = 'hidden'; r.els.forEach(function (im) { g.appendChild(im); }); box.appendChild(g); });
-      var tick = function () { var kids = box.children; for (var i = 0; i < kids.length; i++) kids[i].style.visibility = i === s.idx ? 'visible' : 'hidden'; s.cur = sets[s.idx].els; s.curLtg = sets[s.idx].ltg; label(k); };
-      s.idx = 0; tick(); var hold = 0;
-      s.timer = setInterval(function () { if (s.idx === s.frames.length - 1 && hold++ < 3) return; hold = 0; s.idx = (s.idx + 1) % s.frames.length; tick(); }, s.frames.length > 8 ? 280 : 450);
+      s.loading = false; s.prog = ''; runLoop(k, box, sets, 0);
       bar(k);
+    });
+  }
+  function runLoop(k, box, sets, i0) {
+    var s = state(k); if (s.timer) clearInterval(s.timer);
+    dropCarry(k, box.parentNode); box.innerHTML = '';
+    sets.forEach(function (r) { var g = document.createElement('div'); g.className = 'hr-frame'; g.style.visibility = 'hidden'; r.els.forEach(function (im) { g.appendChild(im); }); box.appendChild(g); });
+    var tick = function () { var kids = box.children; for (var i = 0; i < kids.length; i++) kids[i].style.visibility = i === s.idx ? 'visible' : 'hidden'; s.cur = sets[s.idx].els; s.curLtg = sets[s.idx].ltg; label(k); };
+    s.idx = Math.max(0, Math.min(i0 || 0, sets.length - 1)); tick(); var hold = 0;
+    s.timer = setInterval(function () { if (s.idx === s.frames.length - 1 && hold++ < 3) return; hold = 0; s.idx = (s.idx + 1) % s.frames.length; tick(); }, s.frames.length > 8 ? 280 : 450);
+  }
+  /* v3.64.0: a zoom or a move while a loop plays. The loop keeps running on the frames in hand, magnified, while the same
+     frames are fetched for the new view; when every one is in, they take over at the frame being shown. If any is
+     missing, the magnified loop simply stays. Another zoom, Pause or a change of imagery drops this fetch. */
+  function reloop(k) {
+    var s = state(k), el = document.getElementById('hrMap-' + k), box = el && el.querySelector('.hr-layers'), my = s.seq, frames = s.frames, n = frames.length; if (!box || !n) return;
+    var size = n > 8 ? [1120, 717] : [1400, 896], sets0 = new Array(n), next = 0;
+    var live = function () { return my === s.seq && !!s.timer && s.frames === frames; };
+    var worker = function () { if (!live() || next >= n) return Promise.resolve(); var i = next++; return load(k, frames[i], size).then(function (r) { sets0[i] = r; return worker(); }); };
+    Promise.all([worker(), worker(), worker(), worker()]).then(function () {
+      if (!live()) return;
+      for (var i = 0; i < n; i++) if (!sets0[i] || !sets0[i].els.length) return;
+      runLoop(k, box, sets0, s.idx); bar(k);
     });
   }
   function stop(k, redraw) {
@@ -13922,6 +13973,7 @@ var HRMAP = (function () {
     im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg).replace(/ class="[^"]*"/g, '').replace('<svg ', '<svg width="' + W + '" height="' + H + '" ')); }); }
   function saveImage(k) {
     var s = state(k), el = document.getElementById('hrMap-' + k), svgs = el ? el.querySelectorAll('.hr-stage svg') : [], det = el && el.querySelector('.regmap-detail'); if (svgs.length < 2) return;
+    if (el.querySelector('.hr-carry')) { if (det) det.textContent = 'The sharper picture for this frame is still loading. Save the image again in a moment.'; return; }
     Promise.all([svgImage(svgs[0]), svgImage(svgs[1])]).then(function (v) {
       var cv = document.createElement('canvas'), sc = 2; cv.width = W * sc; cv.height = H * sc; var cx = cv.getContext('2d');
       cx.drawImage(v[0], 0, 0, cv.width, cv.height);
@@ -13939,7 +13991,7 @@ var HRMAP = (function () {
     }).catch(function (e) { if (det) det.textContent = 'The image could not be saved on this browser (' + ((e && e.message) || 'error') + ').'; });
   }
   function leave(k) { if (inst[k]) stop(k, true); }
-  return { show: show, leave: leave, _state: state, _albers: albers, _geom: { albers: albers, invAlbers: invAlbers, usView: function () { return viewOf({ view: 'us' }); }, overlay: overlay }, _ltg: { clip: ltgClip, marks: ltgMarks, pick: ltgFor, tier: ltgTier, slots: liveSlots, read: liveRead, time: liveTime, bounds: liveBounds, text: ltgText } };
+  return { show: show, leave: leave, _state: state, _toNew: toNew, _albers: albers, _geom: { albers: albers, invAlbers: invAlbers, usView: function () { return viewOf({ view: 'us' }); }, overlay: overlay }, _ltg: { clip: ltgClip, marks: ltgMarks, pick: ltgFor, tier: ltgTier, slots: liveSlots, read: liveRead, time: liveTime, bounds: liveBounds, text: ltgText } };
 })();
 
 

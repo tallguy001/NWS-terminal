@@ -2660,3 +2660,10 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 @media (max-width: 560px) { .map-pop .rg-obsv-t { font-size: var(--fs-micro); } .map-pop .rg-obsv-t td.rg-time b { font-size: var(--fs-micro); } }
 .map-pop .rg-obsv-t td.rg-time, .map-pop .rg-obsv-t th.rg-l { padding-left: 0; }
 :root[data-theme="light"] .ob-src.obsv { border-color: rgba(161, 98, 7, .45); color: #A16207; }
+
+/* ── v3.64.0: radar and satellite keep their picture through a zoom or a move; the carried imagery sits under the new layers until they arrive ── */
+.hr-carry, .hr-carry-in, .hr-old { position: absolute; inset: 0; }
+.hr-carry { pointer-events: none; }
+.hr-carry-in { transform-origin: 0 0; }
+.hr-old img, .hr-old canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hr-old img.hr-over { opacity: 0.85; }
