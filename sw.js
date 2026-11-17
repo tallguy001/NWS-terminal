@@ -3,8 +3,8 @@
    deploy lands immediately) and falls back to the cached shell when offline.
    Weather data (/p/*, /api/*, and every cross-origin API) is never cached
    here — stale weather presented as current is worse than an error. */
-const CACHE = 'nwst-shell-v3.60.0';
-const SHELL = ['/', '/app.js?v=3.60.0', '/app.css?v=3.60.0', '/favicon.svg', '/manifest.webmanifest',
+const CACHE = 'nwst-shell-v3.61.0';
+const SHELL = ['/', '/app.js?v=3.61.0', '/app.css?v=3.61.0', '/favicon.svg', '/manifest.webmanifest',
                '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

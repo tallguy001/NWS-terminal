@@ -7325,7 +7325,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.60.0';
+var APP_VERSION = '3.61.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -10528,6 +10528,7 @@ var REGMAP = (function () {
       Object.keys(h).forEach(function (k) { h[k].sort(function (x, y) { return x.at - y.at; }); });
       // the live report is newer than the archive by a few minutes: make it the last entry
       d.stn.forEach(function (o) { var a = h[o.id]; if (a && (!a.length || o.rec.at > a[a.length - 1].at)) a.push(o.rec); });
+      if (d.home && d.home.src && h[d.home.src.id]) h.home = h[d.home.src.id];   // v3.61.0: the place's past hours are its nearest station's
       d.hist = h; d.histP = null;
     }).catch(function (e) { d.histP = null; throw e; });
     return d.histP;
@@ -10546,7 +10547,7 @@ var REGMAP = (function () {
 
   function framePts(cap) {   // stations inside the frame, larger airports and nearer first
     var b = projector(1000, 620).bbox, c = [+currentLat, +currentLon];
-    return D.stn.filter(function (o) { return o.lon > b[0] && o.lon < b[2] && o.lat > b[1] && o.lat < b[3]; })
+    return D.stn.filter(function (o) { return !o.home && o.lon > b[0] && o.lon < b[2] && o.lat > b[1] && o.lat < b[3]; })
       .sort(function (a, x) { return x.tier - a.tier || haversine(c[0], c[1], a.lat, a.lon) - haversine(c[0], c[1], x.lat, x.lon); }).slice(0, cap);
   }
 
@@ -10566,7 +10567,7 @@ var REGMAP = (function () {
       Array.prototype.forEach.call(doc.getElementsByTagName('parameters'), function (pn) {
         var idx = +String(pn.getAttribute('applicable-location') || '').replace('point', '') - 1, o = idx > 0 ? pts[idx - 1] : null; if (idx !== 0 && !o) return;
         var rec = { hi: [], lo: [], hr: [] }, pp = ndfdPrecip(pn, lay);
-        if (o) { by[o.id] = rec; amounts.push([rec, pp]); } else home = pp;
+        if (o) { by[o.id] = rec; amounts.push([rec, pp]); } else { home = pp; by.home = rec; amounts.push([rec, pp]); }   // v3.61.0: the place's own highs, lows and amounts
         Array.prototype.forEach.call(pn.getElementsByTagName('temperature'), function (tn) {
           var type = tn.getAttribute('type'), times = layouts[tn.getAttribute('time-layout')] || [];
           var vals = Array.prototype.map.call(tn.getElementsByTagName('value'), function (v) { var s = v.textContent.trim(); return s === '' ? null : +s; });
@@ -10674,7 +10675,7 @@ var REGMAP = (function () {
     if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
     var pts = framePts(30), M = MODELS[key];
     return (M.own ? gsOwn : gsPost)(M.id, { fromTime: new Date(V - 100 * 6e4).toISOString(), untilTime: new Date(V + 100 * 6e4).toISOString(),
-      coordinates: pts.map(function (o) { return { lat: +o.lat.toFixed(4), lon: +o.lon.toFixed(4), name: o.id }; }), variables: M.vars }).then(function (rows) {
+      coordinates: homePt().concat(pts.map(function (o) { return { lat: +o.lat.toFixed(4), lon: +o.lon.toFixed(4), name: o.id }; })), variables: M.vars }).then(function (rows) {
       /* v3.56.0: the maps step hourly. The answer covers 100 minutes either side of the hour asked, so for a model that steps
          hourly it also holds the hour before and the hour after: each whole hour in the answer is kept under its own time,
          and stepping to it asks for nothing. A model with no step on the hour asked (the ECMWF steps every 3 hours) is
@@ -11687,7 +11688,7 @@ var REGMAP = (function () {
      A tapped station opens a small table instead of a sentence: conditions as label and value, forecast rain and snow
      as one row per six-hour block with the time span and the amounts, highs and lows as one row per day. */
   function head(o, sub) {
-    return '<div class="rg-head"><b>' + esc(o.alt) + '</b>' + (o.id ? ' <span class="regmap-id">' + esc(o.id) + '</span>' : '') + '</div>' + (sub ? '<div class="rg-cap">' + sub + '</div>' : '');
+    return '<div class="rg-head"><b>' + esc(o.alt) + '</b>' + (o.id && !o.home ? ' <span class="regmap-id">' + esc(o.id) + '</span>' : '') + '</div>' + (sub ? '<div class="rg-cap">' + sub + '</div>' : '') + (o.home ? '<!--near-->' : '');
   }
   function kv(rows) { return '<dl class="regmap-kv">' + rows.filter(Boolean).map(function (r) { return '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>'; }).join('') + '</dl>'; }
   function spanOf(a, b) { var A = hr(a), B = hr(b); return (A.slice(-2) === B.slice(-2) ? A.slice(0, -3) : A) + '–' + B; }   // "12–6 PM", "6 PM–12 AM"
@@ -11907,7 +11908,7 @@ var REGMAP = (function () {
     fcchk: { label: 'Forecast check', needs: 'ndfd', build: function () {
       var T = D.ndfd.hrT, pts = [], times = [];
       D.stn.forEach(function (o) {
-        var f = D.ndfd.by[o.id], r = o.rec; if (!f || !f.hr.length || !T.length) return;
+        var f = D.ndfd.by[o.id], r = o.rec; if (o.home || !f || !f.hr.length || !T.length) return;
         var fc = null;
         if (r.at <= T[0]) { if (T[0] - r.at <= 70 * 6e4) fc = f.hr[0]; }
         else for (var i = 1; i < T.length; i++) if (r.at <= T[i]) { if (f.hr[i - 1] != null && f.hr[i] != null) fc = f.hr[i - 1] + (f.hr[i] - f.hr[i - 1]) * (r.at - T[i - 1]) / (T[i] - T[i - 1]); break; }
@@ -12061,7 +12062,7 @@ var REGMAP = (function () {
   function loadMf() {
     var mk = mfModel(), M = MFM[mk], V = mfTime(), ck = 'mf:' + mk + ':' + V, d = D; if (d.model[ck]) return Promise.resolve();
     if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
-    var coords = framePts(30).map(function (o) { return { lat: +o.lat.toFixed(4), lon: +o.lon.toFixed(4), name: o.id }; });
+    var coords = homePt().concat(framePts(30).map(function (o) { return { lat: +o.lat.toFixed(4), lon: +o.lon.toFixed(4), name: o.id }; }));
     var vars = [{ name: 'GUST', level: 'surface', alias: 'g' }, { name: 'VIS', level: 'surface', alias: 'vis' }, { name: 'TCDC', level: M.cloud, alias: 'c' },
       { name: 'PWAT', level: 'entire atmosphere (considered as a single layer)', alias: 'pw' }, { name: 'APCP', level: 'surface', info: 'acc-from-init', alias: 'q' }, { name: 'ASNOW', level: 'surface', info: 'acc-from-init', alias: 'sn' },
       { name: 'CSNOW', level: 'surface', alias: 'cs' }, { name: 'CRAIN', level: 'surface', alias: 'cr' }, { name: 'CFRZR', level: 'surface', alias: 'cz' }, { name: 'CICEP', level: 'surface', alias: 'ci' }];
@@ -12153,7 +12154,7 @@ var REGMAP = (function () {
     if (c && c.days && now - c.at < 3 * HOUR) return Promise.resolve();
     if (c && c.p) return c.p;
     if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
-    var coords = framePts(30).map(function (o) { return { lat: +o.lat.toFixed(4), lon: +o.lon.toFixed(4), name: o.id }; });
+    var coords = homePt().concat(framePts(30).map(function (o) { return { lat: +o.lat.toFixed(4), lon: +o.lon.toFixed(4), name: o.id }; }));
     var p = Promise.all(M.sets.map(function (S) {
       return gsOwn(M.id, { timesList: gdTimes(S.step, S.a, S.b, now), coordinates: coords, variables: [{ name: S.hi.name, level: S.hi.level, alias: 'hi' }, { name: S.lo.name, level: S.lo.level, alias: 'lo' }] })
         .then(function (rows) { return { step: S.step, rows: rows || [] }; });
@@ -12320,6 +12321,9 @@ var REGMAP = (function () {
     lastW = cw;
     var proj = projector(W, H); frame = { W: W, H: H, bbox: proj.bbox };
     try { view = L[st.layer].build(); } catch (e) { fail('This map could not be drawn (' + e.message + ').'); return; }
+    var hs = D.home || null, homeP = null;   // v3.61.0
+    if (hs && view.pts) { var nAll = view.pts.length; view.pts = view.pts.filter(function (p) { if (p.o && p.o.home) { homeP = homeP || p; return false; } return true; });
+      if (homeP && view.subText) view.subText = view.subText.replace(new RegExp('(^|[^0-9,.])' + nAll + ' (points|stations|reports)\\b'), '$1' + view.pts.length + ' $2'); }   // the count is of what is drawn
     var cfg = view.field, pts = view.pts.map(function (p) { var q = proj(p.o.lon, p.o.lat); p.x = q[0]; p.y = q[1]; return p; });
     var src = cfg ? pts.filter(function (p) { return p.v != null && isFinite(p.v); }) : [];
     var landD = pathFor(geo.counties, proj), stateD = pathFor(geo.states, proj);
@@ -12392,6 +12396,7 @@ var REGMAP = (function () {
       var d = pg.rings.map(function (ring) { return ring.map(function (c, i) { var q = proj(c[0], c[1]); return (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join('') + 'Z'; }).join('');
       s.push('<path d="' + d + '" style="fill:' + pg.color + ';fill-opacity:0.35;stroke:' + pg.color + ';stroke-width:2"></path>');
     });
+    var homeAt = s.length;   // v3.61.0
     if (view.counties) {   // tap targets, one per shaded county
       Object.keys(view.counties).forEach(function (f) {
         var c2 = geo.counties.filter(function (c3) { return c3.id === f; })[0], info = view.counties[f]; if (!c2) return;
@@ -12446,9 +12451,16 @@ var REGMAP = (function () {
     });
     if (symHits.length) s.push(symHits.join(''));
     if (!view.noHome) s.push('<circle cx="' + cx + '" cy="' + cy + '" r="5.5" style="fill:rgba(7,11,20,0.6);stroke:#5EEAD4;stroke-width:2"></circle><circle cx="' + cx + '" cy="' + cy + '" r="1.6" style="fill:#5EEAD4"></circle>');
-    var hm = !view.noHome && sndCan(true) ? sndHome() : null;   // v3.60.0
-    if (hm) { taps.push(sndHomeDetail(hm)); tapO[taps.length - 1] = hm;
-      s.push('<circle class="regmap-stn regmap-homehit" data-i="' + (taps.length - 1) + '" tabindex="0" role="button" aria-label="' + esc(hm.alt + ', the selected location') + '" cx="' + cx + '" cy="' + cy + '" r="' + Math.min(32, Math.max(18, Math.round(18 * W / cw))) + '" style="fill:transparent"></circle>'); }   // about 36 px across on screen at any size
+    /* The marker's report (v3.61.0): what this map's own builder wrote for the place; where the map has nothing for it (an image, or a map of
+       reports that are not stations), the nearest station's current report, as a tap on a station name gives there. */
+    var hm = null, hDet = '', hMore = null;
+    if (!view.noHome) {
+      if (hs) { var hr0 = cur(hs) || hs.rec; hm = hs; hDet = homeP && homeP.detail ? homeP.detail : hr0 && hr0.t != null ? stnDetail(hs, hr0) : ''; hMore = homeP && homeP.more ? homeP.more : null;
+        hDet = hDet.replace(/<!--near-->/g, /Observed|regmap-raw|· now |Station gauge/.test(hDet) ? nearNote(hs) : ''); }
+      else if (sndCan(true)) { hm = sndHome(); hDet = hm ? sndHomeDetail(hm) : ''; }   // no stations came back: the place still gets its Sounding button
+    }
+    if (hm && hDet) { taps.push(hDet); tapO[taps.length - 1] = hm; if (hMore) more[taps.length - 1] = hMore;
+      s.splice(view.counties ? homeAt : s.length, 0, '<circle class="regmap-stn regmap-homehit" data-i="' + (taps.length - 1) + '" tabindex="0" role="button" aria-label="' + esc(hm.alt + ', the selected location') + '" cx="' + cx + '" cy="' + cy + '" r="' + Math.min(32, Math.max(18, Math.round(18 * W / cw))) + '" style="fill:transparent"></circle>'); }   // about 36 px across on screen at any size
     // title block
     var sub = view.subText;
     if (!sub) {
@@ -12521,7 +12533,7 @@ var REGMAP = (function () {
   function detail(i) {
     var det = document.getElementById('regMapDetail'); if (!det || !view || !view.taps || !view.taps[i]) return;
     det.setAttribute('data-keep', '1'); det.innerHTML = view.taps[i];
-    if (view.tapO && view.tapO[i] && sndCan(view.tapO[i].home)) det.insertAdjacentHTML('beforeend', sndBtn(view.tapO[i]));   // v3.59.0
+    if (view.tapO && view.tapO[i] && sndCan()) det.insertAdjacentHTML('beforeend', sndBtn(view.tapO[i]));   // v3.59.0
     if (view.more && view.more[i]) { try { det.insertAdjacentHTML('beforeend', '<div class="regmap-below">' + (view.more[i]() || '') + '</div>'); } catch (e) {} }
   }
   function fail(msg, needsKey) {
@@ -12541,7 +12553,7 @@ var REGMAP = (function () {
     if (!view || !stage.querySelector('.regmap-svg')) { stage.style.aspectRatio = ''; stage.innerHTML = '<div class="state-load">Loading the map…</div>'; }
     else stage.classList.add('is-loading');
     if (d.stn && d.none && Date.now() - d.at > 30000) d.stn = null;   // nothing came back last time: ask again rather than hold an empty map for ten minutes
-    var base = d.stn ? Promise.all([loadGeo(), BASEMAP.load()]) : Promise.all([loadStations(), loadGeo(), BASEMAP.load(), usOverlay(), usPlaces()]).then(function (res) { d.stn = regCityNames(res[0], res[3], res[4]); d.none = !d.stn.length; d.at = Date.now(); });
+    var base = d.stn ? Promise.all([loadGeo(), BASEMAP.load()]) : Promise.all([loadStations(), loadGeo(), BASEMAP.load(), usOverlay(), usPlaces()]).then(function (res) { d.stn = regCityNames(res[0], res[3], res[4]); d.none = !d.stn.length; d.at = Date.now(); addHome(d); });
     base.then(function () { if (my !== seq) return; return need(st.layer, W, H); }).then(function () {
       if (my !== seq) return;
       stage.classList.remove('is-loading');
@@ -12611,6 +12623,23 @@ var REGMAP = (function () {
     if (!currentLat || !currentLon || !isFinite(+currentLat) || !isFinite(+currentLon)) return null;
     var ln = document.getElementById('locName'), nm = ((ln && ln.textContent) || '').replace(/\s+/g, ' ').trim() || 'Selected location';
     return { id: 'home', home: true, lat: +currentLat, lon: +currentLon, alt: nm, city: nm };
+  }
+  /* v3.61.0: the selected location as a stand-in station, so that every map writes the same report for it as for a station.
+     Its observations are the nearest reporting station's (it has none of its own) and the report says so. It is pulled
+     out of the map's points before anything is drawn, so it is never a number on the map and never part of the shading. */
+  function homePt() { var la = +currentLat, lo = +currentLon; return isFinite(la) && isFinite(lo) && currentLat && currentLon ? [{ lat: +la.toFixed(4), lon: +lo.toFixed(4), name: 'home' }] : []; }
+  function addHome(d) {
+    var b = sndHome(); if (!b || !d.stn || !d.stn.length) return;
+    var src = null, mi = 1e9, RAD = Math.PI / 180;
+    d.stn.forEach(function (o) { if (o.home || !o.rec || o.rec.t == null) return; var x = haversine(b.lat, b.lon, o.lat, o.lon); if (x < mi) { mi = x; src = o; } });
+    if (!src) return;
+    var dl = (src.lon - b.lon) * RAD, brg = (Math.atan2(Math.sin(dl) * Math.cos(src.lat * RAD), Math.cos(b.lat * RAD) * Math.sin(src.lat * RAD) - Math.sin(b.lat * RAD) * Math.cos(src.lat * RAD) * Math.cos(dl)) / RAD + 360) % 360;
+    d.home = { id: 'home', home: true, named: 1, city: b.alt.split(',')[0], alt: b.alt, lat: b.lat, lon: b.lon, tier: 0, k: null, rec: src.rec, src: src, mi: mi, dir: DIRS[R(brg / 22.5) % 16] };
+    d.stn.push(d.home);
+  }
+  function nearNote(h) {
+    var s = h.src; return '<div class="rg-near">Observed values are from <b>' + esc(s.alt || s.city || s.id) + '</b>' + (s.id ? ' <span class="regmap-id">' + esc(s.id) + '</span>' : '') +
+      ', the nearest reporting station, ' + (h.mi < 1 ? 'under a mile away' : R(h.mi) + ' mi ' + h.dir) + '.</div>';
   }
   function sndHomeDetail(o) { return '<div class="rg-head"><b>' + esc(o.alt) + '</b></div><div class="rg-cap">The selected location · ' + (+o.lat).toFixed(2) + ', ' + (+o.lon).toFixed(2) + '</div>'; }
   function sndStart() {   // the model and hour the map is showing, where it shows one
@@ -15369,6 +15398,7 @@ var MAPPOP = (function () {
     pop.style.maxWidth = Math.min(grid ? 400 : 340, R.width - 16) + 'px';
     if (grid) { pop.classList.add('has-grid'); pop.querySelector('.map-pop-body').style.maxHeight = Math.max(150, Math.min(440, R.height - 44)) + 'px'; }
     stage.appendChild(pop);
+    if (sndRow && grid) pop.querySelector('.map-pop-body').style.maxHeight = Math.max(110, Math.min(440, R.height - 44 - sndRow.offsetHeight - 8)) + 'px';   // v3.61.0
     var w = pop.offsetWidth, h = pop.offsetHeight, x = cx - R.left, y = cy - R.top, gap = 14;
     var left = Math.max(8, Math.min(R.width - w - 8, x - w / 2)), above = y - h - gap >= 8, top = above ? y - h - gap : Math.min(R.height - h - 8, y + gap);
     if (!above && top < 8) top = 8;

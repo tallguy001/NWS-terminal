@@ -2636,3 +2636,8 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 .regmap-homehit { cursor: pointer; }
 .regmap-homehit:focus-visible { stroke: #5EEAD4; stroke-width: 2px; }
 .regmap-sndnote b { color: var(--text-2); font-weight: 600; }
+
+/* ── v3.61.0: the selected location's report on every map; the line that says whose observations it shows ── */
+.rg-near { margin-top: 3px; font-size: var(--fs-micro); line-height: 1.4; color: var(--text-3); }
+.rg-near b { color: var(--text-2); font-weight: 600; }
+.rg-near .regmap-id { font-size: inherit; }
