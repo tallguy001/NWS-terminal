@@ -7326,7 +7326,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.64.0';
+var APP_VERSION = '3.65.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -10428,22 +10428,27 @@ var REGMAP = (function () {
   var RANGES = [[60, '60 mi'], [120, '120 mi'], [200, '200 mi']];
   /* v3.26.0: every map is either Current (observed) or Forecast. The two sides have their own sidebar entry, their own
      menu, their own colour, and a tag on the map itself. Each row is [group, [[layer, name on the button], ...]]. */
+  /* v3.65.0: both sides are grouped by subject, under the same headings in the same order, so a subject is found in the same
+     place whichever side is showing (the Forecast side used to be grouped by where the numbers came from). Where a map's source
+     matters for telling it from its neighbour, it rides along as a short tag: [id, name, tag]. */
   var MODES = [
     { id: 'now', label: 'Current', note: 'Observed now and over the last day', tag: 'CURRENT', color: '#5EEAD4', groups: [
-      ['Conditions', [['temp', 'Temperature'], ['dew', 'Dew point'], ['wind', 'Wind'], ['gust', 'Peak gust'], ['vis', 'Visibility'], ['pres', 'Pressure']]],
-      ['Rain and snow', [['precip', 'Station rain, 24 h'], ['obsrain', 'Observer rain'], ['rain', 'Rainfall analysis'], ['mrain', 'Radar and gauge rain'], ['snow', 'New snow'], ['snowgnd', 'Snow on the ground'], ['snowdepth', 'Snow depth'], ['lakeice', 'Great Lakes ice'], ['rivers', 'River levels']]],
-      ['Storms now', [['ltgmap', 'Lightning'], ['rot', 'Rotation'], ['hail', 'Hail size']]],
-      ['Change', [['chg24', '24-hour change'], ['hilo', 'High and low today']]],
-      ['Hazards', [['alerts', 'Alerts'], ['lsr', 'Storm reports']]]] },
+      ['Temperature', [['temp', 'Temperature'], ['dew', 'Dew point'], ['chg24', '24-hour change'], ['hilo', 'High and low today']]],
+      ['Wind', [['wind', 'Wind'], ['gust', 'Peak gust'], ['pres', 'Pressure']]],
+      ['Rain', [['precip', 'Station rain, 24 h'], ['obsrain', 'Observer rain'], ['rain', 'Rainfall analysis'], ['mrain', 'Radar and gauge rain']]],
+      ['Snow and ice', [['snow', 'New snow', 'Observers'], ['snowgnd', 'Snow on the ground', 'Estimate'], ['snowdepth', 'Snow depth', 'Analysis'], ['lakeice', 'Great Lakes ice']]],
+      ['Storms', [['ltgmap', 'Lightning'], ['rot', 'Rotation'], ['hail', 'Hail size'], ['lsr', 'Storm reports']]],
+      ['Sky and visibility', [['vis', 'Visibility']]],
+      ['Hazards, air and water', [['alerts', 'Alerts'], ['rivers', 'River levels']]]] },
     { id: 'fc', label: 'Forecast', note: 'NWS forecast and models, hours to two weeks ahead', tag: 'FORECAST', color: '#C4B5FD', groups: [
-      ['NWS forecast', [['fcst', 'Highs and lows'], ['fcrain', 'Rain'], ['fcsnow', 'Snow']]],
-      ['SPC guidance', [['tstm', 'Thunderstorms'], ['gtor', 'Tornado'], ['ghail', 'Hail'], ['gwind', 'Damaging wind']]],
-      ['Models', [['model', 'Temperature'], ['spread', 'Model spread'], ['stormpot', 'Storm potential'], ['fradar', 'Future radar']]],
-      ['HRRR or RRFS model', [['mgust', 'Wind gusts'], ['mqpf', 'Rain total'], ['msnow', 'New snow'], ['mptype', 'Rain or snow'], ['mvis', 'Visibility'], ['mcloud', 'Cloud cover'], ['mpwat', 'Moisture']]],
-      ['GFS or ECMWF, days ahead', [['ghigh', 'Daily high'], ['glow', 'Daily low']]],
-      ['Winter', [['wssi', 'Storm severity'], ['wssip', 'Severity odds'], ['pwpf', 'Snow and ice odds']]],
-      ['Air and heat', [['smoke', 'Smoke'], ['heatrisk', 'HeatRisk']]],
-      ['Check', [['fcchk', 'Forecast vs observed']]]] }
+      ['Temperature', [['fcst', 'Highs and lows', 'NWS'], ['model', 'Temperature', 'Models'], ['ghigh', 'Daily high', 'GFS/ECMWF'], ['glow', 'Daily low', 'GFS/ECMWF']]],
+      ['Wind', [['mgust', 'Wind gusts', 'HRRR/RRFS']]],
+      ['Rain', [['fcrain', 'Rain', 'NWS'], ['mqpf', 'Rain total', 'HRRR/RRFS'], ['mptype', 'Rain or snow', 'HRRR/RRFS'], ['fradar', 'Future radar', 'HRRR/RRFS']]],
+      ['Snow and ice', [['fcsnow', 'Snow', 'NWS'], ['msnow', 'New snow', 'HRRR/RRFS'], ['wssi', 'Storm severity', 'WPC'], ['wssip', 'Severity odds', 'WPC'], ['pwpf', 'Snow and ice odds', 'WPC']]],
+      ['Storms', [['tstm', 'Thunderstorms', 'SPC'], ['gtor', 'Tornado', 'SPC'], ['ghail', 'Hail', 'SPC'], ['gwind', 'Damaging wind', 'SPC'], ['stormpot', 'Storm potential', 'Models']]],
+      ['Sky and visibility', [['mcloud', 'Cloud cover', 'HRRR/RRFS'], ['mvis', 'Visibility', 'HRRR/RRFS'], ['mpwat', 'Moisture', 'HRRR/RRFS']]],
+      ['Hazards, air and water', [['smoke', 'Smoke'], ['heatrisk', 'HeatRisk']]],
+      ['Confidence', [['spread', 'Model spread'], ['fcchk', 'Forecast vs observed']]]] }
   ];
   var OPT_NAME = { fc: 'Period', pw: 'Period', tw: 'Period', mh: 'Period', sw: 'Hour', sm: 'Model', fb: 'Period', wc: 'Impact', wd: 'Day', wl: 'Level', wp: 'Day', wt: 'Amount', wq: 'Day', sv: 'Time', hr: 'Day', ml: 'Lead time', mm: 'Model', gm: 'Model', fs: 'Frames', rain: 'Period', lsr: 'Period', model: 'Model', lead: 'Lead time' };
   function allLayers(m) { var a = []; MODES.forEach(function (x) { if (!m || x.id === m) x.groups.forEach(function (g) { g[1].forEach(function (p) { a.push(p[0]); }); }); }); return a; }
@@ -12418,15 +12423,15 @@ var REGMAP = (function () {
     }).join('');
     /* v3.43.0: the map is chosen from one menu (PICK) instead of five or six rows of buttons, which had pushed the map itself off the
        bottom of an iPad screen. The button shows the map in use; the three maps used most recently on this side sit beside it. */
-    var names = {}; MD.groups.forEach(function (g) { g[1].forEach(function (p) { names[p[0]] = p[1]; }); });
+    var names = {}, srcs = {}; MD.groups.forEach(function (g) { g[1].forEach(function (p) { names[p[0]] = p[1]; if (p[2]) srcs[p[0]] = p[2]; }); });
     var rec = recentOf(mode).filter(function (id) { return id !== st.layer && names[id]; }).slice(0, 3), menu = document.getElementById('regMapMenu');
-    ln.innerHTML = '<button type="button" class="pick-btn" id="regMapMenuBtn" aria-haspopup="dialog" aria-controls="regMapMenu" aria-expanded="' + (PICK.isOpen('regMapMenu') ? 'true' : 'false') + '"><span class="pick-k">Map</span><span class="pick-v">' + esc(names[st.layer] || L[st.layer].label || st.layer) + '</span>' +
+    ln.innerHTML = '<button type="button" class="pick-btn" id="regMapMenuBtn" aria-haspopup="dialog" aria-controls="regMapMenu" aria-expanded="' + (PICK.isOpen('regMapMenu') ? 'true' : 'false') + '"><span class="pick-k">Map</span><span class="pick-v">' + esc(names[st.layer] || L[st.layer].label || st.layer) + (srcs[st.layer] ? '<span class="pick-s">' + esc(srcs[st.layer]) + '</span>' : '') + '</span>' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>' +
-      (rec.length ? '<div class="pick-recent" role="group" aria-label="Maps used recently"><span class="pick-clock" title="Used recently"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' + rec.map(function (id) { return chip(names[id], false, 'data-layer="' + id + '"'); }).join('') + '</div>' : '');
+      (rec.length ? '<div class="pick-recent" role="group" aria-label="Maps used recently"><span class="pick-clock" title="Used recently"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' + rec.map(function (id) { return chip(names[id] + (srcs[id] ? ' · ' + srcs[id] : ''), false, 'data-layer="' + id + '"'); }).join('') + '</div>' : '');
     if (menu) {
       var mh = '<div class="pick-head"><span>' + MD.label + ' maps \u00B7 ' + MD.note + '</span><button type="button" class="pick-x" aria-label="Close the list">\u00D7</button></div><div class="pick-cols">' + MD.groups.map(function (g) {
         return '<div class="pick-col" role="group" aria-label="' + g[0] + '"><div class="pick-h">' + g[0] + '</div>' + g[1].map(function (p) {
-          return '<button type="button" class="pick-opt' + (p[0] === st.layer ? ' active' : '') + '" aria-pressed="' + (p[0] === st.layer ? 'true' : 'false') + '" data-layer="' + p[0] + '"><span class="pick-l">' + esc(p[1]) + '</span></button>'; }).join('') + '</div>';
+          return '<button type="button" class="pick-opt' + (p[0] === st.layer ? ' active' : '') + '" aria-pressed="' + (p[0] === st.layer ? 'true' : 'false') + '" data-layer="' + p[0] + '"><span class="pick-l">' + esc(p[1]) + '</span>' + (p[2] ? '<span class="pick-s">' + esc(p[2]) + '</span>' : '') + '</button>'; }).join('') + '</div>';
       }).join('') + '</div>';
       if (menu.getAttribute('data-h') !== mh) { menu.innerHTML = mh; menu.setAttribute('data-h', mh); }   // left alone when nothing changed, so an open list keeps its place
     }
@@ -12467,9 +12472,19 @@ var REGMAP = (function () {
       if (a) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
   }
-  function setMode(m, quiet) {   // switch sides, returning to the map last used there
+  function subjectOf(id) { var out = null; MODES.forEach(function (x) { x.groups.forEach(function (g) { if (g[1].some(function (p) { return p[0] === id; })) out = g[0]; }); }); return out; }
+  /* Switch sides and stay on the subject (v3.65.0): from Wind now to the wind forecast, from the snow forecast to snow now. Within the
+     subject it is the map last used on that side, else one used recently, else the first listed. A subject the other side does not
+     have (Confidence) goes back to the map last used there, as every switch did before. */
+  function setMode(m, quiet) {
     if (m !== 'now' && m !== 'fc') return;
-    if (modeOf(st.layer) !== m) { st.layer = allLayers(m).indexOf(st.last[m]) >= 0 ? st.last[m] : allLayers(m)[0]; st.back = 0; save(); clearDetail(); }
+    if (modeOf(st.layer) !== m) {
+      var subj = subjectOf(st.layer), all = allLayers(m), lastL = all.indexOf(st.last[m]) >= 0 ? st.last[m] : null, same = [], pick = null;
+      modeDef(m).groups.forEach(function (g) { if (g[0] === subj) same = g[1].map(function (p) { return p[0]; }); });
+      if (lastL && same.indexOf(lastL) >= 0) pick = lastL;
+      if (!pick) pick = ((st.recent && st.recent[m]) || []).filter(function (id) { return same.indexOf(id) >= 0; })[0] || same[0] || null;
+      st.layer = pick || lastL || all[0]; st.back = 0; save(); clearDetail();
+    }
     if (quiet) renderBar(); else load(false);
   }
 
@@ -12990,7 +13005,7 @@ var REGMAP = (function () {
     renderBar();
   }
   return { init: init, load: load, ensure: ensure, again: again, geo: loadGeo, _parse: parseMetar, _obs: function () { return D.stn; }, _shown: function () { return shown; }, _D: function () { return D; },
-           _view: function () { return view; }, _st: st, _layers: function () { return allLayers(); }, _snd: function () { return { SQ: SQ, SQC: SQC, start: sndStart, close: sndClose }; }, setMode: setMode, mode: function () { return modeOf(st.layer); } };
+           _view: function () { return view; }, _st: st, _layers: function () { return allLayers(); }, _modes: function () { return MODES; }, _snd: function () { return { SQ: SQ, SQC: SQC, start: sndStart, close: sndClose }; }, setMode: setMode, mode: function () { return modeOf(st.layer); } };
 })();
 document.addEventListener('DOMContentLoaded', function () { REGMAP.init(); });
 
@@ -16276,7 +16291,8 @@ var PICK = (function () {
 var SECTABS = (function () {
   var GROUPS = [
     [['spc', 'Severe storms (SPC)'], ['wpc', 'Rain and snow (WPC)'], ['cpc', 'Long range (CPC)']],
-    [['climate', 'Daily climate'], ['astro', 'Sun and moon']]
+    [['climate', 'Daily climate'], ['astro', 'Sun and moon']],
+    [['regional', 'Weather maps'], ['maps', 'Windy map']]   // v3.65.0: the Windy map sits behind the Maps entry
   ], last = {};
   function groupOf(name) { for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].some(function (t) { return t[0] === name; })) return GROUPS[i]; return null; }
   function keyOf(g) { return g.map(function (t) { return t[0]; }).join(' '); }
@@ -16313,7 +16329,7 @@ var PICKFOLD = (function () {
     { sel: '#mapsLayerNav', id: 'pickWindy', watch: 'section-maps', label: 'Layer', title: 'Windy map layers', beside: '#mapsModelNav',
       heads: { 'Radar': 'Imagery', 'Temperature': 'Air', 'Wind': 'Wind', 'Clouds': 'Clouds and visibility', 'Rain & thunder': 'Rain and snow', 'CAPE': 'Other' } },
     { sel: '#modelsSubNav', id: 'pickModels', watch: 'section-models', label: 'View', title: 'Model views',
-      heads: { 'HRRR': 'Short range', 'Sounding': 'Tools', 'GFS': 'Global', 'AIFS': 'AI models' } },
+      heads: { 'HRRR': 'Models', 'Ensemble': 'Odds', 'Sounding': 'Severe', 'Trend': 'Track record', 'RTMA': 'Analysis and runs' } },   // v3.65.0: by what the view is for
     { sel: '#section-radar .hr-bases', id: 'pickRadar', watch: 'section-radar', label: 'Imagery', title: 'Radar and satellite imagery', skip: '[data-o], [data-l]',
       heads: { 'Radar': 'Radar', 'Infrared': 'Satellite', 'Radar on top': 'Overlays' } }
   ];

@@ -2667,3 +2667,13 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 .hr-carry-in { transform-origin: 0 0; }
 .hr-old img, .hr-old canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .hr-old img.hr-over { opacity: 0.85; }
+
+/* ── v3.65.0: a map's source, as a small tag beside its name in the map menu and on the menu button ── */
+.pick-s { margin-left: auto; padding-left: 8px; font-size: var(--fs-micro); font-weight: 500; letter-spacing: .02em; color: var(--text-3); white-space: nowrap; }
+.pick-v .pick-s { margin-left: 0; padding-left: 7px; }
+#regMapMenu .pick-opt { flex-wrap: wrap; row-gap: 0; padding-top: 3px; padding-bottom: 3px; }   /* where a column is too narrow for both, the tag drops under the name */
+#regMapMenu .pick-opt .pick-s { padding-bottom: 4px; }
+#regMapMenu .pick-opt.active .pick-s { color: inherit; opacity: .75; }
+#regMapMenu .pick-opt.active::before { content: none; }                                            /* the tick rides with the name, so it never sits on a line of its own */
+#regMapMenu .pick-opt.active .pick-l::before { content: '\2713'; font-size: 13px; margin-right: 6px; }
+@media (min-width: 761px) { #regMapMenu .pick-cols { column-width: 210px; } }                      /* room for a name and its tag on one line */

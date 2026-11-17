@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.64.0">
+<link rel="stylesheet" href="/app.css?v=3.65.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -47,6 +47,10 @@
           <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg>
           <span class="nl">US map</span>
         </button>
+        <button class="nav-item" type="button" data-group="regional maps" data-section="regional">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 1 1 14 0c0 4.8-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          <span class="nl">Maps</span>
+        </button>
       </div>
       <div class="nav-group">
         <div class="nav-group-label">Now</div>
@@ -59,20 +63,9 @@
           <span class="nl">Alerts</span>
           <span id="alertBadge" class="nav-badge hidden"></span>
         </button>
-      </div>
-      <div class="nav-group">
-        <div class="nav-group-label">Maps</div>
-        <button class="nav-item" type="button" data-section="regional">
-          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 1 1 14 0c0 4.8-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
-          <span class="nl">Maps</span>
-        </button>
         <button class="nav-item" type="button" data-section="radar">
           <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/></svg>
           <span class="nl">Radar and satellite</span>
-        </button>
-        <button class="nav-item" type="button" data-section="maps">
-          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 4-6 2.5v13L9 17l6 3 6-2.5v-13L15 7 9 4Z"/><path d="M9 4v13M15 7v13"/></svg>
-          <span class="nl">Windy Map</span>
         </button>
       </div>
       <div class="nav-group">
@@ -850,23 +843,23 @@
         <h2 class="section-label">Model guidance</h2>
         <div class="gs-sub-nav" id="modelsSubNav">
           <button class="gs-sub-btn active" data-mtab="hrrr15" onclick="switchModelsTab('hrrr15', this)">HRRR</button>
-          <button class="gs-sub-btn" data-mtab="rap" onclick="switchModelsTab('rap', this)">RAP</button>
           <button class="gs-sub-btn" data-mtab="rrfs" onclick="switchModelsTab('rrfs', this)">RRFS</button>
-          <button class="gs-sub-btn" data-mtab="rtma" onclick="switchModelsTab('rtma', this)">RTMA</button>
-          <button class="gs-sub-btn" data-mtab="sounding" onclick="switchModelsTab('sounding', this)">Sounding</button>
-          <button class="gs-sub-btn" data-mtab="severe" onclick="switchModelsTab('severe', this)">Severe</button>
-          <button class="gs-sub-btn" data-mtab="thunder" onclick="switchModelsTab('thunder', this)">Thunder</button>
-          <button class="gs-sub-btn" data-mtab="odds" onclick="switchModelsTab('odds', this)">Snow odds</button>
-          <button class="gs-sub-btn" data-mtab="trend" onclick="switchModelsTab('trend', this)">Trend</button>
-          <button class="gs-sub-btn" data-mtab="verify" onclick="switchModelsTab('verify', this)">Verify</button>
-          <button class="gs-sub-btn" data-mtab="runs" onclick="switchModelsTab('runs', this)">Model runs</button>
+          <button class="gs-sub-btn" data-mtab="rap" onclick="switchModelsTab('rap', this)">RAP</button>
           <button class="gs-sub-btn" data-mtab="gfs" onclick="switchModelsTab('gfs', this)">GFS</button>
           <button class="gs-sub-btn" data-mtab="ecmwf" onclick="switchModelsTab('ecmwf', this)">ECMWF IFS</button>
-          <button class="gs-sub-btn" data-mtab="nbm" onclick="switchModelsTab('nbm', this)">NBM probabilities</button>
-          <button class="gs-sub-btn" data-mtab="ensemble" onclick="switchModelsTab('ensemble', this)">Ensemble</button>
           <button class="gs-sub-btn" data-mtab="aifs" onclick="switchModelsTab('aifs', this)">AIFS</button>
           <button class="gs-sub-btn" data-mtab="graphcast" onclick="switchModelsTab('graphcast', this)">AIGFS (GraphCast)</button>
           <button class="gs-sub-btn" data-mtab="fourcast" onclick="switchModelsTab('fourcast', this)">FourCastNet</button>
+          <button class="gs-sub-btn" data-mtab="ensemble" onclick="switchModelsTab('ensemble', this)">Ensemble</button>
+          <button class="gs-sub-btn" data-mtab="nbm" onclick="switchModelsTab('nbm', this)">NBM probabilities</button>
+          <button class="gs-sub-btn" data-mtab="odds" onclick="switchModelsTab('odds', this)">Snow odds</button>
+          <button class="gs-sub-btn" data-mtab="thunder" onclick="switchModelsTab('thunder', this)">Thunder</button>
+          <button class="gs-sub-btn" data-mtab="sounding" onclick="switchModelsTab('sounding', this)">Sounding</button>
+          <button class="gs-sub-btn" data-mtab="severe" onclick="switchModelsTab('severe', this)">Severe</button>
+          <button class="gs-sub-btn" data-mtab="trend" onclick="switchModelsTab('trend', this)">Trend</button>
+          <button class="gs-sub-btn" data-mtab="verify" onclick="switchModelsTab('verify', this)">Verify</button>
+          <button class="gs-sub-btn" data-mtab="rtma" onclick="switchModelsTab('rtma', this)">RTMA</button>
+          <button class="gs-sub-btn" data-mtab="runs" onclick="switchModelsTab('runs', this)">Model runs</button>
         </div>
 
         <!-- ======== GFS ======== -->
@@ -1825,6 +1818,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.64.0" defer></script>
+<script src="/app.js?v=3.65.0" defer></script>
 </body>
 </html>
