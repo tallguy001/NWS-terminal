@@ -137,11 +137,11 @@ async function geoSearch(params, query, limit) {
 }
 
 function px(url) {
-  var m = String(url).match(/^https?:\/\/(?:www\.)?(spc\.noaa\.gov|cpc\.ncep\.noaa\.gov|wpc\.ncep\.noaa\.gov|aviationweather\.gov|digital\.weather\.gov|mapservices\.weather\.noaa\.gov|api\.elections\.kalshi\.com|nowcoast\.noaa\.gov|opengeo\.ncep\.noaa\.gov)\/(.*)$/);
+  var m = String(url).match(/^https?:\/\/(?:www\.)?(spc\.noaa\.gov|cpc\.ncep\.noaa\.gov|wpc\.ncep\.noaa\.gov|aviationweather\.gov|digital\.weather\.gov|mapservices\.weather\.noaa\.gov|api\.elections\.kalshi\.com|nowcoast\.noaa\.gov|opengeo\.ncep\.noaa\.gov|data\.cocorahs\.org)\/(.*)$/);
   if (!m) return url;
   var kind = { 'spc.noaa.gov':'spc', 'cpc.ncep.noaa.gov':'cpc',
                'wpc.ncep.noaa.gov':'wpc', 'aviationweather.gov':'awc', 'digital.weather.gov':'ndfd',
-               'mapservices.weather.noaa.gov':'nwsmap', 'api.elections.kalshi.com':'kalshi', 'nowcoast.noaa.gov':'nowcoast', 'opengeo.ncep.noaa.gov':'opengeo' }[m[1]];
+               'mapservices.weather.noaa.gov':'nwsmap', 'api.elections.kalshi.com':'kalshi', 'nowcoast.noaa.gov':'nowcoast', 'opengeo.ncep.noaa.gov':'opengeo', 'data.cocorahs.org':'cocorahs' }[m[1]];
   return '/p/' + kind + '/' + m[2];
 }
 
@@ -7123,6 +7123,7 @@ async function doFetch(opts) {
     fetchCurrentObservation(geo.lat, geo.lon, mySeq);
     fetchGsRtmaCurrent(geo.lat, geo.lon);
     if (typeof RADAROV !== 'undefined') RADAROV.load(geo.lat, geo.lon, true);
+    if (typeof OBSV !== 'undefined') OBSV.show(geo.lat, geo.lon);   // v3.62.0
     climateNormals = null;
     fetchNormalsAndRecords(geo.lat, geo.lon, mySeq);
 
@@ -7325,7 +7326,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.61.0';
+var APP_VERSION = '3.62.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -10286,6 +10287,143 @@ async function fetchGsTrend(lat, lon) {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   OBSERVERS (v3.62.0)
+   Once-a-day reports from people, taken at about 7 AM: rain, new snow, snow on the ground, and from NWS cooperative
+   observers the high and low of the 24 hours before. Many towns with no automated station have one or more of these.
+     - NWS cooperative observers: the Iowa Environmental Mesonet's 7 AM file, one file for the whole country (free, no key).
+     - CoCoRaHS volunteers: CoCoRaHS's own daily export, one small file per state per day (free, no key), through this
+       site's worker because it sends no CORS header.
+   Before 9 AM local time the day before is used, as that morning's reports are still coming in. A trace is kept as
+   0.0001. An NWS-observer entry with no high or low that repeats a CoCoRaHS report from the same few miles and the same
+   minute is that volunteer's report passed along without their site's position, and is dropped.
+   ══════════════════════════════════════════════════════════════════ */
+var OBSV = (function () {
+  var IEM = 'https://mesonet.agron.iastate.edu', CC = 'https://data.cocorahs.org/export/exportreports.aspx', TTL = 20 * 60000, TRACE = 0.0001;
+  var BOX = {AK:[-179.15,51.22,179.78,71.36],AL:[-88.48,30.21,-84.88,35.02],AR:[-94.63,32.99,-89.63,36.51],AZ:[-114.82,31.32,-109.03,37.01],CA:[-124.42,32.52,-114.12,42.02],CO:[-109.07,36.98,-102.03,41.01],CT:[-73.74,40.97,-71.78,42.06],DC:[-77.13,38.78,-76.9,39],DE:[-75.8,38.44,-75.04,39.85],FL:[-87.64,24.5,-80.02,31.01],GA:[-85.62,30.35,-80.83,35.01],HI:[-160.26,18.91,-154.8,22.24],IA:[-96.64,40.37,-90.13,43.51],ID:[-117.25,41.98,-111.03,49.01],IL:[-91.52,36.96,-87.48,42.52],IN:[-88.1,37.76,-84.79,41.77],KS:[-102.06,36.98,-94.59,40.01],KY:[-89.58,36.49,-81.96,39.16],LA:[-94.05,28.92,-88.81,33.03],MA:[-73.52,41.23,-69.92,42.9],MD:[-79.5,37.91,-75.04,39.73],ME:[-71.09,43.05,-66.97,47.47],MI:[-90.43,41.69,-82.41,48.2],MN:[-97.25,43.49,-89.48,49.39],MO:[-95.78,35.99,-89.09,40.62],MS:[-91.65,30.17,-88.09,35.01],MT:[-116.06,44.35,-104.03,49.01],NC:[-84.33,33.84,-75.45,36.6],ND:[-104.06,45.93,-96.55,49.01],NE:[-104.06,39.99,-95.3,43.01],NH:[-72.57,42.69,-70.69,45.32],NJ:[-75.57,38.92,-73.88,41.37],NM:[-109.06,31.32,-102.99,37.01],NV:[-120.02,34.99,-114.03,42.01],NY:[-79.77,40.49,-71.85,45.03],OH:[-84.83,38.39,-80.51,41.99],OK:[-103.01,33.61,-94.42,37.01],OR:[-124.56,41.98,-116.45,46.28],PA:[-80.53,39.71,-74.69,42.28],RI:[-71.87,41.14,-71.11,42.03],SC:[-83.36,32.02,-78.53,35.23],SD:[-104.07,42.47,-96.43,45.96],TN:[-90.32,34.97,-81.64,36.69],TX:[-106.66,25.83,-93.51,36.51],UT:[-114.06,36.99,-109.03,42.01],VA:[-83.69,36.53,-75.23,39.48],VT:[-73.45,42.72,-71.48,45.03],WA:[-124.74,45.54,-116.91,49.01],WI:[-92.9,42.48,-86.81,47.09],WV:[-82.65,37.19,-77.71,40.65],WY:[-111.07,40.99,-104.04,45.02]};   // each state's bounding box [west, south, east, north], from this app's own boundary file
+  var DIR = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var coop = {}, cc = {}, nearC = {};
+  function day() { return locDateStr(gsLocal(Date.now()).h < 9 ? -1 : 0); }
+  function amt(v) { if (v == null) return null; var s = String(v).trim(); if (s === '' || s === 'NA' || s === 'M') return null; if (s === 'T') return TRACE; var n = +s; return isFinite(n) && n >= 0 ? n : null; }
+  function deg(v) { if (v == null || String(v).trim() === '') return null; var n = +v; return isFinite(n) && n > -90 && n < 140 ? n : null; }
+  function nice(s) { s = String(s || '').replace(/\s+/g, ' ').trim(); return s && s === s.toUpperCase() ? s.toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }) : s; }
+  function getText(url) { return netFetch(url).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }); }
+  function prune(store, keep) { Object.keys(store).forEach(function (k) { if (k.slice(-keep.length) !== keep) delete store[k]; }); }
+  function loadCoop(dy) {
+    var c = coop[dy]; if (c && c.list && Date.now() - c.at < TTL) return Promise.resolve(c.list); if (c && c.p) return c.p;
+    prune(coop, dy); c = coop[dy] = { at: 0, list: c ? c.list : null, p: null };
+    c.p = getText(IEM + '/geojson/7am.py?dt=' + dy + '&group=coop').then(function (t) {
+      var j = JSON.parse(t), out = [];
+      (j.features || []).forEach(function (f) {
+        var p = f.properties || {}, g = f.geometry && f.geometry.coordinates; if (!g || !isFinite(+g[0]) || !isFinite(+g[1])) return;
+        var at = Date.parse(p.valid) || null, L = at ? gsLocal(at) : null;
+        out.push({ net: 'coop', id: String(f.id || ''), name: nice(p.name || f.id), lat: +g[1], lon: +g[0], at: at, min: L ? L.h * 60 + L.m : null, rain: amt(p.pday), snow: amt(p.snow), depth: amt(p.snowd), hi: deg(p.high), lo: deg(p.low) });
+      });
+      c.list = out; c.at = Date.now(); c.p = null; return out;
+    }, function (e) { c.p = null; if (c.list) return c.list; delete coop[dy]; throw e; });
+    return c.p;
+  }
+  function loadCc(stt, dy) {
+    var k = stt + ':' + dy, c = cc[k]; if (c && c.list && Date.now() - c.at < TTL) return Promise.resolve(c.list); if (c && c.p) return c.p;
+    prune(cc, dy); c = cc[k] = { at: 0, list: c ? c.list : null, p: null };
+    var d = dy.split('-'), url = CC + '?ReportType=Daily&dtf=1&Format=CSV&State=' + stt + '&ReportDateType=reportdate&Date=' + d[1] + '/' + d[2] + '/' + d[0] + '&TimesInGMT=False';
+    c.p = getText(px(url)).then(function (t) {
+      var lines = t.replace(/^﻿/, '').split(/\r?\n/), out = [];
+      if (!/^ObservationDate\s*,/.test(lines[0] || '')) throw new Error('CoCoRaHS sent an answer that could not be read');
+      for (var i = 1; i < lines.length; i++) {   // date, time, entered, station, name, lat, lon, rain, new snow, its water, snow on the ground, its water, stamp
+        var a = lines[i].split(',').map(function (x) { return x.trim(); }), n = a.length; if (n < 13) continue;
+        var lat = +a[n - 8], lon = +a[n - 7]; if (!isFinite(lat) || !isFinite(lon) || (!lat && !lon)) continue;
+        var tm = /^(\d{1,2}):(\d{2})\s*([AP])M$/i.exec(a[1]);
+        out.push({ net: 'cc', id: a[3], name: a.slice(4, n - 8).join(', '), lat: lat, lon: lon, at: null, min: tm ? ((+tm[1] % 12) + (/p/i.test(tm[3]) ? 12 : 0)) * 60 + (+tm[2]) : null,
+                   rain: amt(a[n - 6]), snow: amt(a[n - 5]), depth: amt(a[n - 3]), hi: null, lo: null });
+      }
+      c.list = out; c.at = Date.now(); c.p = null; return out;
+    }, function (e) { c.p = null; if (c.list) return c.list; delete cc[k]; throw e; });
+    return c.p;
+  }
+  function statesIn(w, s, e, n) { return Object.keys(BOX).filter(function (k) { var b = BOX[k]; return b[0] < e && b[2] > w && b[1] < n && b[3] > s; }).slice(0, 9); }
+  function same(a, b) { return a == null ? b == null : b != null && Math.abs(a - b) < 0.005; }
+  /* Every report inside a box. Either source may fail without taking the other down; with neither, it fails. */
+  function box(w, s, e, n, dy) {
+    dy = dy || day();
+    var inside = function (r) { return r.lon > w && r.lon < e && r.lat > s && r.lat < n; }, sts = statesIn(w, s, e, n);
+    return Promise.all([loadCoop(dy).then(function (l) { return l.filter(inside); }, function () { return null; }),
+                        Promise.all(sts.map(function (k) { return loadCc(k, dy).then(function (l) { return l.filter(inside); }, function () { return null; }); }))]).then(function (res) {
+      var co = res[0], vol = [], bad = 0; res[1].forEach(function (l) { if (l) vol = vol.concat(l); else bad++; });
+      var ccFailed = sts.length > 0 && bad === sts.length;
+      if (!co && (ccFailed || !sts.length)) throw new Error('the observer reports did not load');
+      var kept = (co || []).filter(function (r) {
+        if (r.hi != null || r.lo != null || r.min == null) return true;
+        return !vol.some(function (v) { return v.min != null && Math.abs(v.min - r.min) <= 10 && same(v.rain, r.rain) && same(v.snow, r.snow) && haversine(r.lat, r.lon, v.lat, v.lon) <= 3; });
+      });
+      return { day: dy, list: kept.concat(vol), nCoop: kept.length, nCc: vol.length, coopFailed: !co, ccFailed: ccFailed, ccPart: bad > 0 && !ccFailed };
+    });
+  }
+  function keyOf(lat, lon) { return (+lat).toFixed(3) + ',' + (+lon).toFixed(3) + ':' + day(); }
+  function cached(lat, lon) { var c = nearC[keyOf(lat, lon)]; return c && c.res && Date.now() - c.at < TTL ? c.res : null; }
+  /* The reports around one place: up to four within 5 miles, nearest first; the nearest one with a high and low within 12 miles
+     is added when none of those has one; with nothing within 5 miles, the nearest within 12. */
+  function near(lat, lon) {
+    lat = +lat; lon = +lon; var k = keyOf(lat, lon), c = nearC[k];
+    if (c && c.res && Date.now() - c.at < TTL) return Promise.resolve(c.res); if (c && c.p) return c.p;
+    Object.keys(nearC).forEach(function (x) { if (x !== k && !(nearC[x].p)) delete nearC[x]; });
+    c = nearC[k] = { at: 0, res: null, p: null };
+    c.p = box(lon - 0.42, lat - 0.28, lon + 0.42, lat + 0.28).then(function (b) {
+      var RAD = Math.PI / 180, all = b.list.map(function (r) {
+        var dl = (r.lon - lon) * RAD, brg = (Math.atan2(Math.sin(dl) * Math.cos(r.lat * RAD), Math.cos(lat * RAD) * Math.sin(r.lat * RAD) - Math.sin(lat * RAD) * Math.cos(r.lat * RAD) * Math.cos(dl)) / RAD + 360) % 360;
+        var o = {}; for (var f in r) o[f] = r[f]; o.mi = haversine(lat, lon, r.lat, r.lon); o.dir = DIR[Math.round(brg / 22.5) % 16]; return o;
+      }).filter(function (r) { return r.mi <= 12 && (r.rain != null || r.snow != null || r.depth != null || r.hi != null || r.lo != null); }).sort(function (a, x) { return a.mi - x.mi; });
+      var rows = all.filter(function (r) { return r.mi <= 5; }).slice(0, 4);
+      if (!rows.length) rows = all.slice(0, 1);
+      if (rows.length && !rows.some(function (r) { return r.hi != null || r.lo != null; })) { var t = all.filter(function (r) { return r.hi != null || r.lo != null; })[0]; if (t) rows.push(t); }
+      c.res = { day: b.day, rows: rows, within5: all.filter(function (r) { return r.mi <= 5; }).length, coopFailed: b.coopFailed, ccFailed: b.ccFailed || b.ccPart };
+      c.at = Date.now(); c.p = null; return c.res;
+    }, function (e) { delete nearC[k]; throw e; });
+    return c.p;
+  }
+  function fRain(v) { return v == null ? '–' : v < 0.005 ? (v > 0 ? 'trace' : '0.00') : v.toFixed(2); }
+  function fSnow(v) { return v == null ? '–' : v < 0.05 ? (v > 0 ? 'trace' : '0') : v.toFixed(1); }
+  function fDepth(v) { return v == null ? '–' : v < 0.5 ? (v > 0 ? 'trace' : '0') : String(Math.round(v)); }
+  function who(r) { return r.net === 'cc' ? 'CoCoRaHS' : 'NWS observer'; }
+  function away(r) { return r.mi < 0.15 ? 'in town' : (r.mi < 9.95 ? r.mi.toFixed(1) : String(Math.round(r.mi))) + ' mi ' + r.dir; }
+  function span(dy) { return '24 hours to about 7 AM ' + gsLocal(Date.parse(dy + 'T18:00:00Z')).wd; }
+  function missing(res) { return res.coopFailed ? ' The NWS observer reports did not load.' : res.ccFailed ? ' The CoCoRaHS reports did not load.' : ''; }
+  /* The table for a map report. */
+  function block(res) {
+    if (!res || !res.rows.length) return '';
+    var unit = function (s, u) { return s === '–' || s === 'trace' ? s : s + u; };
+    return '<div class="rg-cap rg-obsv-cap"><b>Observers nearby</b> · ' + esc(span(res.day)) + '</div><table class="regmap-grid rg-obsv-t"><thead><tr><th scope="col" class="rg-l">Observer</th><th scope="col">Hi / Lo</th><th scope="col">Rain</th><th scope="col">Snow</th><th scope="col">Depth</th></tr></thead><tbody>' +
+      res.rows.map(function (r) {
+        return '<tr><td class="rg-time"><b>' + esc(r.name) + '</b><i>' + who(r) + ' · ' + esc(away(r)) + '</i></td><td' + (r.hi == null && r.lo == null ? ' class="rg-nil"' : '') + '>' + (r.hi == null && r.lo == null ? '–' : (r.hi == null ? '–' : Math.round(r.hi) + '°') + ' / ' + (r.lo == null ? '–' : Math.round(r.lo) + '°')) + '</td>' +
+          [unit(fRain(r.rain), ''), unit(fSnow(r.snow), ''), unit(fDepth(r.depth), '')].map(function (s) { return '<td' + (s === '–' ? ' class="rg-nil"' : '') + '>' + s + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</tbody></table><div class="rg-note rg-obsv-note">Rain, new snow and snow depth in inches, reported once a day in the morning.' + missing(res) + '</div>';
+  }
+  /* One line for the landing page: each figure from the nearest report that has it. */
+  function line(res) {
+    if (!res || !res.rows.length) return '';
+    var used = [], pick = function (has) { var r = res.rows.filter(has)[0]; if (r && used.indexOf(r) < 0) used.push(r); return r; }, bits = [];
+    var t = pick(function (r) { return r.hi != null || r.lo != null; }), ra = pick(function (r) { return r.rain != null; }), sn = pick(function (r) { return r.snow != null; }), de = pick(function (r) { return r.depth != null; });
+    var inch = function (s) { return s === 'trace' ? 'a trace' : s + ' in'; };
+    if (t) bits.push((t.hi != null ? 'High <b>' + Math.round(t.hi) + '°</b>' : '') + (t.hi != null && t.lo != null ? ' · ' : '') + (t.lo != null ? 'Low <b>' + Math.round(t.lo) + '°</b>' : ''));
+    if (ra) bits.push('Rain <b>' + inch(fRain(ra.rain)) + '</b>');
+    if (sn) bits.push('New snow <b>' + inch(fSnow(sn.snow)) + '</b>');
+    if (de) bits.push('On ground <b>' + inch(fDepth(de.depth)) + '</b>');
+    if (!bits.length) return '';
+    used.sort(function (a, x) { return a.mi - x.mi; });
+    return '<div class="ob-meta ob-obsv"><span class="ob-src obsv">Observers</span><span>' + bits.join(' · ') + ' · ' + esc(span(res.day)) +
+      '<span class="ob-obsv-who"> · ' + used.map(function (r) { return '<b>' + esc(r.name) + '</b> (' + who(r) + ', ' + esc(away(r)) + ')'; }).join(', ') +
+      (res.within5 > used.length ? ' · ' + res.within5 + ' reports within 5 mi' : '') + '</span>' + esc(missing(res)) + '</span></div>';
+  }
+  /* The landing page: fills its line when the reports arrive, and leaves it empty when there are none or they fail. */
+  function show(lat, lon) {
+    var el = document.getElementById('observersNear'); if (!el) return;
+    el.innerHTML = ''; lat = +lat; lon = +lon; if (!isFinite(lat) || !isFinite(lon)) return;
+    var k = lat.toFixed(3) + ',' + lon.toFixed(3); el.setAttribute('data-k', k);
+    near(lat, lon).then(function (res) { if (el.getAttribute('data-k') === k) el.innerHTML = line(res); }, function () {});
+  }
+  return { day: day, box: box, near: near, cached: cached, block: block, line: line, show: show, _statesIn: statesIn, _amt: amt };
+})();
+
 var REGMAP = (function () {
   var RANGES = [[60, '60 mi'], [120, '120 mi'], [200, '200 mi']];
   /* v3.26.0: every map is either Current (observed) or Forecast. The two sides have their own sidebar entry, their own
@@ -12533,6 +12671,7 @@ var REGMAP = (function () {
   function detail(i) {
     var det = document.getElementById('regMapDetail'); if (!det || !view || !view.taps || !view.taps[i]) return;
     det.setAttribute('data-keep', '1'); det.innerHTML = view.taps[i];
+    if (view.tapO && view.tapO[i] && view.tapO[i].home && /regmap-raw/.test(view.taps[i])) obsvInto(det, view.tapO[i]);   // v3.62.0
     if (view.tapO && view.tapO[i] && sndCan()) det.insertAdjacentHTML('beforeend', sndBtn(view.tapO[i]));   // v3.59.0
     if (view.more && view.more[i]) { try { det.insertAdjacentHTML('beforeend', '<div class="regmap-below">' + (view.more[i]() || '') + '</div>'); } catch (e) {} }
   }
@@ -12640,6 +12779,17 @@ var REGMAP = (function () {
   function nearNote(h) {
     var s = h.src; return '<div class="rg-near">Observed values are from <b>' + esc(s.alt || s.city || s.id) + '</b>' + (s.id ? ' <span class="regmap-id">' + esc(s.id) + '</span>' : '') +
       ', the nearest reporting station, ' + (h.mi < 1 ? 'under a mile away' : R(h.mi) + ' mi ' + h.dir) + '.</div>';
+  }
+  /* v3.62.0: the observers' table for the place. Filled at once when the reports are in hand (the landing page asks for them);
+     otherwise when they arrive, in the report under the map and in its copy in the pop-up at the spot. */
+  function obsvInto(det, o) {
+    if (typeof OBSV === 'undefined') return;
+    var k = (+o.lat).toFixed(3) + ',' + (+o.lon).toFixed(3), got = OBSV.cached(o.lat, o.lon);
+    det.insertAdjacentHTML('beforeend', '<div class="rg-obsv" data-k="' + k + '">' + (got ? OBSV.block(got) : '') + '</div>');
+    if (got) return;
+    OBSV.near(o.lat, o.lon).then(function (r) {
+      Array.prototype.forEach.call(document.querySelectorAll('#regMapCard .rg-obsv[data-k="' + k + '"]'), function (el) { if (!el.firstChild) el.innerHTML = OBSV.block(r); });
+    }, function () {});
   }
   function sndHomeDetail(o) { return '<div class="rg-head"><b>' + esc(o.alt) + '</b></div><div class="rg-cap">The selected location · ' + (+o.lat).toFixed(2) + ', ' + (+o.lon).toFixed(2) + '</div>'; }
   function sndStart() {   // the model and hour the map is showing, where it shows one

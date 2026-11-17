@@ -1,4 +1,4 @@
-/* NWS Terminal edge worker (v3.61.0)
+/* NWS Terminal edge worker (v3.62.0)
    - serves the app shell from static assets with security + cache headers
    - /p/<kind>/...   same-origin read-only proxy for NOAA hosts without CORS
    - /p/gs/...       GribStream POST proxy (keeps the token off third parties)
@@ -7,7 +7,7 @@
    - /api/config     what the server can do for the client
    - /api/health     liveness for uptime checks */
 
-const VERSION = '3.61.0';
+const VERSION = '3.62.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -23,6 +23,8 @@ const ORIGINS = {
   opengeo: 'https://opengeo.ncep.noaa.gov',
   // Nominatim 403s without a User-Agent, and browsers refuse to set one.
   geo: 'https://nominatim.openstreetmap.org',
+  // CoCoRaHS volunteer rain and snow reports (v3.62.0): its public daily export, one state and one day at a time.
+  cocorahs: 'https://data.cocorahs.org',
 };
 const GS_ORIGIN = 'https://gribstream.com';
 const UA = 'NWSTerminal/3.0 (NWS Terminal edge)';
@@ -85,6 +87,7 @@ async function proxy(kind, rest, request) {
       !/^eventdriven\/rest\/services\/radar\/radar_base_reflectivity_time\/ImageServer(\/exportImage)?$/.test(rest)) return new Response('Unsupported path', { status: 404 });
   if (kind === 'nowcoast' && rest !== 'geoserver/satellite/wms' && rest !== 'geoserver/observations/lightning_detection/ows') return new Response('Unsupported path', { status: 404 });
   if (kind === 'opengeo' && !/^geoserver\/[a-z]{4}\/ows$/.test(rest)) return new Response('Unsupported path', { status: 404 });
+  if (kind === 'cocorahs' && rest !== 'export/exportreports.aspx') return new Response('Unsupported path', { status: 404 });
   const upstream = new URL(base + '/' + rest);
   // The path is appended to a fixed origin; refuse anything that resolved elsewhere.
   if (upstream.origin !== base) return new Response('Bad proxy path', { status: 400 });

@@ -2641,3 +2641,22 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 .rg-near { margin-top: 3px; font-size: var(--fs-micro); line-height: 1.4; color: var(--text-3); }
 .rg-near b { color: var(--text-2); font-weight: 600; }
 .rg-near .regmap-id { font-size: inherit; }
+
+/* ── v3.62.0: daily observer reports for the selected location: a line on the landing page, a table in its map report ── */
+.ob-obsv { margin-top: var(--s3); }
+.ob-src.obsv { border-color: rgba(250, 204, 21, .45); color: #FACC15; }
+.ob-obsv-who { color: var(--text-3); }
+.rg-obsv { margin-top: var(--s3); padding-top: var(--s2); border-top: 1px solid var(--border-subtle); }
+.rg-obsv:empty { display: none; }
+.rg-obsv-cap b { color: var(--text-1); }
+.rg-obsv-t td.rg-time b { display: block; font-family: var(--font-ui); font-weight: 600; color: var(--text-1); white-space: normal; }
+.rg-obsv-t td.rg-time i { display: block; font-style: normal; font-size: var(--fs-micro); color: var(--text-3); margin-top: 1px; }
+.rg-obsv-note { font-size: var(--fs-micro); color: var(--text-3); }
+.rg-obsv-t td.rg-time { white-space: normal; min-width: 96px; }
+.regmap-detail .rg-obsv-t { min-width: 0; }
+.map-pop .rg-obsv-t { width: 100%; }
+.map-pop .rg-obsv-t td, .map-pop .rg-obsv-t th { padding-left: 3px; padding-right: 3px; }
+.map-pop .rg-obsv-t td.rg-time { min-width: 0; }
+@media (max-width: 560px) { .map-pop .rg-obsv-t { font-size: var(--fs-micro); } .map-pop .rg-obsv-t td.rg-time b { font-size: var(--fs-micro); } }
+.map-pop .rg-obsv-t td.rg-time, .map-pop .rg-obsv-t th.rg-l { padding-left: 0; }
+:root[data-theme="light"] .ob-src.obsv { border-color: rgba(161, 98, 7, .45); color: #A16207; }
