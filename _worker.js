@@ -685,16 +685,6 @@ export default {
       return json({ gsServerToken: !!env.GS_TOKEN, lightningServerKey: !!env.LIGHTNING_KEY, radarServerKey: !!env.RADAR_TILES_KEY, camsServerKey: !!env.WINDY_WEBCAMS_KEY, wi511ServerKey: !!env.WI511_KEY, claudeServerKey: !!env.ANTHROPIC_API_KEY, wethrServerKey: !!env.WETHR_API_KEY,
                     passcode: !!env.APP_PASSCODE, locked: !(await unlocked(request, env)), version: VERSION }, 200, { 'Cache-Control': 'no-store' });
     }
-    if (path === '/api/planeprobe') {
-      // Temporary reachability test (preview branch only, removed after use): status code only.
-      if (!/^plane-probe\./.test(url.hostname)) return json({ error: 'not here' }, 404);
-      const out = {};
-      for (const u of url.searchParams.getAll('u').slice(0, 4)) {
-        try { const r = await fetch(u, { signal: AbortSignal.timeout(10000) }); out[u.replace(/\d/g, '#')] = { status: r.status, server: r.headers.get('server'), len: (await r.text()).length }; }
-        catch (e) { out[u.replace(/\d/g, '#')] = { error: String(e && e.message || e).slice(0, 200) }; }
-      }
-      return json(out, 200, { 'Cache-Control': 'no-store' });
-    }
     if (path === '/api/health') {
       return json({ ok: true, version: VERSION, time: new Date().toISOString() }, 200, { 'Cache-Control': 'no-store' });
     }
