@@ -7326,7 +7326,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.66.0';
+var APP_VERSION = '3.67.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -10530,7 +10530,7 @@ var REGMAP = (function () {
   var MODES = [
     { id: 'now', label: 'Current', note: 'Observed now and over the last day', tag: 'CURRENT', color: '#5EEAD4', groups: [
       ['Temperature', [['temp', 'Temperature'], ['dew', 'Dew point'], ['chg24', '24-hour change'], ['hilo', 'High and low today']]],
-      ['Wind', [['wind', 'Wind'], ['gust', 'Peak gust'], ['pres', 'Pressure']]],
+      ['Wind', [['wind', 'Wind'], ['gust', 'Peak gust'], ['pres', 'Pressure'], ['sfcmap', 'Surface map']]],
       ['Rain', [['precip', 'Station rain, 24 h'], ['obsrain', 'Observer rain'], ['rain', 'Rainfall analysis'], ['mrain', 'Radar and gauge rain']]],
       ['Snow and ice', [['snow', 'New snow', 'Observers'], ['snowgnd', 'Snow on the ground', 'Estimate'], ['snowdepth', 'Snow depth', 'Analysis'], ['lakeice', 'Great Lakes ice']]],
       ['Storms', [['ltgmap', 'Lightning'], ['rot', 'Rotation'], ['hail', 'Hail size'], ['lsr', 'Storm reports']]],
@@ -10731,6 +10731,7 @@ var REGMAP = (function () {
         if (!at) return; if (at > newest && at <= now + 10 * 60000) newest = at;
         if (now - at > MAX_AGE_MS) return;
         var rec = parseMetar(String(m.rawOb), at); if (rec.t == null) return;
+        rec.cover = m.cover || ''; rec.wx = m.wxString || ''; rec.slp = m.slp != null && isFinite(+m.slp) ? +m.slp : null;   // for the surface map (v3.67.0)
         var id = String(m.icaoId || ''), nm = cleanName(m.name, id);
         var tier = KALSHI[id] ? 4 : /\bIntl\b|International/i.test(m.name || '') ? 3 : /\bRgnl\b|Regional/i.test(m.name || '') ? 2 : 1;
         if (!best[id] || at > best[id].rec.at) best[id] = { id: id, city: nm.city, alt: nm.alt, lat: +m.lat, lon: +m.lon, tier: tier, k: KALSHI[id] || null, rec: rec };
@@ -12018,7 +12019,83 @@ var REGMAP = (function () {
 
   function refNames() { return framePts(60).map(function (o) { return { o: o, v: null, main: '', nameOnly: true, detail: stnDetail(o, o.rec) }; }); }
 
+  /* ════ Surface map (v3.67.0) ════
+     The regional cut of the US map: station plots from this frame's own reports, isobars drawn from their sea-level pressures (free,
+     and denser than the RAP grid the US map pays GribStream for), WPC's fronts and pressure centres, and radar, over the temperature
+     field. The plots, fronts and bulletin parser are the US map's own (USNOW._t), so the two maps read alike. */
+  var SFM = { fronts: null, frontsAt: 0, frontsErr: '', radar: null, radarKey: '', radarErr: '' };
+  var RADAR_IS = 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity_time/ImageServer';
+  function sfmTools() { return typeof USNOW !== 'undefined' && USNOW._t && USNOW._t.frontSvg ? USNOW._t : null; }
+  function sfmRadar(b) {
+    // An EPSG:4326 picture over the frame's box is linear in longitude and latitude, as the frame is, so it lies on it exactly.
+    // The pixel shape follows the box in degrees so the server has nothing to stretch; the canvas does the stretching.
+    var sx = 1600, sy = Math.max(200, Math.min(2400, R(sx * (b[3] - b[1]) / (b[2] - b[0]))));
+    var pic = function (t) { return new Promise(function (res, rej) { var im = new Image(); im.decoding = 'async'; im.onload = function () { res({ t: t, im: im }); }; im.onerror = function () { rej(new Error('the radar picture did not load')); };
+      im.src = px(RADAR_IS + '/exportImage?bbox=' + b.map(function (v) { return v.toFixed(4); }).join(',') + '&bboxSR=4326&imageSR=4326&size=' + sx + ',' + sy + '&format=png32&transparent=true&time=' + t + '&f=image'); }); };
+    return getJSON(px(RADAR_IS + '?f=json')).then(function (j) {
+      var e = j && j.timeInfo && j.timeInfo.timeExtent; if (!e || !isFinite(+e[1])) throw new Error('no radar times');
+      return pic(+e[1]).catch(function () { return pic(+e[1] - 10 * 6e4); });
+    });
+  }
+  function loadSfcMap(W, H) {
+    var U = sfmTools(), now = Date.now(), jobs = [];
+    if (U && U.loadSfc && (!SFM.fronts || now - SFM.frontsAt > 20 * 6e4))
+      jobs.push(U.loadSfc().then(function (a) { SFM.fronts = a; SFM.frontsAt = Date.now(); SFM.frontsErr = ''; }, function (e) { SFM.frontsErr = e.message || 'fronts did not load'; }));
+    var b = projector(W, H).bbox, key = b.map(function (v) { return v.toFixed(3); }).join(',') + '|' + Math.floor(now / 3e5);
+    if (SFM.radarKey !== key) jobs.push(sfmRadar(b).then(function (r) { SFM.radar = r; SFM.radarKey = key; SFM.radarErr = ''; }, function (e) { SFM.radar = null; SFM.radarErr = e.message || 'radar did not load'; }));
+    return Promise.all(jobs);   // each part fails on its own: the map draws with what came back and says what did not
+  }
+  function sfmPlot(p, x, y) {
+    var U = sfmTools(), r = p.o.rec; if (!U) return '';
+    var o = { la: p.o.lat, lo: p.o.lon, tf: r.t, df: r.d, dir: r.dir, kt: r.w != null ? r.w / 1.15078 : null, cover: r.cover || '', wx: r.wx || '' };
+    var proj = projector(frame.W, frame.H);
+    return '<rect x="' + (x - 30) + '" y="' + (y - 26) + '" width="60" height="52" style="fill:transparent"></rect>' + U.stnSvg(o, x, y, 1.45, proj);
+  }
+  function sfmOver(proj, W, H) {
+    var U = sfmTools(), o = []; if (!U) return '';
+    var F = "Inter, system-ui, sans-serif";
+    // isobars every 2 mb from the stations' sea-level pressure (the SLP remark; the altimeter setting where most stations lack one)
+    var withSlp = D.stn.filter(function (s) { return s.rec.slp != null; }), useSlp = withSlp.length >= Math.max(5, 0.6 * D.stn.length);
+    var src = D.stn.map(function (s) { var r = s.rec, v = useSlp ? r.slp : r.alt != null ? r.alt * 33.8639 : null; if (v == null || v < 940 || v > 1060) return null; var q = proj(s.lon, s.lat); return { x: q[0], y: q[1], v: v }; }).filter(Boolean);
+    if (src.length >= 5) {
+      var nx = 51, ny = 33, z = [], lo = 1e9, hi = -1e9;
+      for (var j = 0; j < ny; j++) { var row = []; for (var i = 0; i < nx; i++) {
+        var gx = i * W / (nx - 1), gy = j * H / (ny - 1), num = 0, den = 0;
+        for (var k = 0; k < src.length; k++) { var dx = gx - src[k].x, dy = gy - src[k].y, w = 1 / (dx * dx + dy * dy + 900); w *= w; num += w * src[k].v; den += w; }
+        var v0 = num / den; row.push(v0); if (v0 < lo) lo = v0; if (v0 > hi) hi = v0; } z.push(row); }
+      var step = hi - lo < 3 ? 1 : 2, d = '', labs = [];
+      for (var lev = Math.ceil(lo / step) * step; lev <= hi; lev += step) U.contour(z, nx, ny, lev).forEach(function (ln) {
+        if (ln.length < 4) return; var sp = U.chaikin(U.chaikin(ln.map(function (g) { return [g[0] * W / (nx - 1), g[1] * H / (ny - 1)]; }))), len = 0;
+        for (var a = 1; a < sp.length; a++) len += Math.hypot(sp[a][0] - sp[a - 1][0], sp[a][1] - sp[a - 1][1]); if (len < 60) return;
+        d += U.pathOf(sp); if (len > 180) labs.push({ pts: sp, lev: lev });
+      });
+      o.push('<path d="' + d + '" style="fill:none;stroke:rgba(255,255,255,0.62);stroke-width:1.5;stroke-linejoin:round;pointer-events:none"></path>');
+      labs.forEach(function (Lb) { var q = Lb.pts[Math.floor(Lb.pts.length * 0.5)]; if (!q || q[0] < 40 || q[0] > W - 40 || q[1] < 90 || q[1] > H - 30) return;
+        o.push('<text x="' + q[0].toFixed(1) + '" y="' + (q[1] + 4).toFixed(1) + '" style="font:600 12px ' + F + ';fill:#E5E7EB;text-anchor:middle;paint-order:stroke;stroke:rgba(7,11,20,0.85);stroke-width:3.5px;pointer-events:none">' + lev4(Lb.lev) + '</text>'); });
+    }
+    // WPC fronts and pressure centres
+    var sf = SFM.fronts;
+    if (sf) {
+      var fs = []; sf.fronts.forEach(function (f) { var pts = f.pts.map(function (q) { return proj(q[1], q[0]); }); if (!pts.some(function (q) { return q[0] > -60 && q[0] < W + 60 && q[1] > -60 && q[1] < H + 60; })) return; fs.push(U.frontSvg(f.k, U.spline(pts, 8), 1.6)); });
+      o.push('<g style="pointer-events:none">' + fs.join('') + '</g>');
+      [['H', sf.highs, '#60A5FA'], ['L', sf.lows, '#F87171']].forEach(function (g) { g[1].forEach(function (c) { var q = proj(c.lo, c.la); if (q[0] < 30 || q[0] > W - 30 || q[1] < 100 || q[1] > H - 40) return;
+        o.push('<g style="pointer-events:none"><text x="' + q[0].toFixed(1) + '" y="' + (q[1] + 10).toFixed(1) + '" style="font:800 34px ' + F + ';fill:' + g[2] + ';text-anchor:middle;paint-order:stroke;stroke:rgba(7,11,20,0.85);stroke-width:4px">' + g[0] + '</text>' +
+               '<text x="' + q[0].toFixed(1) + '" y="' + (q[1] + 28).toFixed(1) + '" style="font:700 13px ' + F + ';fill:#E5E7EB;text-anchor:middle;paint-order:stroke;stroke:rgba(7,11,20,0.85);stroke-width:3.5px">' + c.p + '</text></g>'); }); });
+    }
+    return o.join('');
+  }
+  function lev4(v) { return String(Math.round(v)); }
+
   var L = {
+    sfcmap: { label: 'Surface map', needs: 'sfcmap', build: function () {
+      var pts = [], times = [];
+      D.stn.forEach(function (o) { var r = o.rec; if (r.t == null) return; times.push(r.at); pts.push({ o: o, v: r.t, main: String(R(r.t)), detail: stnDetail(o, r) }); });
+      var tMin = Math.min.apply(null, times), tMax = Math.max.apply(null, times), bits = [];
+      if (times.length) bits.push('Stations ' + (clock(tMin) === clock(tMax) ? clock(tMax) : clock(tMin) + '–' + clock(tMax)));
+      bits.push(SFM.fronts && isFinite(SFM.fronts.valid) ? 'fronts WPC ' + clock(SFM.fronts.valid) : 'fronts did not load');
+      bits.push(SFM.radar ? 'radar ' + clock(SFM.radar.t) : 'radar did not load');
+      return { title: 'Surface map', pts: pts, times: times, field: { stops: RAMP_T, band: 2, unit: '°' }, model: sfmPlot, pickBox: [74, 60],
+               overlay: SFM.radar ? SFM.radar.im : null, over: sfmOver, subText: bits.join(' · ') }; } },
     temp: { label: 'Temperature', slider: true, build: function () {
       var temps = D.stn.map(function (o) { var r = cur(o); return r ? r.t : null; }).filter(function (v) { return v != null; }).sort(function (a, b) { return a - b; });
       var med = temps.length ? temps[Math.floor(temps.length / 2)] : 60, mode = med <= 50 ? 'chill' : med >= 80 ? 'heat' : '';
@@ -12491,7 +12568,7 @@ var REGMAP = (function () {
       n && n.indexOf('scan:') === 0 ? loadScan(n.slice(5), W, H) : n === 'fradar' ? loadFradar(W, H) : n && n.indexOf('wx:') === 0 ? loadWx(n.slice(3), W, H) : n === 'rivers' ? loadRivers(W, H) :
       n && n.indexOf('storm:') === 0 ? loadStorm(n.slice(6), W, H) : n === 'snowgnd' ? loadSnowGnd(W, H) : n === 'stormpot' ? loadStormPot(W, H) : n === 'mrain' ? Promise.all([loadMrGrid(W, H), loadHist().catch(function () {})]) :
       n === 'gauge' ? Promise.all([loadHist(), gsAvailable() ? loadMrStations().catch(function () {}) : null]) : n === 'model' ? loadModel(st.model) :
-      n === 'spread' ? loadSpread() : Promise.resolve();
+      n === 'spread' ? loadSpread() : n === 'sfcmap' ? loadSfcMap(W, H) : Promise.resolve();
     return Promise.all([p, back]);
   }
 
@@ -12643,11 +12720,13 @@ var REGMAP = (function () {
       ctx.textAlign = 'center';
       bm.labels.forEach(function (l) { if (l.x < 60 || l.x > W - 60 || l.y < 90 || l.y > H - 50) return; ctx.font = (l.k === 'land' ? '600 ' : 'italic 500 ') + l.fs + 'px Inter, system-ui, sans-serif'; ctx.fillStyle = l.k === 'land' ? '#76829A' : '#7FA9D8'; ctx.fillText(l.t, l.x, l.y + l.fs * 0.35); });
       ctx.textAlign = 'start'; }
+    if (view.overlay) { try { ctx.globalAlpha = 0.88; ctx.drawImage(view.overlay, 0, 0, W, H); ctx.globalAlpha = 1; } catch (e) { ctx.globalAlpha = 1; } }   // radar on the surface map (v3.67.0)
 
     // stations to label: the one nearest the loaded point, then settlement stations and larger airports, then nearest the centre
     var bw = small ? 98 : 118, bh = small ? 76 : 72, picks = [], cx = W / 2, cy = H / 2;
     if (pts[0] && pts[0].nameOnly) { bw = small ? 86 : 100; bh = 40; }
     else if (pts.some(function (p) { return p.wide && p.badge; })) bw = small ? 132 : 158;
+    if (view.pickBox) { bw = view.pickBox[0]; bh = view.pickBox[1]; }
     var legH = view.legendImg ? 78 : 78;
     var cands = pts.filter(function (p) { return p.x > 58 && p.x < W - 62 && p.y > 96 && p.y < H - 44 && !(p.x < (cfg && cfg.levels ? 284 : 260) && p.y > H - legH - 6); });
     var dist = function (p) { return Math.hypot(p.x - cx, p.y - cy); };
@@ -12667,6 +12746,7 @@ var REGMAP = (function () {
       var d = pg.rings.map(function (ring) { return ring.map(function (c, i) { var q = proj(c[0], c[1]); return (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join('') + 'Z'; }).join('');
       s.push('<path d="' + d + '" style="fill:' + pg.color + ';fill-opacity:0.35;stroke:' + pg.color + ';stroke-width:2"></path>');
     });
+    if (view.over) { try { s.push(view.over(proj, W, H)); } catch (e) { /* the plots still draw */ } }
     var homeAt = s.length;   // v3.61.0
     if (view.counties) {   // tap targets, one per shaded county
       Object.keys(view.counties).forEach(function (f) {
@@ -12699,6 +12779,7 @@ var REGMAP = (function () {
       var label = seen[o.city] > 1 ? o.alt : o.city, lw = Math.max(44, label.length * 7.4 + 16);
       taps.push(p.detail || ''); var ti = taps.length - 1; if (p.more) more[ti] = p.more; tapO[ti] = o;
       s.push('<g class="regmap-stn" data-i="' + ti + '" tabindex="0" role="button" aria-label="' + esc(label + ' ' + main + (badge ? ', ' + badge : '')) + '">');
+      if (view.model) { s.push(view.model(p, x, y) + '</g>'); return; }
       if (p.nameOnly) {
         s.push('<rect x="' + (x - 50) + '" y="' + (y - 14) + '" width="100" height="40" style="fill:transparent"></rect><circle cx="' + x + '" cy="' + y + '" r="3" style="fill:#fff;stroke:#070B14;stroke-width:1.2"></circle>' +
                '<text x="' + x + '" y="' + (y + 18) + '" style="font:500 13px ' + F + ';fill:#fff;text-anchor:middle;paint-order:stroke;stroke:rgba(7,11,20,0.85);stroke-width:3.5px;stroke-linejoin:round">' + esc(label) + '</text></g>');
@@ -16297,7 +16378,7 @@ var USNOW = (function () {
     var rt = null; window.addEventListener('resize', function () { if (!S.on || !S.base) return; clearTimeout(rt); rt = setTimeout(draw, 180); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
-  return { show: show, leave: leave, remember: remember, touch: touch, _state: S, _t: { parseSfc: parseSfc, sfcPoint: sfcPoint, contour: contour, chaikin: chaikin, spline: spline, along: along, pieces: pieces, tcol: tcol, obsOf: obsOf, wxTag: wxTag, wxWord: wxWord, rapGrid: rapGrid, sample: sample, GRID: GRID, STN: STN, windText: windText, skyText: skyText } };
+  return { show: show, leave: leave, remember: remember, touch: touch, _state: S, _t: { frontSvg: frontSvg, stnSvg: stnSvg, pathOf: pathOf, loadSfc: loadSfc, parseSfc: parseSfc, sfcPoint: sfcPoint, contour: contour, chaikin: chaikin, spline: spline, along: along, pieces: pieces, tcol: tcol, obsOf: obsOf, wxTag: wxTag, wxWord: wxWord, rapGrid: rapGrid, sample: sample, GRID: GRID, STN: STN, windText: windText, skyText: skyText } };
 })();
 
 /* The opening page (v3.42.0). The app opens on the US map; a deep link (#loc=...) still goes straight to its place.
