@@ -7326,7 +7326,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.67.0';
+var APP_VERSION = '3.67.1';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -10520,6 +10520,24 @@ var OBSV = (function () {
   return { day: day, box: box, near: near, cached: cached, block: block, line: line, show: show, _statesIn: statesIn, _amt: amt };
 })();
 
+/* Radar scan times (v3.67.1). NOAA's copies of the reflectivity ImageServer do not all keep up: on 2026-11-20 two of every six
+   answers named 2026-11-17 23:52Z as the newest scan, three days stale, and the picture asked for at that time is that old radar.
+   Ask again (a fresh address, so no cache answers) until a copy names a scan from the last 30 minutes; otherwise fail, so the map
+   says the radar did not load instead of showing old echoes as now. */
+function radarLatest(base, getter) {
+  var tries = 0;
+  var ask = function () {
+    tries++;
+    return getter(base + '?f=json&_=' + Date.now() + tries).then(function (j) {
+      var e = j && j.timeInfo && j.timeInfo.timeExtent, t = e && +e[1];
+      if (!isFinite(t)) throw new Error('no radar times');
+      if (Date.now() - t <= 30 * 60000) return Math.min(t, Date.now() - 2 * 60000);   // some copies name a scan that has not happened yet
+      if (tries < 4) return ask();
+      throw new Error('the radar service is behind (newest scan ' + new Date(t).toISOString().slice(5, 16).replace('T', ' ') + 'Z)');
+    });
+  };
+  return ask();
+}
 var REGMAP = (function () {
   var RANGES = [[60, '60 mi'], [120, '120 mi'], [200, '200 mi']];
   /* v3.26.0: every map is either Current (observed) or Forecast. The two sides have their own sidebar entry, their own
@@ -12032,9 +12050,7 @@ var REGMAP = (function () {
     var sx = 1600, sy = Math.max(200, Math.min(2400, R(sx * (b[3] - b[1]) / (b[2] - b[0]))));
     var pic = function (t) { return new Promise(function (res, rej) { var im = new Image(); im.decoding = 'async'; im.onload = function () { res({ t: t, im: im }); }; im.onerror = function () { rej(new Error('the radar picture did not load')); };
       im.src = px(RADAR_IS + '/exportImage?bbox=' + b.map(function (v) { return v.toFixed(4); }).join(',') + '&bboxSR=4326&imageSR=4326&size=' + sx + ',' + sy + '&format=png32&transparent=true&time=' + t + '&f=image'); }); };
-    return getJSON(px(RADAR_IS + '?f=json')).then(function (j) {
-      var e = j && j.timeInfo && j.timeInfo.timeExtent; if (!e || !isFinite(+e[1])) throw new Error('no radar times');
-      var t = Math.min(+e[1], Date.now() - 2 * 6e4);   // some copies of the service name a scan time that has not happened yet
+    return radarLatest(RADAR_IS, function (u) { return getJSON(px(u)); }).then(function (t) {
       return pic(t).catch(function () { return pic(t - 10 * 6e4); });
     });
   }
@@ -16035,8 +16051,8 @@ var USNOW = (function () {
     var pic = function (t) { return new Promise(function (res, rej) { var im = new Image(); im.decoding = 'async'; im.onload = function () { res({ t: t, im: im }); }; im.onerror = function () { rej(new Error('the radar picture did not load')); };
       im.src = px(RADAR + '/exportImage?bbox=' + V.bbox.join(',') + '&bboxSR=5070&imageSR=5070&size=1600,1024&format=png32&transparent=true&time=' + t + '&f=image'); }); };
     var empty = function (im) { try { var c = document.createElement('canvas'); c.width = 200; c.height = 128; var x = c.getContext('2d'); x.drawImage(im, 0, 0, 200, 128); var d = x.getImageData(0, 0, 200, 128).data; for (var i = 3; i < d.length; i += 4) if (d[i] > 8) return false; return true; } catch (e) { return false; } };
-    return getJ(RADAR + '?f=json').then(function (j) {
-      var e = j && j.timeInfo && j.timeInfo.timeExtent; if (!e || !isFinite(+e[1])) throw new Error('no radar times');
+    return radarLatest(RADAR, getJ).then(function (t1) {
+      var e = [null, t1];
       /* NOAA's copies of this service run minutes apart: one names a newest scan that another does not hold yet and answers with an
          empty picture. A country with no echo at all does not happen, so an empty picture is asked for again ten minutes back (every
          copy has that), and if that is empty too the layer is reported as not loaded: silence must not pass for clear skies. */
