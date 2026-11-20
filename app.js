@@ -12058,11 +12058,11 @@ var REGMAP = (function () {
     var withSlp = D.stn.filter(function (s) { return s.rec.slp != null; }), useSlp = withSlp.length >= Math.max(5, 0.6 * D.stn.length);
     var src = D.stn.map(function (s) { var r = s.rec, v = useSlp ? r.slp : r.alt != null ? r.alt * 33.8639 : null; if (v == null || v < 940 || v > 1060) return null; var q = proj(s.lon, s.lat); return { x: q[0], y: q[1], v: v }; }).filter(Boolean);
     if (src.length >= 5) {
-      var nx = 51, ny = 33, z = [], lo = 1e9, hi = -1e9;
-      for (var j = 0; j < ny; j++) { var row = []; for (var i = 0; i < nx; i++) {
+      var nx = 51, ny = 33, z = new Array(nx * ny), lo = 1e9, hi = -1e9;   // flat, row by row, as contour() reads the RAP grid
+      for (var j = 0; j < ny; j++) { for (var i = 0; i < nx; i++) {
         var gx = i * W / (nx - 1), gy = j * H / (ny - 1), num = 0, den = 0;
         for (var k = 0; k < src.length; k++) { var dx = gx - src[k].x, dy = gy - src[k].y, w = 1 / (dx * dx + dy * dy + 900); w *= w; num += w * src[k].v; den += w; }
-        var v0 = num / den; row.push(v0); if (v0 < lo) lo = v0; if (v0 > hi) hi = v0; } z.push(row); }
+        var v0 = num / den; z[j * nx + i] = v0; if (v0 < lo) lo = v0; if (v0 > hi) hi = v0; } }
       var step = hi - lo < 3 ? 1 : 2, d = '', labs = [];
       for (var lev = Math.ceil(lo / step) * step; lev <= hi; lev += step) U.contour(z, nx, ny, lev).forEach(function (ln) {
         if (ln.length < 4) return; var sp = U.chaikin(U.chaikin(ln.map(function (g) { return [g[0] * W / (nx - 1), g[1] * H / (ny - 1)]; }))), len = 0;
