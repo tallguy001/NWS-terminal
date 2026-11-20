@@ -12034,7 +12034,8 @@ var REGMAP = (function () {
       im.src = px(RADAR_IS + '/exportImage?bbox=' + b.map(function (v) { return v.toFixed(4); }).join(',') + '&bboxSR=4326&imageSR=4326&size=' + sx + ',' + sy + '&format=png32&transparent=true&time=' + t + '&f=image'); }); };
     return getJSON(px(RADAR_IS + '?f=json')).then(function (j) {
       var e = j && j.timeInfo && j.timeInfo.timeExtent; if (!e || !isFinite(+e[1])) throw new Error('no radar times');
-      return pic(+e[1]).catch(function () { return pic(+e[1] - 10 * 6e4); });
+      var t = Math.min(+e[1], Date.now() - 2 * 6e4);   // some copies of the service name a scan time that has not happened yet
+      return pic(t).catch(function () { return pic(t - 10 * 6e4); });
     });
   }
   function loadSfcMap(W, H) {
