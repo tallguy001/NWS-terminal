@@ -3968,6 +3968,17 @@ function initClaudeChat() {
 
 var chatHistory = [];
 var chatOpen = false;
+var chatGen = 0;   // v3.72.0: bumped by New conversation, so a reply still on its way to the old one is dropped
+
+/* v3.72.0: New conversation. Clears the thread on screen and the history sent with the next question; the open tab is
+   read afresh with every question anyway, so nothing else carries over. */
+function newChat() {
+  chatGen++; chatHistory.length = 0;
+  var m = document.getElementById('chatMessages'); if (m) m.innerHTML = '';
+  var b = document.getElementById('chatSendBtn'); if (b) b.disabled = false;
+  sendChatMessage._busy = false;
+  var i = document.getElementById('chatInput'); if (i) { i.value = ''; i.focus(); }
+}
 
 function toggleChat() {
   chatOpen = !chatOpen;
@@ -4120,6 +4131,7 @@ async function sendChatMessage() {
   input.value = '';
   btn.disabled = true;
   sendChatMessage._busy = true;
+  var gen = chatGen;
 
   // Add thinking indicator
   var thinkDiv = document.createElement('div');
@@ -4177,6 +4189,7 @@ async function sendChatMessage() {
       thinkDiv.classList.add('chat-thinking'); thinkDiv.textContent = 'Analyzing weather data...';
       out = await chatCall(key, systemPrompt, trimmedHistory, webOn, onQ, onT); picNote = 'The pictures of the screen were not accepted, so this answer uses the text and numbers only.';
     }
+    if (gen !== chatGen) return;   // New conversation was pressed while this one was out: drop it
     if (picNote) out.note = out.note ? out.note + ' ' + picNote : picNote;
     var data = out.data, raw = out.text;
     if (!raw) {
@@ -4193,6 +4206,7 @@ async function sendChatMessage() {
     thinkDiv.remove();
     addChatMessage('ai', reply + chatSources(out));
   } catch(e) {
+    if (gen !== chatGen) return;
     thinkDiv.remove();
     chatHistory.pop();   // don't resend the failed question with the next one
     var em = String((e && e.message) || 'error'), slow = /abort|timed? ?out|TimeoutError/i.test(em) || (e && e.name === 'TimeoutError');
@@ -6169,6 +6183,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // Chat
   on('chatFab', 'click', toggleChat);
   on('chatCloseBtn', 'click', toggleChat);
+  on('chatNewBtn', 'click', newChat);   // v3.72.0
   on('chatSendBtn', 'click', sendChatMessage);
   on('chatInput', 'keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sendChatMessage(); } });
 
@@ -7336,7 +7351,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.71.3';
+var APP_VERSION = '3.72.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {

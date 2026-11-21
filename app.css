@@ -2966,3 +2966,7 @@ body.snd-open #chatPanel { z-index: 9600; }
 .ua-card .ua-time .regmap-slider { flex: 1; min-width: 0; }
 .ua-card .ua-stage { cursor: crosshair; }
 .ua-card .ua-note { margin-top: 8px; }
+
+/* v3.72.0 — New conversation in the assistant's header */
+#chatHeader .chat-new { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--border-default); background: transparent; color: var(--text-2); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+#chatHeader .chat-new:hover { color: var(--text-1); background: var(--bg-raised); }
