@@ -15785,7 +15785,7 @@ var NOWX = (function () {
     }
     if (cn && isFinite(cn.avgHigh) && isFinite(cn.avgLow)) {
       o.push('<rect class="nb" x="' + gl + '" y="' + f1(Y(+cn.avgHigh)) + '" width="' + pw + '" height="' + f1(Y(+cn.avgLow) - Y(+cn.avgHigh)) + '"/>');
-      o.push('<text class="lb" x="' + (W - 8) + '" y="' + f1(Y(+cn.avgLow) - 7) + '" text-anchor="end">' + (compact ? 'Normal ' : 'Normal for the date, ') + Math.round(cn.avgLow) + '° to ' + Math.round(cn.avgHigh) + '°</text>');
+      o.push('<text class="lb" x="' + (compact ? gl + 6 : W - 8) + '" y="' + f1(Y(+cn.avgLow) - 7) + '" text-anchor="' + (compact ? 'start' : 'end') + '">' + (compact ? 'Normal ' : 'Normal for the date, ') + Math.round(cn.avgLow) + '° to ' + Math.round(cn.avgHigh) + '°</text>');
     }
     for (var g = lo; g <= hi; g += 5) {
       o.push('<line class="' + (g % 10 ? 'g2' : 'g1') + '" x1="' + gl + '" x2="' + (gl + pw) + '" y1="' + f1(Y(g)) + '" y2="' + f1(Y(g)) + '"/>');
@@ -15806,7 +15806,7 @@ var NOWX = (function () {
     if (fpts.length > 1) o.push('<path class="fc" d="M' + fpts.map(function (p) { return f1(X(p.t)) + ',' + f1(Y(p.f)); }).join(' L') + '"/>');
     // extremes
     var lab = function (p, cls, txt, dy) { o.push('<text class="' + cls + '" x="' + f1(Math.min(Math.max(X(p.t), gl + 50), gl + pw - 56)) + '" y="' + f1(Y(p.f) + dy) + '" text-anchor="middle">' + txt + '</text>'); };
-    if (ob.length > 2) { var omx = ob.reduce(function (m, p) { return p.f > m.f ? p : m; }); if (now - omx.t > 2 * HOUR) { o.push('<circle class="dot" cx="' + f1(X(omx.t)) + '" cy="' + f1(Y(omx.f)) + '" r="3"/>'); lab(omx, 'an', Math.round(omx.f) + '°' + (compact ? '' : ' at ' + hourLabel(omx.t)), -10); } }
+    if (ob.length > 2) { var omx = ob.reduce(function (m, p) { return p.f > m.f ? p : m; }); if (now - omx.t > 2 * HOUR && Math.abs(X(omx.t) - X(now)) > (compact ? 52 : 70)) { o.push('<circle class="dot" cx="' + f1(X(omx.t)) + '" cy="' + f1(Y(omx.f)) + '" r="3"/>'); lab(omx, 'an', Math.round(omx.f) + '°' + (compact ? '' : ' at ' + hourLabel(omx.t)), -10); } }
     if (fc.length > 2) {
       var fmx = fc.reduce(function (m, p) { return p.f > m.f ? p : m; }), fmn = fc.reduce(function (m, p) { return p.f < m.f ? p : m; });
       if (fmx.t - now > 3 * HOUR) lab(fmx, 'af', fmx.f + '°' + (compact ? '' : ' ' + dayName(fmx.t) + ' ' + hourLabel(fmx.t)), -10);
