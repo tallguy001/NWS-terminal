@@ -2760,3 +2760,4 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 }
 .nw-age { position: static; display: block; margin: 0 0 var(--s2); }
 .wk7-row.today { background: none; box-shadow: none; }
+.nw-norm-sw { width: 14px; height: 14px; border-radius: 2px; background: var(--nw-normal); border: 1px solid var(--ac-border); }

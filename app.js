@@ -15785,7 +15785,7 @@ var NOWX = (function () {
     }
     if (cn && isFinite(cn.avgHigh) && isFinite(cn.avgLow)) {
       o.push('<rect class="nb" x="' + gl + '" y="' + f1(Y(+cn.avgHigh)) + '" width="' + pw + '" height="' + f1(Y(+cn.avgLow) - Y(+cn.avgHigh)) + '"/>');
-      o.push('<text class="lb" x="' + (compact ? gl + 6 : W - 8) + '" y="' + f1(Y(+cn.avgLow) - 7) + '" text-anchor="' + (compact ? 'start' : 'end') + '">' + (compact ? 'Normal ' : 'Normal for the date, ') + Math.round(cn.avgLow) + '° to ' + Math.round(cn.avgHigh) + '°</text>');
+      if (!compact) o.push('<text class="lb" x="' + (W - 8) + '" y="' + f1(Y(+cn.avgLow) - 7) + '" text-anchor="end">Normal for the date, ' + Math.round(cn.avgLow) + '° to ' + Math.round(cn.avgHigh) + '°</text>');
     }
     for (var g = lo; g <= hi; g += 5) {
       o.push('<line class="' + (g % 10 ? 'g2' : 'g1') + '" x1="' + gl + '" x2="' + (gl + pw) + '" y1="' + f1(Y(g)) + '" y2="' + f1(Y(g)) + '"/>');
