@@ -1,14 +1,15 @@
-/* NWS Terminal edge worker (v3.67.1)
+/* NWS Terminal edge worker (v3.71.0)
    - serves the app shell from static assets with security + cache headers
    - /p/<kind>/...   same-origin read-only proxy for NOAA hosts without CORS
    - /p/gs/...       GribStream POST proxy (keeps the token off third parties)
    - /api/normals    1991-2020 normals + records, computed once per point and cached
    - /api/cams       Windy Webcams API v3 near a point (key stays a worker secret)
    - /api/wicams     Wisconsin 511 road cameras near a point (key stays a worker secret)
+   - /api/wiroads    Wisconsin 511 winter road conditions in a box (same key)
    - /api/config     what the server can do for the client
    - /api/health     liveness for uptime checks */
 
-const VERSION = '3.67.1';
+const VERSION = '3.71.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -429,6 +430,84 @@ async function wicams(request, env, ctx) {
   return json({ radiusKm: r, total: near.length, more: near.length > limit, cams: near.slice(0, limit).map((x) => x.c) }, 200, NS);
 }
 
+/* ---- Wisconsin 511 winter road conditions (v3.71.0) ----
+   The same developer API and key as the cameras. It hands back every reported segment in the state, each with WisDOT's
+   condition (Normal, Partially Covered, Completely Covered, Travel Not Advised, No Report) and its geometry as an encoded
+   polyline. Read at most once in ten minutes (the API allows ten calls a minute, shared with the cameras), decoded and
+   thinned here, and kept; each request is then answered with the segments that reach a box around the point. */
+let wrMem = null;   // { at, list }
+function polyDecode(s) {
+  const out = []; let i = 0, lat = 0, lon = 0;
+  while (i < s.length) {
+    let b, sh = 0, r = 0; do { b = s.charCodeAt(i++) - 63; r |= (b & 31) << sh; sh += 5; } while (b >= 32 && i < s.length); lat += r & 1 ? ~(r >> 1) : r >> 1;
+    sh = 0; r = 0; do { b = s.charCodeAt(i++) - 63; r |= (b & 31) << sh; sh += 5; } while (b >= 32 && i < s.length); lon += r & 1 ? ~(r >> 1) : r >> 1;
+    out.push([lat / 1e5, lon / 1e5]);
+  }
+  return out;
+}
+function wrTrim(raw) {
+  const list = Array.isArray(raw) ? raw : raw && Array.isArray(raw.WinterRoads) ? raw.WinterRoads : raw && typeof raw === 'object' ? [raw] : [], out = [];
+  for (const c of list) {
+    if (!c || typeof c !== 'object') continue;
+    const cond = String(c.Condition || c['Primary Condition'] || c.PrimaryCondition || c['Overall Status'] || '').trim().slice(0, 40);
+    const enc = [].concat(c.Polyline || c.EncodedPolyline || []).filter((x) => typeof x === 'string' && x.length > 3);
+    const lines = [], b = [180, 90, -180, -90];
+    for (const e of enc) {
+      let pts; try { pts = polyDecode(e); } catch { continue; }
+      const keep = [], rd = (p) => [Math.round(p[0] * 1e4) / 1e4, Math.round(p[1] * 1e4) / 1e4]; let last = null, li = -1;
+      pts.forEach((p, k) => { if (!(Math.abs(p[0]) <= 90 && Math.abs(p[1]) <= 180)) return; if (last && Math.abs(p[0] - last[0]) < 0.002 && Math.abs(p[1] - last[1]) < 0.002) return; keep.push(rd(p)); last = p; li = k; });
+      if (li >= 0 && li < pts.length - 1) keep.push(rd(pts[pts.length - 1]));   // the segment still ends where it ends
+      if (keep.length < 2) continue;
+      for (const p of keep) { b[0] = Math.min(b[0], p[1]); b[1] = Math.min(b[1], p[0]); b[2] = Math.max(b[2], p[1]); b[3] = Math.max(b[3], p[0]); }
+      lines.push(keep);
+    }
+    if (!lines.length) continue;
+    out.push({ c: cond, road: String(c.RoadwayName || c.Roadway || '').trim().slice(0, 60), loc: String(c.LocationDescription || c.Location || '').trim().slice(0, 140),
+               area: String(c.AreaName || '').trim().slice(0, 40), t: Number(c.LastUpdated) || 0, lines, b });
+  }
+  return out;
+}
+async function wrList(env, ctx) {
+  const now = Date.now();
+  if (wrMem && now - wrMem.at < WI_KEEP_MS) return wrMem.list;
+  const cache = typeof caches !== 'undefined' && caches.default ? caches.default : null, cacheKey = new Request(WI511 + '/api/v2/get/winterroads?format=json');   // the key is left out of what is stored
+  const hit = cache ? await cache.match(cacheKey) : null;
+  if (hit) { try { const list = await hit.json(); if (Array.isArray(list)) { wrMem = { at: Number(hit.headers.get('X-Fetched-At')) || now, list }; return list; } } catch { /* read it again below */ } }
+  const stop = (status, why) => { const e = new Error(why); e.status = status; return e; };   // never carries the address, which holds the key
+  const ask = (p) => fetch(WI511 + p + '?key=' + encodeURIComponent(env.WI511_KEY) + '&format=json', { headers: { Accept: 'application/json', 'User-Agent': UA }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+  let res;
+  try { res = await ask('/api/v2/get/winterroads'); if (res.status === 404) res = await ask('/api/getwinterroadconditions'); }   // the newer address, then the documented older one
+  catch (err) { if (wrMem) return wrMem.list; throw stop(err && err.name === 'TimeoutError' ? 504 : 502, 'no answer'); }
+  if (!res.ok) { if (wrMem && res.status !== 401 && res.status !== 403) return wrMem.list; throw stop(res.status, 'refused'); }
+  let raw = null; try { raw = await res.json(); } catch { raw = null; }
+  if (!raw) { if (wrMem) return wrMem.list; throw stop(502, 'no list'); }
+  const list = wrTrim(raw);
+  wrMem = { at: now, list };
+  if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(list), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=600', 'X-Fetched-At': String(now) } })));
+  return list;
+}
+async function wiroads(request, env, ctx) {
+  const NS = { 'Cache-Control': 'no-store' };
+  if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, NS);
+  if (!env.WI511_KEY) return json({ error: 'No Wisconsin 511 key on the server. Add the WI511_KEY secret in Cloudflare.' }, 401, NS);
+  if (!isSameOriginRead(request)) return json({ error: 'This route only answers the app itself.' }, 401, NS);
+  if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
+  const u = new URL(request.url), q = ['w', 's', 'e', 'n'].map((k) => Number(u.searchParams.get(k)));
+  if (q.some((x) => !Number.isFinite(x)) || q[0] >= q[2] || q[1] >= q[3] || q[2] - q[0] > 12 || q[3] - q[1] > 8) return json({ error: 'w, s, e and n (a box up to 12 by 8 degrees) required' }, 400, NS);
+  if (q[2] < -93.0 || q[0] > -86.6 || q[3] < 42.4 || q[1] > 47.4) return json({ total: 0, segs: [], at: 0 }, 200, NS);   // the box does not reach Wisconsin
+  let list;
+  try { list = await wrList(env, ctx); }
+  catch (err) {
+    const s = err && err.status;
+    if (s === 401 || s === 403) return json({ error: 'Wisconsin 511 did not accept the key in WI511_KEY.' }, 401, NS);
+    if (s === 429) return json({ error: 'Wisconsin 511 allows ten requests a minute and that was reached. Try again shortly.' }, 429, NS);
+    if (s === 504) return json({ error: 'Wisconsin 511 did not answer in time.' }, 504, NS);
+    return json({ error: 'Wisconsin 511 road conditions are unavailable' + (s ? ' (' + s + ').' : '.') }, 502, NS);
+  }
+  const segs = list.filter((x) => !(x.b[2] < q[0] || x.b[0] > q[2] || x.b[3] < q[1] || x.b[1] > q[3]));
+  return json({ total: segs.length, segs, at: wrMem ? wrMem.at : 0 }, 200, NS);
+}
+
 const WINDY_API = 'https://api.windy.com';
 const httpsOnly = (u) => (typeof u === 'string' && /^https:\/\/[^\s"'<>]+$/i.test(u) ? u : '');
 function windyOnly(u) {
@@ -659,6 +738,10 @@ export default {
     if (path === '/api/wicams') {
       try { return await wicams(request, env, ctx); }
       catch (err) { return json({ error: 'Wisconsin 511 request failed.' }, err && err.name === 'TimeoutError' ? 504 : 502, { 'Cache-Control': 'no-store' }); }   // no detail: an upstream address would carry the key
+    }
+    if (path === '/api/wiroads') {   // v3.71.0
+      try { return await wiroads(request, env, ctx); }
+      catch (err) { return json({ error: 'Wisconsin 511 request failed.' }, err && err.name === 'TimeoutError' ? 504 : 502, { 'Cache-Control': 'no-store' }); }
     }
     if (path === '/api/chat') {
       try { return await chat(request, env); }

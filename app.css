@@ -2953,3 +2953,15 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 #sndModal .snd-ask[hidden] { display: none; }
 #sndModal .snd-ask:hover { background: var(--bg-raised); }
 body.snd-open #chatPanel { z-index: 9600; }
+
+/* v3.71.0 — the nearest weather-balloon sites, under the map */
+.raob-near { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.raob-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.raob-list .regmap-sndbtn { margin: 0; }
+
+/* v3.71.0 — upper-air maps */
+.ua-card .regmap-layers { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.ua-card .ua-time { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.ua-card .ua-time .regmap-slider { flex: 1; min-width: 0; }
+.ua-card .ua-stage { cursor: crosshair; }
+.ua-card .ua-note { margin-top: 8px; }

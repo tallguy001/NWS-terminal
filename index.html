@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.70.1">
+<link rel="stylesheet" href="/app.css?v=3.71.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -52,7 +52,7 @@
           <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/></svg>
           <span class="nl">Radar</span>
         </button>
-        <button class="nav-item" type="button" data-section="regional" data-group="regional maps home">
+        <button class="nav-item" type="button" data-section="regional" data-group="regional upper maps home">
           <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg>
           <span class="nl">Maps</span>
         </button>
@@ -310,6 +310,13 @@
     </div>
 
     <!-- MAPS SECTION (Windy embed) -->
+    <div id="section-upper" class="section-panel hidden">
+      <div class="section">
+        <h2 class="section-label sec-quiet">Upper-air maps</h2>
+        <div class="card regmap-card ua-card" id="uaCard"><div id="uaMap"></div></div>
+      </div>
+    </div>
+
     <div id="section-maps" class="section-panel hidden">
       <div class="section">
         <h2 class="section-label sec-quiet">Maps, model layers and radar</h2>
@@ -1827,6 +1834,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.70.1" defer></script>
+<script src="/app.js?v=3.71.0" defer></script>
 </body>
 </html>

@@ -530,6 +530,7 @@ function switchSection(name) {
   if (name === 'maps') MAPS.show(); else MAPS.hide();
   if (name === 'cams') CAMS.ensure();
   if (name === 'regional') REGMAP.ensure();
+  if (name === 'upper') UAMAP.show(); else if (typeof UAMAP !== 'undefined') UAMAP.stop();   // v3.71.0
   if (name === 'spc' || name === 'wpc' || name === 'cpc') OLMAP.show(name);
   if (name !== 'radar') HRMAP.leave('radar');
   if (name !== 'satellite') HRMAP.leave('satellite');
@@ -6916,7 +6917,7 @@ function toggleStationDetail(card) {
 // ---- APP STATE: last location, recents, deep links, geolocation ----
 var _lastLoc = null;                 // query string of the location on screen
 var _currentSection = 'forecast';
-var SECTIONS = ['forecast','hourly','afd','radar','satellite','maps','cams','regional','alerts','cpc','spc','wpc','astro','aqi','models','climate','kalshi'];
+var SECTIONS = ['forecast','hourly','afd','radar','satellite','maps','cams','regional','upper','alerts','cpc','spc','wpc','astro','aqi','models','climate','kalshi'];
 
 function lsGet(k, dflt) { try { var v = localStorage.getItem(k); return v == null ? dflt : v; } catch (e) { return dflt; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode / quota */ } }
@@ -7335,7 +7336,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.70.1';
+var APP_VERSION = '3.71.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -10556,24 +10557,25 @@ var REGMAP = (function () {
      matters for telling it from its neighbour, it rides along as a short tag: [id, name, tag]. */
   var MODES = [
     { id: 'now', label: 'Current', note: 'Observed now and over the last day', tag: 'Observed', color: '#A5D4F4', groups: [
-      ['Temperature', [['temp', 'Temperature'], ['dew', 'Dew point'], ['chg24', '24-hour change'], ['hilo', 'High and low today']]],
+      ['Temperature', [['temp', 'Temperature'], ['feels', 'Feels like', 'Wind chill'], ['dew', 'Dew point'], ['chg24', '24-hour change'], ['hilo', 'High and low today']]],
       ['Wind', [['wind', 'Wind'], ['gust', 'Peak gust'], ['pres', 'Pressure'], ['sfcmap', 'Surface map']]],
       ['Rain', [['precip', 'Station rain, 24 h'], ['obsrain', 'Observer rain'], ['rain', 'Rainfall analysis'], ['mrain', 'Radar and gauge rain']]],
-      ['Snow and ice', [['snow', 'New snow', 'Observers'], ['snowgnd', 'Snow on the ground', 'Estimate'], ['snowdepth', 'Snow depth', 'Analysis'], ['lakeice', 'Great Lakes ice']]],
+      ['Snow and ice', [['snow', 'New snow', 'Observers'], ['snowgnd', 'Snow on the ground', 'Estimate'], ['snowdepth', 'Snow depth', 'Analysis'], ['roads', 'Road conditions', 'WI 511'], ['lakeice', 'Great Lakes ice']]],
       ['Storms', [['ltgmap', 'Lightning'], ['rot', 'Rotation'], ['hail', 'Hail size'], ['lsr', 'Storm reports']]],
       ['Sky and visibility', [['vis', 'Visibility']]],
+      ['Upper air', [['raob', 'Balloon soundings', 'Observed']]],
       ['Hazards, air and water', [['alerts', 'Alerts'], ['rivers', 'River levels']]]] },
     { id: 'fc', label: 'Forecast', note: 'NWS forecast and models, hours to two weeks ahead', tag: 'Forecast', color: '#C4B5FD', groups: [
       ['Temperature', [['fcst', 'Highs and lows', 'NWS'], ['model', 'Temperature', 'Models'], ['ghigh', 'Daily high', 'GFS/ECMWF'], ['glow', 'Daily low', 'GFS/ECMWF']]],
       ['Wind', [['mgust', 'Wind gusts', 'HRRR/RRFS']]],
       ['Rain', [['fcrain', 'Rain', 'NWS'], ['mqpf', 'Rain total', 'HRRR/RRFS'], ['mptype', 'Rain or snow', 'HRRR/RRFS'], ['fradar', 'Future radar', 'HRRR/RRFS']]],
-      ['Snow and ice', [['fcsnow', 'Snow', 'NWS'], ['msnow', 'New snow', 'HRRR/RRFS'], ['wssi', 'Storm severity', 'WPC'], ['wssip', 'Severity odds', 'WPC'], ['pwpf', 'Snow and ice odds', 'WPC']]],
+      ['Snow and ice', [['fcsnow', 'Snow', 'NWS'], ['msnow', 'New snow', 'HRRR/RRFS'], ['ecsnow', 'Snow range and odds', 'ECMWF ensemble'], ['wssi', 'Storm severity', 'WPC'], ['wssip', 'Severity odds', 'WPC'], ['pwpf', 'Snow and ice odds', 'WPC']]],
       ['Storms', [['tstm', 'Thunderstorms', 'SPC'], ['gtor', 'Tornado', 'SPC'], ['ghail', 'Hail', 'SPC'], ['gwind', 'Damaging wind', 'SPC'], ['stormpot', 'Storm potential', 'Models']]],
       ['Sky and visibility', [['mcloud', 'Cloud cover', 'HRRR/RRFS'], ['mvis', 'Visibility', 'HRRR/RRFS'], ['mpwat', 'Moisture', 'HRRR/RRFS']]],
       ['Hazards, air and water', [['smoke', 'Smoke'], ['heatrisk', 'HeatRisk']]],
       ['Confidence', [['spread', 'Model spread'], ['fcchk', 'Forecast vs observed']]]] }
   ];
-  var OPT_NAME = { fc: 'Period', pw: 'Period', tw: 'Period', mh: 'Period', sw: 'Hour', sm: 'Model', fb: 'Period', wc: 'Impact', wd: 'Day', wl: 'Level', wp: 'Day', wt: 'Amount', wq: 'Day', sv: 'Time', hr: 'Day', ml: 'Lead time', mm: 'Model', gm: 'Model', fs: 'Frames', rain: 'Period', lsr: 'Period', model: 'Model', lead: 'Lead time' };
+  var OPT_NAME = { es: 'Window', ek: 'Show', fc: 'Period', pw: 'Period', tw: 'Period', mh: 'Period', sw: 'Hour', sm: 'Model', fb: 'Period', wc: 'Impact', wd: 'Day', wl: 'Level', wp: 'Day', wt: 'Amount', wq: 'Day', sv: 'Time', hr: 'Day', ml: 'Lead time', mm: 'Model', gm: 'Model', fs: 'Frames', rain: 'Period', lsr: 'Period', model: 'Model', lead: 'Lead time' };
   function allLayers(m) { var a = []; MODES.forEach(function (x) { if (!m || x.id === m) x.groups.forEach(function (g) { g[1].forEach(function (p) { a.push(p[0]); }); }); }); return a; }
   function modeOf(layer) { return allLayers('fc').indexOf(layer) >= 0 ? 'fc' : 'now'; }
   function modeDef(m) { return MODES.filter(function (x) { return x.id === m; })[0] || MODES[0]; }
@@ -11389,6 +11391,97 @@ var REGMAP = (function () {
         me.gP = null; me.grid = gridFrom(x.L, x.rows, function (r) { return Date.parse(r.forecasted_time) === V && fin(r.d) ? Math.max(0, +r.d) * 39.3701 : null; });
       }, function () { me.gP = null; me.grid = null; }));
     });
+  }
+  /* ════ snow range and odds from the ECMWF ensemble (v3.71.0) ════
+     Forecast → Snow and ice → Snow range and odds. The ECMWF ensemble's 50 members, each with its own snowfall over the
+     chosen window (24 hours to 5 days from the next 6-hourly mark), read at about 300 points over the frame and at the
+     labelled stations: the middle of the 50 (median), the low end (10th percentile), the high end (90th) and the chance of
+     1, 4 and 8 inches or more. Snowfall comes as water; it is shown as snow at 10 to 1, which is light for a dry, cold
+     snow and heavy for a wet one. Windows stop at 5 days so both ends always come from the same run (the 06 and 18 UTC
+     runs reach 144 hours). One request: 2 times x 50 members x 1 parameter x 1 bundle; points where a member has no
+     snow are left out by the filter, so a dry map is a small answer. Kept for an hour. */
+  var ES_WIN = { '24': ['Next 24 h', 24], '48': ['48 h', 48], '72': ['72 h', 72], '120': ['5 days', 120] };
+  var ES_SHOW = { p50: ['Likely', 'the middle of the 50 members'], p10: ['Low end', 'the 10th percentile: 9 in 10 members have more'], p90: ['High end', 'the 90th percentile: 1 in 10 members has more'],
+                  x1: ['1 in+', 'chance of 1 inch or more'], x4: ['4 in+', 'chance of 4 inches or more'], x8: ['8 in+', 'chance of 8 inches or more'] };
+  var ODD_LV = [5, 10, 20, 30, 50, 70, 90], ODD_C = ['#2B3F5C', '#36577F', '#3F78A8', '#5B9BD0', '#8E7CCB', '#B35FB8', '#D6489B'].map(hex);
+  var ES = null, ES_MEM = []; for (var _m = 1; _m <= 50; _m++) ES_MEM.push(_m);
+  function esPick() { if (!ES_WIN[st.es]) st.es = '72'; if (!ES_SHOW[st.ek]) st.ek = 'p50'; return { h: ES_WIN[st.es][1], k: st.ek }; }
+  function esStats(tot) {   // tot: 50 snowfall totals in inches -> the numbers the map shows
+    var a = tot.slice().sort(function (x, y) { return x - y; }), q = function (f) { var i = f * (a.length - 1), lo = Math.floor(i), hi = Math.ceil(i); return a[lo] + (a[hi] - a[lo]) * (i - lo); },
+        ge = function (x) { return 100 * a.filter(function (v) { return v >= x - 1e-9; }).length / a.length; };
+    return { p10: q(0.1), p50: q(0.5), p90: q(0.9), x1: ge(1), x4: ge(4), x8: ge(8), mx: a[a.length - 1], n: a.length };
+  }
+  function loadEs(W, H) {
+    if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
+    var pk = esPick(), A = Math.ceil(Date.now() / (6 * HOUR)) * 6 * HOUR, B = A + pk.h * HOUR, key = D.key + ':' + W + ':' + pk.h + ':' + A;
+    if (ES && ES.key === key && (ES.p || (ES.d && Date.now() - ES.at < HOUR))) return ES.p || Promise.resolve();
+    var L = lattice(W, H, 300), stn = [{ lat: +(+currentLat).toFixed(4), lon: +(+currentLon).toFixed(4), name: 'home' }].concat(framePts(24).map(function (o) { return { lat: +o.lat.toFixed(4), lon: +o.lon.toFixed(4), name: o.id }; })), list = stn.slice();
+    for (var j = 0; j < L.ny; j++) for (var i = 0; i < L.nx; i++) if (list.length < 500) list.push({ lat: +(L.lat0 + j * L.step).toFixed(4), lon: +(L.lon0 + i * L.step).toFixed(4), name: '#' + i + '_' + j });
+    var me = ES = { key: key, at: Date.now(), d: null, p: null, A: A, B: B, h: pk.h };
+    me.p = gsOwn('ifsenfo', { timesList: [A, B].map(function (t) { return new Date(t).toISOString().replace('.000Z', 'Z'); }), coordinates: list, variables: [{ name: 'sf', level: 'sfc', alias: 'sf' }], members: ES_MEM, filter: { expression: 'sf > 0.00001' } }).then(function (rows) {
+      var by = {}, runB = 0, runs = {};
+      (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), m = r.member; if (!r.name || m == null || !isFinite(+r.sf)) return; var x = by[r.name] || (by[r.name] = {}), y = x[m] || (x[m] = { a: 0, b: 0 });
+        if (t === A) y.a = +r.sf; else if (t === B) { y.b = +r.sf; var ra = Date.parse(r.forecasted_at); runs[ra] = (runs[ra] || 0) + 1; if (ra > runB) runB = ra; } });
+      var st2 = {}, cells = [], top = 0;
+      list.forEach(function (p) { var x = by[p.name] || {}, tot = ES_MEM.map(function (m) { var y = x[m]; return y ? Math.max(0, y.b - y.a) * 39.3701 * 10 : 0; }), s = esStats(tot);
+        if (s.p90 > top) top = s.p90;
+        if (p.name.charAt(0) === '#') { var ij = p.name.slice(1).split('_'); cells.push({ lat: L.lat0 + (+ij[1]) * L.step, lon: L.lon0 + (+ij[0]) * L.step, s: s }); } else st2[p.name] = s; });
+      me.d = { st: st2, cells: cells, L: L, run: runB, top: top, mixed: Object.keys(runs).length > 1 }; me.p = null;
+    }, function (e) { me.p = null; throw e; });
+    return me.p;
+  }
+  function esLayer() {
+    var pk = esPick(), E = ES, T = 'Snow ' + (pk.k.charAt(0) === 'x' ? 'odds' : 'range') + ', ECMWF ensemble';
+    if (!E || !E.d) return { title: T, pts: refNames(), subText: 'ECMWF ensemble', empty: 'The ensemble did not load.' };
+    var d = E.d, show = ES_SHOW[pk.k], odds = pk.k.charAt(0) === 'x', span = (pk.h <= 72 ? hrDay(E.A) + ' to ' + hrDay(E.B) : gsLocal(E.A).wd + ' to ' + gsLocal(E.B).wd);
+    var fmt = function (v) { return odds ? String(R(v)) + '%' : v < 0.05 ? '0' : v < 9.95 ? v.toFixed(1) : String(R(v)); }, say = function (v) { return v < 0.05 ? 'none' : (v < 9.95 ? v.toFixed(1) : R(v)) + ' in'; };
+    var grid = function (s) { return kv([['Likely (median)', '<b>' + say(s.p50) + '</b>'], ['Range, 10th to 90th', say(s.p10) + ' to ' + say(s.p90)], ['Wettest member', say(s.mx)],
+      ['Chance of 1 in+', R(s.x1) + '%'], ['Chance of 4 in+', R(s.x4) + '%'], ['Chance of 8 in+', R(s.x8) + '%']]) + '<div class="rg-note">50 ECMWF ensemble members, snow at 10 to 1, ' + esc(span) + '.</div>'; };
+    var pts = [];
+    D.stn.forEach(function (o) { var s = d.st[o.id]; if (!s) return; var v = s[pk.k];
+      pts.push({ o: o, v: v, main: fmt(v), wide: true, detail: head(o, 'Snow, ' + esc(span) + ': likely <b>' + say(s.p50) + '</b>, range ' + say(s.p10) + ' to ' + say(s.p90)) + grid(s) }); });
+    var hm = d.st.home;
+    var G = gridFrom(d.L, d.cells.map(function (c) { return { lat: c.lat, lon: c.lon, v: c.s[pk.k] }; }), function (r) { return r.v; });
+    var field = odds ? { levels: ODD_LV, cuts: ODD_LV, colors: ODD_C, grid: G, flat: true, unit: '%' } : { levels: SNOW_LV, cuts: cutsOf(SNOW_LV), colors: SNOW_C, grid: G, flat: true, unit: ' in' };
+    var rt = d.run ? String(new Date(d.run).getUTCHours()).padStart(2, '0') + 'Z run' : '';
+    return { title: T + ', ' + (pk.h <= 72 ? 'next ' + pk.h + ' h' : 'next 5 days'), pts: pts, field: field,
+             subText: 'ECMWF ensemble' + (rt ? ', ' + rt : '') + ' · ' + show[0].toLowerCase() + (hm ? ' · ' + (odds ? R(hm[pk.k]) + '%' : say(hm[pk.k])) + ' at the marker' : ''),
+             sub2: show[1] + ', ' + span + ', from the 50 members of the ECMWF ensemble; snow at 10 to 1 from the snowfall water' + (d.mixed ? '. Some points came from an older run' : ''),
+             empty: d.top < 0.05 && !odds ? 'No member has measurable snow in view for this window.' : '' };
+  }
+  /* ════ Wisconsin 511 winter road conditions (v3.71.0) ════
+     Current → Snow and ice → Road conditions. WisDOT's reported condition on each state-maintained segment, through this
+     site's /api/wiroads (the WI511_KEY secret stays on the server). Wisconsin only; elsewhere the map says so. */
+  var ROAD_C = [[/not advised|impass|closed/i, '#EF4444', 'Travel not advised'], [/complete|snow covered|ice covered|covered$/i, '#C084FC', 'Completely covered'],
+                [/partial|patch|slush|wet|mostly/i, '#F59E0B', 'Partially covered'], [/normal|dry|bare|good|clear/i, '#22C55E', 'Normal'], [/./, '#64748B', 'No report']];
+  function roadCat(c) { for (var i = 0; i < ROAD_C.length; i++) if (ROAD_C[i][0].test(c || ' ')) return ROAD_C[i]; return ROAD_C[ROAD_C.length - 1]; }
+  function loadRoads(W, H) {
+    var k = 'wiroads:' + W; if (D[k] && Date.now() - D[k].at < 10 * 6e4) return Promise.resolve();
+    var b = projector(W, H).bbox, q = '?w=' + b[0].toFixed(3) + '&s=' + b[1].toFixed(3) + '&e=' + b[2].toFixed(3) + '&n=' + b[3].toFixed(3);
+    return fetch('/api/wiroads' + q, { headers: { Accept: 'application/json' } }).then(function (r) { return r.json().catch(function () { return { error: r.status === 404 ? 'this site has no road-condition route yet' : 'HTTP ' + r.status }; }); })
+      .then(function (j) { D[k] = { at: Date.now(), segs: j && Array.isArray(j.segs) ? j.segs : null, err: j && j.error ? String(j.error) : null, t: j && j.at }; },
+            function (e) { D[k] = { at: Date.now(), segs: null, err: (e && e.message) || 'network error' }; });
+  }
+  function roadsLayer() {
+    var R0 = D['wiroads:' + frame.W], T = 'Road conditions, Wisconsin 511';
+    if (!R0 || !R0.segs) return { title: T, pts: refNames(), subText: 'WisDOT winter road conditions', empty: 'Road conditions did not load' + (R0 && R0.err ? ': ' + R0.err : '.') };
+    var b = frame.bbox, inWI = !(b[2] < -93.0 || b[0] > -86.6 || b[3] < 42.4 || b[1] > 47.4);
+    if (!inWI) return { title: T, pts: refNames(), subText: 'WisDOT winter road conditions', empty: 'Wisconsin 511 covers Wisconsin roads only.' };
+    var used = {}, lines = [], newest = 0;
+    var rank = function (c) { return ROAD_C.indexOf(c); };
+    R0.segs.slice().sort(function (x, y) { return rank(roadCat(y.c)) - rank(roadCat(x.c)); }).forEach(function (sg) {   // the worst drawn last, on top
+      var cat = roadCat(sg.c); used[cat[2]] = cat; if (sg.t > newest) newest = sg.t;
+      var det = '<div class="rg-head"><b>' + esc(sg.road || 'Road') + '</b>' + (sg.area ? ' <span class="regmap-id">' + esc(sg.area) + '</span>' : '') + '</div>' +
+                (sg.loc ? '<div class="rg-cap">' + esc(sg.loc) + '</div>' : '') + kv([['Condition', '<b>' + esc(sg.c || 'No report') + '</b>'], sg.t ? ['Reported', esc(hrDay(sg.t * 1000))] : null]) +
+                '<div class="rg-note">From WisDOT on 511wi.gov. Conditions can change faster than they are reported.</div>';
+      sg.lines.forEach(function (ln) { lines.push({ pts: ln, color: cat[1], detail: det, aria: (sg.road || 'Road') + ': ' + (sg.c || 'no report') }); });
+    });
+    var order = ['Travel not advised', 'Completely covered', 'Partially covered', 'Normal', 'No report'];
+    var bad = R0.segs.filter(function (sg) { return rank(roadCat(sg.c)) <= 2; }).length;
+    return { title: T, pts: refNames(), lines: lines, legendCat: order.filter(function (n) { return used[n]; }).map(function (n) { return [used[n][1], n]; }),
+             subText: 'WisDOT · ' + R0.segs.length + ' segments in view' + (bad ? ', ' + bad + ' covered or worse' : ', all normal') + (newest ? ' · latest report ' + clock(newest * 1000) : ''),
+             sub2: 'the condition WisDOT last reported on each state-maintained segment. Tap a road for its report',
+             empty: R0.segs.length ? '' : 'No reported road segments in this view.' };
   }
   function snowGndLayer() {
     var S = SG && SG.st, miss = 'The National Water Model has no snow figures for this area.';
@@ -12235,6 +12328,7 @@ var REGMAP = (function () {
     rot: { label: 'Rotation', needs: 'scan:rot', build: function () { return scanLayer('rot'); } },
     hail: { label: 'Hail size', needs: 'scan:hail', build: function () { return scanLayer('hail'); } },
     rivers: { label: 'River levels', needs: 'rivers', build: function () { return riversLayer(); } },
+    raob: { label: 'Balloon soundings', needs: 'raob', build: function () { return raobLayer(); } },
     mgust: { label: 'Wind gusts', needs: 'mf:pt', controls: function () { return mfControls(); }, step: function () { return mfStep(); }, build: function () { return mfLayer('mgust'); } },
     mqpf: { label: 'Rain total', needs: 'mf:pt', controls: function () { return mfControls(); }, step: function () { return mfStep(); }, build: function () { return mfLayer('mqpf'); } },
     msnow: { label: 'New snow', needs: 'mf:pt', controls: function () { return mfControls(); }, step: function () { return mfStep(); }, build: function () { return mfLayer('msnow'); } },
@@ -12256,6 +12350,13 @@ var REGMAP = (function () {
     pwpf: { label: 'Snow and ice odds', needs: 'wx:pwpf', controls: function () { return Object.keys(WX_AMT).map(function (k) { return [k, WX_AMT[k][0], 'wt']; }).concat([1, 2, 3].map(function (i) { return [i, 'Day ' + i, 'wq']; })); }, build: function () { return wxLayer('pwpf'); } },
     mrain: { label: 'Radar and gauge rain', needs: 'mrain', controls: function () { return [[1, '1 hour', 'mh'], [12, '12 hours', 'mh'], [24, '24 hours', 'mh']]; }, build: function () { return mrainLayer(); } },
     snowgnd: { label: 'Snow on the ground', needs: 'snowgnd', build: function () { return snowGndLayer(); } },
+    roads: { label: 'Road conditions', needs: 'roads', build: function () { return roadsLayer(); } },
+    feels: { label: 'Feels like', slider: true, build: function () {   // v3.71.0: wind chill when it is cold, heat index when it is hot
+      var v = obsLayer('Feels like (wind chill or heat index)', function (o, r) {
+        var f = r.t <= 50 && r.chill != null ? r.chill : r.t >= 80 && r.heat != null ? r.heat : r.t; if (f == null) return null;
+        return { v: f, main: String(R(f)), badge: R(f) !== R(r.t) ? 'air ' + R(r.t) : null, wide: R(f) !== R(r.t) }; });
+      v.field = { stops: RAMP_T, band: 2, unit: '°' }; v.sub2 = 'degrees F: the wind chill at 50 or colder, the heat index at 80 or warmer, otherwise the air temperature; the badge is the air temperature'; return v; } },
+    ecsnow: { label: 'Snow range and odds', needs: 'ecsnow', controls: function () { esPick(); return Object.keys(ES_WIN).map(function (k) { return [k, ES_WIN[k][0], 'es']; }).concat(Object.keys(ES_SHOW).map(function (k) { return [k, ES_SHOW[k][0], 'ek']; })); }, build: function () { return esLayer(); } },
     tstm: { label: 'Thunderstorm chance', needs: 'storm:', controls: function () { return tsWin(TG).wins.map(function (w) { return [w.id, SPCT.label(w, true), 'tw']; }); }, build: function () { return stormLayer(''); } },
     gtor: { label: 'Tornado chance', needs: 'storm:tor', controls: function () { return tsWin(VG).wins.map(function (w) { return [w.id, SPCT.label(w, true), 'tw']; }); }, build: function () { return stormLayer('tor'); } },
     ghail: { label: 'Severe hail chance', needs: 'storm:hail', controls: function () { return tsWin(VG).wins.map(function (w) { return [w.id, SPCT.label(w, true), 'tw']; }); }, build: function () { return stormLayer('hail'); } },
@@ -12591,8 +12692,8 @@ var REGMAP = (function () {
   function need(layer, W, H) {
     var n = L[layer].needs, back = L[layer].slider && st.back ? loadHist() : Promise.resolve();
     var p = !n ? Promise.resolve() : n.indexOf('svc:') === 0 ? loadSvc(n.slice(4), W, H) : n.indexOf('mf:') === 0 ? loadMf(n.slice(3)) : n === 'gd' ? loadGd() : n === 'hist' ? loadHist() : n === 'ndfd' ? loadNdfd() : n === 'pcp' ? Promise.all([loadNdfd(), loadPcpGrid(W, H)]) : n === 'alerts' ? loadAlerts() : n === 'lsr' ? loadLsr() : n === 'snow' ? loadSnow() : n === 'rain' ? loadRain(W, H) :
-      n && n.indexOf('scan:') === 0 ? loadScan(n.slice(5), W, H) : n === 'fradar' ? loadFradar(W, H) : n && n.indexOf('wx:') === 0 ? loadWx(n.slice(3), W, H) : n === 'rivers' ? loadRivers(W, H) :
-      n && n.indexOf('storm:') === 0 ? loadStorm(n.slice(6), W, H) : n === 'snowgnd' ? loadSnowGnd(W, H) : n === 'stormpot' ? loadStormPot(W, H) : n === 'mrain' ? Promise.all([loadMrGrid(W, H), loadHist().catch(function () {})]) :
+      n && n.indexOf('scan:') === 0 ? loadScan(n.slice(5), W, H) : n === 'fradar' ? loadFradar(W, H) : n && n.indexOf('wx:') === 0 ? loadWx(n.slice(3), W, H) : n === 'rivers' ? loadRivers(W, H) : n === 'raob' ? raobSites() :
+      n && n.indexOf('storm:') === 0 ? loadStorm(n.slice(6), W, H) : n === 'snowgnd' ? loadSnowGnd(W, H) : n === 'roads' ? loadRoads(W, H) : n === 'ecsnow' ? loadEs(W, H) : n === 'stormpot' ? loadStormPot(W, H) : n === 'mrain' ? Promise.all([loadMrGrid(W, H), loadHist().catch(function () {})]) :
       n === 'gauge' ? Promise.all([loadHist(), gsAvailable() ? loadMrStations().catch(function () {}) : null]) : n === 'model' ? loadModel(st.model) :
       n === 'spread' ? loadSpread() : n === 'sfcmap' ? loadSfcMap(W, H) : Promise.resolve();
     return Promise.all([p, back]);
@@ -12791,6 +12892,12 @@ var REGMAP = (function () {
       var d = pg.rings.map(function (ring) { return ring.map(function (c, i) { var q = proj(c[0], c[1]); return (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join('') + 'Z'; }).join('');
       s.push('<path d="' + d + '" style="fill:' + pg.color + ';fill-opacity:0.35;stroke:' + pg.color + ';stroke-width:2"></path>');
     });
+    (view.lines || []).forEach(function (ln) {   // v3.71.0: tappable lines (road conditions): a wide clear stroke to tap over a coloured one
+      var d = ''; ln.pts.forEach(function (c, i) { var q = proj(c[1], c[0]); d += (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); });
+      taps.push(ln.detail);
+      s.push('<path d="' + d + '" style="fill:none;stroke:rgba(7,11,20,0.7);stroke-width:5.5;stroke-linecap:round;stroke-linejoin:round;pointer-events:none"></path><path d="' + d + '" style="fill:none;stroke:' + ln.color + ';stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none"></path>' +
+             '<path class="regmap-stn" data-i="' + (taps.length - 1) + '" role="button" aria-label="' + esc(ln.aria || '') + '" d="' + d + '" style="fill:none;stroke:transparent;stroke-width:16;stroke-linecap:round"></path>');
+    });
     if (view.over) { try { s.push(view.over(proj, W, H)); } catch (e) { /* the plots still draw */ } }
     var homeAt = s.length;   // v3.61.0
     if (view.counties) {   // tap targets, one per shaded county
@@ -12923,7 +13030,8 @@ var REGMAP = (function () {
     stage.insertAdjacentHTML('beforeend', s.join(''));
     var det = document.getElementById('regMapDetail');
     if (det && !det.getAttribute('data-keep')) { det.textContent = (view.sub2 ? view.sub2.charAt(0).toUpperCase() + view.sub2.slice(1) + '. ' : '') + (taps.length ? (view.counties ? 'Tap a shaded county for its alerts.' : 'Tap a station or marker for its full report.') : '');
-      var hp = sndCan(true) ? sndHome() : null; if (hp) det.insertAdjacentHTML('beforeend', sndBtn(hp, true)); }   // v3.60.0
+      var hp = sndCan(true) ? sndHome() : null; if (hp) det.insertAdjacentHTML('beforeend', sndBtn(hp, true));   // v3.60.0
+      if (view.belowHtml) det.insertAdjacentHTML('beforeend', view.belowHtml); }   // v3.71.0
   }
 
   function detail(i) {
@@ -13011,7 +13119,32 @@ var REGMAP = (function () {
      points, so the others ride along at no extra cost: their soundings for that hour then open from what is in hand, as
      does any hour the Storm potential map has loaded. Kept for an hour. The slider asks only when the finger lifts. */
   var SQ = { o: null, m: 'hrrr', i: 0, t0: 0, seq: 0, opener: null }, SQC = { key: '', set: {} }, SQ_MAX = 60;
-  var SQ_REACH = { hrrr: ' Its hourly runs reach 18 hours and its 00, 06, 12 and 18 UTC runs 48.', rrfs: ' It runs every three hours.', rap: ' Its runs reach 21 hours, and 51 hours four times a day.' };
+  var SQ_REACH = { hrrr: ' Its hourly runs reach 18 hours and its 00, 06, 12 and 18 UTC runs 48.', rrfs: ' It runs every three hours.', rap: ' Its runs reach 21 hours, and 51 hours four times a day.',
+                   gfs: ' It runs four times a day and reaches 16 days, in 3-hour steps here.', ecmwf: ' It runs four times a day; its 06 and 18 UTC runs reach only 90 hours, and past 144 hours it steps every 6.' };
+  /* v3.71.0: the sounding window adds the two global models, for soundings out to ten days. They are asked for in the same
+     form, one valid time, every station on the map in one bundle: the GFS at its 21 levels from 1000 to 100 mb (111
+     parameters), the ECMWF IFS at its 12 (65 parameters). The ECMWF sends no surface height, so it is found from the
+     heights of the levels either side of the surface pressure. The NAM is not offered: GribStream answers nothing for it,
+     the NAM having been retired in favour of the RRFS. */
+  var GFS_LV = [1000, 975, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200, 150, 100], EC_LV = [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100];
+  function ecZs(r) {
+    var ps = r.sfc_pres / 100, L = EC_LV.filter(function (p) { return r['z' + p] != null; }); if (!(ps > 500) || L.length < 2) return null;
+    var i = 0; while (i < L.length - 2 && L[i + 1] >= ps) i++;
+    var p1 = L[i], p2 = L[i + 1], z1 = r['z' + p1], z2 = r['z' + p2];
+    return z1 + (z2 - z1) * Math.log(p1 / ps) / Math.log(p1 / p2);
+  }
+  var SQM = { hrrr: SPM.hrrr, rrfs: SPM.rrfs, rap: SPM.rap,
+    gfs: { label: 'GFS', prof: 'gfs', step: 3, max: 240, vars: function () { var o = SP_SFC.slice(); GFS_LV.forEach(function (p) { [['TMP', 't'], ['RH', 'r'], ['UGRD', 'u'], ['VGRD', 'v'], ['HGT', 'z']].forEach(function (x) { o.push({ name: x[0], level: p + ' mb', alias: x[1] + p }); }); }); return o; } },
+    ecmwf: { label: 'ECMWF', prof: 'ifsoper', step: 3, max: 240,
+      vars: function () { var o = [['sp', 'sfc_pres'], ['2t', 'sfc_t'], ['2d', 'sfc_td'], ['10u', 'sfc_u'], ['10v', 'sfc_v']].map(function (x) { return { name: x[0], level: 'sfc', alias: x[1] }; });
+        EC_LV.forEach(function (p) { [['t', 't'], ['r', 'r'], ['u', 'u'], ['v', 'v'], ['gh', 'z']].forEach(function (x) { o.push({ name: x[0], level: 'pl ' + p, alias: x[1] + p }); }); }); return o; },
+      fix: function (r) { if (r.sfc_hgt == null) r.sfc_hgt = ecZs(r); return r; } } };
+  function sqMax(m) { return (SQM[m] && SQM[m].max) || SQ_MAX; }
+  function sqT(m, i) {   // the valid time for slider position i, on the model's own steps
+    var t = SQ.t0 + i * HOUR, M = SQM[m]; if (!M || !M.step) return t;
+    var st6 = m === 'ecmwf' && t - Date.now() > 138 * HOUR ? 6 : M.step;
+    return Math.round(t / (st6 * HOUR)) * st6 * HOUR;
+  }
   function sndEl(id) { return document.getElementById(id); }
   function sndKey(o) { return o.id || ((+o.lat).toFixed(3) + ',' + (+o.lon).toFixed(3)); }
   function sndCan(place) { return modeOf(st.layer) === 'fc' && (place || st.layer !== 'stormpot') && gsAvailable(); }
@@ -13060,7 +13193,7 @@ var REGMAP = (function () {
     var i = Math.round((t - h0) / HOUR);
     return { m: SPM[m] ? m : 'hrrr', t0: h0, i: i >= 0 && i <= SQ_MAX ? i : 0 };
   }
-  function sndWhen(v, t0) { return hrDay(t0 + v * HOUR) + (v ? ' · +' + v + ' h' : ''); }
+  function sndWhen(v, t0) { var t = SQ.o && t0 === SQ.t0 ? sqT(SQ.m, v) : t0 + v * HOUR, h = Math.round((t - t0) / HOUR); return hrDay(t) + (h ? ' · +' + h + ' h' : ''); }
   function sndBtn(o, named) {   // named: say whose sounding it is beside the button (the row under the map has no heading of its own)
     var s = sndStart();
     return '<div class="regmap-sndrow"><button type="button" class="regmap-sndbtn" data-snd="' + esc(o.id || '') + '" data-lat="' + (+o.lat) + '" data-lon="' + (+o.lon) + '" data-nm="' + esc(o.alt || o.city || o.id || '') + '">Sounding</button>' +
@@ -13076,7 +13209,7 @@ var REGMAP = (function () {
     var have = sndHave(m, t, o); if (have) return Promise.resolve(have);
     if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
     if (SQC.key !== D.key) SQC = { key: D.key, set: {} };
-    var k = sndKey(o), ck = m + ':' + t, c = SQC.set[ck], M = SPM[m];
+    var k = sndKey(o), ck = m + ':' + t, c = SQC.set[ck], M = SQM[m];
     if (c && Date.now() - c.at >= HOUR) c = null;
     if (c && c.p && c.ids[k]) return c.p.then(function () { if (!c.by[k]) throw new Error('NODATA'); return c.by[k]; }, function (e) { throw e; });
     if (c && c.none[k] && Date.now() - c.none[k] < 10 * 6e4) return Promise.reject(new Error('NODATA'));   // asked a moment ago and the model had nothing: not asked again for ten minutes
@@ -13089,7 +13222,7 @@ var REGMAP = (function () {
     list.forEach(function (x) { c.ids[x.name] = 1; });
     var span = { fromTime: new Date(t - 20 * 6e4).toISOString(), untilTime: new Date(t + 20 * 6e4).toISOString() };
     var ask = function (feed, vars) { return gsOwn(feed, { fromTime: span.fromTime, untilTime: span.untilTime, coordinates: list, variables: vars }); };
-    var pP = M.sfc ? Promise.all([ask(M.prof, spProfVars(M)), ask(M.sfc, SP_SFC)]).then(function (res) {
+    var pP = M.vars ? ask(M.prof, M.vars()).then(function (rows) { return M.fix ? (rows || []).map(M.fix) : rows; }) : M.sfc ? Promise.all([ask(M.prof, spProfVars(M)), ask(M.sfc, SP_SFC)]).then(function (res) {
                var by = {}; (res[1] || []).forEach(function (r) { by[r.name] = r; });
                return (res[0] || []).map(function (r) { var s = by[r.name]; if (s) SP_SFC.forEach(function (x) { r[x.alias] = s[x.alias]; }); return r; });
              }) : ask(M.prof, SP_SFC.concat(spProfVars(M)));
@@ -13106,35 +13239,37 @@ var REGMAP = (function () {
   function sndBar() {
     var bar = sndEl('sndModalBar'); if (!bar) return;
     bar.innerHTML = '<div class="regmap-row"><span class="regmap-glabel">Model</span><div class="cpc-nav" role="group" aria-label="Model">' +
-        Object.keys(SPM).map(function (k) { return chip(SPM[k].label, k === SQ.m, 'data-sm="' + k + '"'); }).join('') + '</div></div>' +
-      '<div class="regmap-row"><span class="regmap-glabel">Hour</span><label class="regmap-slider regmap-step"><input type="range" id="sndModalHour" min="0" max="' + SQ_MAX + '" step="1" value="' + SQ.i + '" aria-label="Hour">' +
+        Object.keys(SQM).map(function (k) { return chip(SQM[k].label, k === SQ.m, 'data-sm="' + k + '"'); }).join('') + '</div></div>' +
+      '<div class="regmap-row"><span class="regmap-glabel">Hour</span><label class="regmap-slider regmap-step"><input type="range" id="sndModalHour" min="0" max="' + sqMax(SQ.m) + '" step="' + (SQM[SQ.m].step || 1) + '" value="' + SQ.i + '" aria-label="Hour">' +
         '<output id="sndModalHourOut">' + esc(sndWhen(SQ.i, SQ.t0)) + '</output></label><span class="regmap-stepby"><button type="button" class="cpc-nav-btn" data-sby="-1" aria-label="One hour earlier">‹</button>' +
         '<button type="button" class="cpc-nav-btn" data-sby="1" aria-label="One hour later">›</button></span></div>';
   }
   function sndSync() {   // the controls follow the state without being rebuilt, so the one in use keeps the focus
     var bar = sndEl('sndModalBar'), sl = sndEl('sndModalHour'), out = sndEl('sndModalHourOut'); if (!bar) return;
     Array.prototype.forEach.call(bar.querySelectorAll('[data-sm]'), function (b) { var on = b.getAttribute('data-sm') === SQ.m; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
-    if (sl && +sl.value !== SQ.i) sl.value = SQ.i;
+    if (sl) { sl.max = sqMax(SQ.m); sl.step = SQM[SQ.m].step || 1; if (+sl.value !== SQ.i) sl.value = SQ.i; }
     if (out) out.textContent = sndWhen(SQ.i, SQ.t0);
   }
   function sndTitle() {
     var h = sndEl('sndModalTitle'), o = SQ.o; if (!h || !o) return;
-    h.innerHTML = esc(SPM[SQ.m].label + ' sounding') + ' · ' + esc(o.alt || o.id || '') + (o.id && !o.home && o.id !== o.alt ? ' <span class="regmap-id">' + esc(o.id) + '</span>' : '');
+    h.innerHTML = esc(SQM[SQ.m].label + ' sounding') + ' · ' + esc(o.alt || o.id || '') + (o.id && !o.home && o.id !== o.alt ? ' <span class="regmap-id">' + esc(o.id) + '</span>' : '');
   }
   function sndShow(r) {
-    var body = sndEl('sndModalBody'), run = sndEl('sndModalRun'), M = SPM[SQ.m], o = SQ.o, my = SQ.seq, x = null;
+    var body = sndEl('sndModalBody'), run = sndEl('sndModalRun'), M = SQM[SQ.m] || { label: 'balloon' }, o = SQ.o, my = SQ.seq, x = null;
     try { x = SND.parts(r); } catch (e) { x = null; }
     body.classList.remove('is-loading');
     if (!x) { run.textContent = ''; body.innerHTML = '<div class="state-load">The ' + M.label + ' profile for this hour came back incomplete. Try another hour or model.</div>'; return; }
     var init = Date.parse(r.forecasted_at), valid = Date.parse(r.forecasted_time), fh = isFinite(init) && isFinite(valid) ? Math.round((valid - init) / HOUR) : null;
-    run.textContent = (fh != null ? M.label + ' ' + String(new Date(init).getUTCHours()).padStart(2, '0') + 'z run, hour ' + fh + ' · ' : '') + (isFinite(valid) ? 'valid ' + hrDay(valid) + ' · ' : '') + (+o.lat).toFixed(2) + ', ' + (+o.lon).toFixed(2);
+    if (r._obs) run.textContent = 'Observed · launched for ' + raobWhen(valid) + ' · ' + (+o.lat).toFixed(2) + ', ' + (+o.lon).toFixed(2);
+    else run.textContent = (fh != null ? M.label + ' ' + String(new Date(init).getUTCHours()).padStart(2, '0') + 'z run, hour ' + fh + ' · ' : '') + (isFinite(valid) ? 'valid ' + hrDay(valid) + ' · ' : '') + (+o.lat).toFixed(2) + ', ' + (+o.lon).toFixed(2);
     body.innerHTML = '<div class="snd-stage">' + x.stage.replace(/sndClip/g, 'sndClipPop') + '</div><div class="snd-poptables">' + x.tables + '</div>';
     SQ.shownP = x.P;   // v3.70.1: for Ask
     if (SND.extras) { try { SND.extras(x.P, x.A, body.querySelector('.snd-poptables'), function () { return my === SQ.seq && sndIsOpen(); }); } catch (e) {} }
   }
   function sndLoad() {
     var body = sndEl('sndModalBody'), run = sndEl('sndModalRun'); if (!body || !run || !SQ.o) return;
-    var my = ++SQ.seq, m = SQ.m, t = SQ.t0 + SQ.i * HOUR, M = SPM[m], have = sndHave(m, t, SQ.o);
+    if (SQ.m === 'obs') { raobLoad(); return; }
+    var my = ++SQ.seq, m = SQ.m, t = sqT(m, SQ.i), M = SQM[m], have = sndHave(m, t, SQ.o);
     SQ.shownP = null; sndTitle();
     if (have) { sndShow(have); return; }
     if (body.querySelector('.snd-stage')) body.classList.add('is-loading'); else { run.textContent = ''; body.innerHTML = '<div class="state-load">Loading the ' + M.label + ' sounding…</div>'; }
@@ -13170,16 +13305,18 @@ var REGMAP = (function () {
       var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
       if (b.id === 'sndModalClose') sndClose();
       else if (b.id === 'sndModalAsk') sndAsk();
-      else if (b.hasAttribute('data-sm')) { var k = b.getAttribute('data-sm'); if (SPM[k] && k !== SQ.m) { SQ.m = k; sndSync(); sndLoad(); } }
-      else if (b.hasAttribute('data-sby')) { var v = Math.max(0, Math.min(SQ_MAX, SQ.i + (+b.getAttribute('data-sby')))); if (v !== SQ.i) { SQ.i = v; sndSync(); sndLoad(); } }
+      else if (b.hasAttribute('data-rt')) { var ri = +b.getAttribute('data-rt'); if (ri !== SQ.ri) { SQ.ri = ri; raobLoad(); } }
+      else if (b.hasAttribute('data-rmodel')) { var ro = SQ.o; sndClose(); sndOpen({ id: ro.id, lat: ro.lat, lon: ro.lon, alt: ro.alt }, b); }
+      else if (b.hasAttribute('data-sm')) { var k = b.getAttribute('data-sm'); if (SQM[k] && k !== SQ.m) { SQ.m = k; SQ.i = Math.min(SQ.i, SQM[k].max ? sqMax(k) : 48); sndSync(); sndLoad(); } }
+      else if (b.hasAttribute('data-sby')) { var v = Math.max(0, Math.min(sqMax(SQ.m), SQ.i + (+b.getAttribute('data-sby')) * (SQM[SQ.m].step || 1))); if (v !== SQ.i) { SQ.i = v; sndSync(); sndLoad(); } }
       else if (b.hasAttribute('data-sretry')) sndLoad();
     });
     sm.addEventListener('input', function (e) {   // dragging shows where it would land; an hour already in hand is drawn at once
       if (!e.target || e.target.id !== 'sndModalHour') return;
       var v = +e.target.value, out = sndEl('sndModalHourOut'); if (out) out.textContent = sndWhen(v, SQ.t0);
-      if (v !== SQ.i && SQ.o && sndHave(SQ.m, SQ.t0 + v * HOUR, SQ.o)) { SQ.i = v; sndLoad(); }
+      if (v !== SQ.i && SQ.o && sndHave(SQ.m, sqT(SQ.m, v), SQ.o)) { SQ.i = v; sndLoad(); }
     });
-    sm.addEventListener('change', function (e) { if (e.target && e.target.id === 'sndModalHour') { var v = +e.target.value; if (v !== SQ.i) { SQ.i = v; sndLoad(); } } });
+    sm.addEventListener('change', function (e) { if (e.target && e.target.id === 'sndModalHour') { var v = +e.target.value; if (v !== SQ.i) { SQ.i = v; sndSync(); sndLoad(); } } });
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape' || !sndIsOpen()) return;
       if (e.target && e.target.closest && e.target.closest('#chatPanel')) return;   // Escape in the assistant is the assistant's
@@ -13196,7 +13333,7 @@ var REGMAP = (function () {
   function sndDescribe() {
     var title = sndEl('sndModalTitle'), run = sndEl('sndModalRun');
     if (sndIsOpen()) {
-      var head = 'A MODEL SOUNDING IS OPEN ON SCREEN, in a window over the map: ' + (title ? title.textContent : '') + (run && run.textContent ? '\n' + run.textContent : '') + '\n';
+      var head = (SQ.m === 'obs' ? 'AN OBSERVED WEATHER-BALLOON SOUNDING' : 'A MODEL SOUNDING') + ' IS OPEN ON SCREEN, in a window over the map: ' + (title ? title.textContent : '') + (run && run.textContent ? '\n' + run.textContent : '') + '\n';
       if (!SQ.shownP) return head + 'It is still loading, or it failed to load.\n';
       return head + SND.profileText(SQ.shownP, document.querySelector('#sndModalBody .snd-poptables'));
     }
@@ -13205,6 +13342,119 @@ var REGMAP = (function () {
     return '';
   }
 
+  /* ════ weather-balloon soundings (v3.71.0) ════
+     The NWS upper-air sites launch a radiosonde twice a day, for 00 and 12 UTC. Current → Upper air → Balloon soundings marks
+     the sites in view and lists the four nearest under the map (most maps are narrower than the 200-300 miles between
+     sites). A site opens its observed sounding in the sounding window: the same skew-T, hodograph, parcels and tables as the
+     model soundings, at the balloon's own levels, with the last six launches to step back through. All free, from the Iowa
+     Environmental Mesonet's archive of the soundings (json/raob.py); a launch is in about 80 minutes after its hour.
+     Levels: those with a pressure and a temperature. Heights and winds missing at a level are filled in log pressure from
+     the nearest levels that have them; a dew point missing above 500 mb (the sensor's dry limit) is taken as 30 C under the
+     temperature, below that it is filled like the rest. */
+  var RAOB = { sites: null, p: null, cache: {} };
+  function raobName(s) { return String(s || '').split(/\s{2,}/)[0].split('/')[0].replace(/\s+Area$/, '').trim() || 'Upper-air site'; }
+  function raobSites() {
+    if (RAOB.sites) return Promise.resolve(RAOB.sites);
+    if (RAOB.p) return RAOB.p;
+    RAOB.p = fetch(IEM + '/geojson/network/RAOB.geojson').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function (j) {
+      RAOB.sites = (j.features || []).filter(function (f) { var q = f.properties || {}, c = f.geometry && f.geometry.coordinates; return c && q.online !== false && !q.archive_end && /^[KPT][A-Z0-9]{3}$/.test(String(f.id || '')); })
+        .map(function (f) { var c = f.geometry.coordinates; return { id: String(f.id), lat: +c[1], lon: +c[0], name: raobName(f.properties.sname) }; });
+      RAOB.p = null; return RAOB.sites;
+    }, function (e) { RAOB.p = null; throw e; });
+    return RAOB.p;
+  }
+  function raobTimes() { var h12 = 12 * HOUR, t = Math.floor((Date.now() - 80 * 6e4) / h12) * h12, out = []; for (var i = 0; i < 6; i++) out.push(t - i * h12); return out; }
+  function raobWhen(t) { return hrDay(t) + ' (' + String(new Date(t).getUTCHours()).padStart(2, '0') + 'Z)'; }
+  function raobRow(pr) {
+    var lv = (pr.profile || []).filter(function (x) { return x.pres != null && x.tmpc != null && x.pres >= 100; }).map(function (x) {
+      var k = x.sknt != null && x.drct != null ? +x.sknt / 1.943844 : null, a = (+x.drct) * Math.PI / 180;
+      return { p: +x.pres, z: x.hght != null ? +x.hght : null, t: +x.tmpc, d: x.dwpc != null ? +x.dwpc : null, u: k == null ? null : -k * Math.sin(a), v: k == null ? null : -k * Math.cos(a) };
+    }).sort(function (a, b) { return b.p - a.p; });
+    if (lv.length < 10) return null;
+    var fill = function (key, dry) {
+      for (var i = 0; i < lv.length; i++) {
+        if (lv[i][key] != null) continue;
+        if (dry && lv[i].p < 500) { lv[i][key] = lv[i].t - 30; continue; }
+        var a = i - 1, b = i + 1; while (a >= 0 && lv[a][key] == null) a--; while (b < lv.length && lv[b][key] == null) b++;
+        if (a < 0 && b >= lv.length) return false;
+        if (a < 0) lv[i][key] = lv[b][key]; else if (b >= lv.length) lv[i][key] = lv[a][key];
+        else { var f = Math.log(lv[a].p / lv[i].p) / Math.log(lv[a].p / lv[b].p); lv[i][key] = lv[a][key] + (lv[b][key] - lv[a][key]) * f; }
+      }
+      return true;
+    };
+    if (!fill('z') || !fill('u') || !fill('v') || !fill('d', true)) return null;
+    lv.forEach(function (x) { x.d = Math.min(x.d, x.t); x.t += 273.15; x.d += 273.15; });
+    var s0 = lv[0];
+    return { sfc_pres: s0.p * 100, sfc_hgt: s0.z, sfc_t: s0.t, sfc_td: s0.d, sfc_u: s0.u, sfc_v: s0.v, forecasted_time: pr.valid, forecasted_at: pr.valid, _lv: lv.slice(1), _obs: 1 };
+  }
+  function raobFetch(id, t) {
+    var k = id + ':' + t, c = RAOB.cache[k];
+    if (c && (c.r || Date.now() - c.at < 5 * 6e4)) return c.r ? Promise.resolve(c.r) : c.p;
+    var d = new Date(t), ts = d.getUTCFullYear() + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0') + String(d.getUTCHours()).padStart(2, '0') + '00';
+    c = RAOB.cache[k] = { at: Date.now(), r: null, p: null };
+    c.p = fetch(IEM + '/json/raob.py?ts=' + ts + '&station=' + encodeURIComponent(id)).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function (j) {
+      var pr = j && j.profiles && j.profiles[0], row = pr ? raobRow(pr) : null; if (!row) throw new Error('NODATA'); c.r = row; return row;
+    });
+    c.p.catch(function () {});
+    return c.p;
+  }
+  function raobNear(n) {
+    var la = +currentLat, lo = +currentLon; if (!RAOB.sites || !isFinite(la) || !isFinite(lo)) return [];
+    return RAOB.sites.map(function (s) { return { s: s, mi: haversine(la, lo, s.lat, s.lon), dir: brgDir(la, lo, s.lat, s.lon) }; }).sort(function (a, b) { return a.mi - b.mi; }).slice(0, n);
+  }
+  function brgDir(la1, lo1, la2, lo2) {
+    var RAD = Math.PI / 180, dl = (lo2 - lo1) * RAD, b = (Math.atan2(Math.sin(dl) * Math.cos(la2 * RAD), Math.cos(la1 * RAD) * Math.sin(la2 * RAD) - Math.sin(la1 * RAD) * Math.cos(la2 * RAD) * Math.cos(dl)) / RAD + 360) % 360;
+    return DIRS[R(b / 22.5) % 16];
+  }
+  function raobBtn(s, txt) { return '<button type="button" class="regmap-sndbtn" data-raob="' + esc(s.id) + '" data-lat="' + s.lat + '" data-lon="' + s.lon + '" data-nm="' + esc(s.name) + '">' + esc(txt) + '</button>'; }
+  function raobLayer() {
+    var T = 'Weather balloon soundings';
+    if (!RAOB.sites) return { title: T, pts: refNames(), subText: 'NWS upper-air sites', empty: 'The launch sites did not load.' };
+    var b = frame.bbox, last = raobTimes()[0], near = raobNear(4), dist = {};
+    near.forEach(function (n) { dist[n.s.id] = n; });
+    var pj = projector(frame.W, frame.H), inView = RAOB.sites.filter(function (s) { var q = pj(s.lon, s.lat); return q[0] > 8 && q[0] < frame.W - 8 && q[1] > 8 && q[1] < frame.H - 8; });
+    var syms = inView.map(function (s) {
+      var n = dist[s.id] || { mi: haversine(+currentLat, +currentLon, s.lat, s.lon), dir: brgDir(+currentLat, +currentLon, s.lat, s.lon) };
+      return { lat: s.lat, lon: s.lon, letter: '', color: '#7DD3FC', r: 9, label: s.name, rank: -n.mi, aria: s.name + ' weather balloon site',
+               detail: '<div class="rg-head"><b>' + esc(s.name) + '</b> <span class="regmap-id">' + esc(s.id) + '</span></div><div class="rg-cap">Weather balloon site · ' + (n.mi < 1 ? 'here' : R(n.mi) + ' mi ' + n.dir) + '</div>' +
+                       '<div class="regmap-sndrow">' + raobBtn(s, 'Sounding') + '<span class="regmap-sndnote">Latest launch · ' + esc(raobWhen(last)) + '</span></div>' };
+    });
+    var below = near.length ? '<div class="raob-near"><span class="regmap-glabel">Nearest launch sites</span><div class="raob-list">' + near.map(function (n) {
+      return raobBtn(n.s, n.s.name + ' · ' + (n.mi < 1 ? 'here' : R(n.mi) + ' mi ' + n.dir)); }).join('') + '</div></div>' : '';
+    return { title: T, pts: refNames(), symbols: syms, belowHtml: below,
+             subText: 'NWS upper-air sites · ' + (inView.length ? inView.length + ' in view' : 'none in view') + ' · latest launch ' + raobWhen(last),
+             sub2: 'observed soundings from weather balloons, launched twice a day for 00 and 12 UTC. Tap a site, or choose one of the nearest below',
+             empty: inView.length ? null : 'No launch site in this view. The nearest are listed below the map.' };
+  }
+  function raobOpen(o, from) {
+    var m = sndEl('sndModal'); if (!m || !o || !o.id) return;
+    SQ.o = { id: o.id, alt: o.alt || o.id, lat: +o.lat, lon: +o.lon, raob: true }; SQ.m = 'obs'; SQ.rt = raobTimes(); SQ.ri = 0; SQ.opener = from || document.activeElement; SQ.shownP = null;
+    sndEl('sndModalBody').innerHTML = ''; sndEl('sndModalBody').classList.remove('is-loading'); sndEl('sndModalRun').textContent = '';
+    raobBar(); m.classList.add('open'); document.body.classList.add('snd-open');
+    var ab = sndEl('sndModalAsk'); if (ab) ab.hidden = !(typeof chatAvailable === 'function' && chatAvailable());
+    var c = m.querySelector('.snd-modal-content'); if (c) c.scrollTop = 0;
+    var x = sndEl('sndModalClose'); if (x) x.focus();
+    raobLoad();
+  }
+  function raobBar() {
+    var bar = sndEl('sndModalBar'); if (!bar) return;
+    bar.innerHTML = '<div class="regmap-row"><span class="regmap-glabel">Launch</span><div class="cpc-nav" role="group" aria-label="Launch">' +
+      SQ.rt.map(function (t, i) { return chip(raobWhen(t), i === SQ.ri, 'data-rt="' + i + '"'); }).join('') + '</div></div>' +
+      (gsAvailable() ? '<div class="regmap-row"><span class="regmap-glabel">Compare</span><button type="button" class="cpc-nav-btn" data-rmodel="1">Model sounding here, next hour</button></div>' : '');
+  }
+  function raobLoad() {
+    var body = sndEl('sndModalBody'), run = sndEl('sndModalRun'), o = SQ.o; if (!body || !o) return;
+    var my = ++SQ.seq, t = SQ.rt[SQ.ri]; SQ.shownP = null;
+    sndEl('sndModalTitle').innerHTML = 'Weather balloon · ' + esc(o.alt) + ' <span class="regmap-id">' + esc(o.id) + '</span>';
+    Array.prototype.forEach.call(sndEl('sndModalBar').querySelectorAll('[data-rt]'), function (b) { var on = +b.getAttribute('data-rt') === SQ.ri; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    if (body.querySelector('.snd-stage')) body.classList.add('is-loading'); else { run.textContent = ''; body.innerHTML = '<div class="state-load">Loading the ' + esc(raobWhen(t)) + ' sounding…</div>'; }
+    raobFetch(o.id, t).then(function (r) { if (my === SQ.seq) sndShow(r); }).catch(function (e) {
+      if (my !== SQ.seq) return;
+      var msg = (e && e.message) || 'network error'; body.classList.remove('is-loading'); run.textContent = '';
+      body.innerHTML = '<div class="state-load">' + (msg === 'NODATA' ? esc('No sounding from ' + o.alt + ' for ' + raobWhen(t) + ' yet. A launch can be late, short or missed; try an earlier one.') :
+        'The sounding could not be loaded (' + esc(msg) + '). <button type="button" class="btn-link" data-sretry="1">Try again</button>') + '</div>';
+    });
+  }
   function init() {
     sndInit();
     var card = document.getElementById('regMapCard'); if (!card) return;
@@ -13217,6 +13467,7 @@ var REGMAP = (function () {
     })();
     card.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null;
+      if (b && b.hasAttribute('data-raob')) { raobOpen({ id: b.getAttribute('data-raob'), lat: +b.getAttribute('data-lat'), lon: +b.getAttribute('data-lon'), alt: b.getAttribute('data-nm') }, b); return; }   // v3.71.0
       if (b && b.hasAttribute('data-snd')) { sndOpen({ id: b.getAttribute('data-snd'), home: b.getAttribute('data-snd') === 'home', lat: +b.getAttribute('data-lat'), lon: +b.getAttribute('data-lon'), alt: b.getAttribute('data-nm') }, b); return; }   // v3.59.0
       if (b && b.hasAttribute('data-mode')) { setMode(b.getAttribute('data-mode')); return; }
       if (b && b.id === 'regMapPlay') { frToggle(); return; }
@@ -13611,6 +13862,278 @@ var OLMAP = (function () {
   return { show: show, path: shapesPath, cities: CITIES, major: MAJOR, _state: state, _products: PRODUCTS };
 })();
 
+
+/* ══════════════════════════════════════════════════════════════════
+   UPPER-AIR MAPS (v3.71.0): Maps → Upper air.
+   The forecaster's set, from the GFS or the ECMWF IFS through GribStream, every 6 hours out to 10 days:
+     500 mb  heights (every 60 m) over absolute vorticity: troughs, ridges and the spin that drives storms
+     850 mb  temperature (the 0 °C line is the rain-snow guide), heights every 30 m and the wind
+     700 mb  relative humidity over 70 %, heights every 30 m, and where the air is rising (dashed orange)
+     250 mb  wind speed over 70 kt (the jet stream), heights every 120 m
+   Frames: the lower 48, or about 1,300 miles across centred on the loaded place, in the same Albers projection as the
+   outlook maps. ECMWF sends relative vorticity; the Earth's own spin (2Ω sin φ) is added so both models show absolute.
+   What a frame costs: GribStream bills valid times × parameters × bundles of 500 points. The lower 48 at 0.5° is about
+   12,400 points (25 bundles), a regional frame at 0.25° about 9,000 (19 bundles), so a frame is 40 to 100 credits.
+   Nothing is asked for until a frame is shown; each is kept for the session (until the next run is due). Play steps
+   through the hours one at a time and waits for each. Tap the map for the values at that spot. */
+var UAMAP = (function () {
+  var W = 1000, H = 640, R = Math.round, D2R = Math.PI / 180, HOUR = 36e5, STEP = 6, NSTEP = 40, cache = {}, order = [];
+  var S = (function () { var o = {}; try { o = JSON.parse(lsGet('nws_uamap', '{}')) || {}; } catch (e) { o = {}; }
+    return { lev: ['500', '850', '700', '250'].indexOf(o.lev) >= 0 ? o.lev : '500', m: o.m === 'ecmwf' ? 'ecmwf' : 'gfs', view: o.view === 'us' ? 'us' : 'region', i: 0, seq: 0, play: null, f: null, taps: null }; })();
+  function save() { lsSet('nws_uamap', JSON.stringify({ lev: S.lev, m: S.m, view: S.view })); }
+  var MODELS = { gfs: { label: 'GFS', id: 'gfs' }, ecmwf: { label: 'ECMWF', id: 'ifsoper' } };
+  function v(m, lev, ncep, ec, alias) { return m === 'gfs' ? { name: ncep, level: lev + ' mb', alias: alias } : { name: ec, level: 'pl ' + lev, alias: alias }; }
+  var LV = {
+    '500': { label: '500 mb', title: '500 mb heights and vorticity', ci: 60, vars: function (m) { return [v(m, 500, 'HGT', 'gh', 'z'), v(m, 500, 'ABSV', 'vo', m === 'gfs' ? 'av' : 'vo')]; } },
+    '850': { label: '850 mb', title: '850 mb temperature, heights and wind', ci: 30, barbs: true, vars: function (m) { return [v(m, 850, 'HGT', 'gh', 'z'), v(m, 850, 'TMP', 't', 't'), v(m, 850, 'UGRD', 'u', 'u'), v(m, 850, 'VGRD', 'v', 'v')]; } },
+    '700': { label: '700 mb', title: '700 mb humidity, heights and rising air', ci: 30, vars: function (m) { return [v(m, 700, 'HGT', 'gh', 'z'), v(m, 700, 'RH', 'r', 'rh'), v(m, 700, 'VVEL', 'w', 'w')]; } },
+    '250': { label: '250 mb', title: '250 mb jet stream', ci: 120, barbs: true, vars: function (m) { return [v(m, 250, 'HGT', 'gh', 'z'), v(m, 250, 'UGRD', 'u', 'u'), v(m, 250, 'VGRD', 'v', 'v')]; } }
+  };
+  /* shading: [value, [r,g,b], alpha]; below the first stop nothing is drawn */
+  var SHADE = {
+    '500': { key: 'vort', unit: '×10⁻⁵ s⁻¹', stops: [[12, [250, 230, 120], 0.35], [16, [250, 200, 70], 0.55], [20, [245, 150, 50], 0.65], [24, [230, 80, 60], 0.72], [30, [200, 50, 140], 0.78], [40, [150, 60, 200], 0.82]] },
+    '850': { key: 'tc', unit: '°C', full: true, stops: [[-30, [120, 60, 170], 0.62], [-20, [70, 90, 200], 0.62], [-10, [70, 150, 230], 0.62], [-5, [120, 195, 240], 0.6], [0, [200, 230, 245], 0.55], [5, [150, 215, 140], 0.58], [10, [230, 220, 110], 0.6], [15, [245, 170, 80], 0.62], [20, [235, 110, 70], 0.64], [28, [190, 50, 60], 0.66]] },
+    '700': { key: 'rh', unit: '% humidity', stops: [[70, [110, 190, 110], 0.42], [80, [60, 160, 80], 0.58], [90, [30, 120, 60], 0.72]] },
+    '250': { key: 'kt', unit: 'kt', stops: [[70, [110, 170, 230], 0.45], [90, [70, 120, 220], 0.58], [110, [120, 80, 210], 0.66], [130, [190, 70, 190], 0.72], [150, [235, 90, 140], 0.78], [170, [250, 160, 120], 0.82]] }
+  };
+  function shadeAt(sh, x) {
+    var st = sh.stops; if (x == null || !isFinite(x)) return null; if (x < st[0][0]) return sh.full ? [st[0][1], st[0][2]] : null;
+    for (var i = st.length - 1; i >= 0; i--) if (x >= st[i][0]) { if (!sh.full || i === st.length - 1) return [st[i][1], st[i][2]];
+      var a = st[i], b = st[i + 1], f = (x - a[0]) / (b[0] - a[0]); return [[0, 1, 2].map(function (k) { return a[1][k] + (b[1][k] - a[1][k]) * f; }), a[2] + (b[2] - a[2]) * f]; }
+    return null;
+  }
+
+  /* ---- projection: the outlook maps' Albers, with its inverse so the shading can be drawn pixel by pixel ---- */
+  var P1 = 29.5 * D2R, P2 = 45.5 * D2R, LAT0 = 37.5 * D2R, LON0 = -96 * D2R;
+  var AN = (Math.sin(P1) + Math.sin(P2)) / 2, AC = Math.cos(P1) * Math.cos(P1) + 2 * AN * Math.sin(P1), RHO0 = Math.sqrt(AC - 2 * AN * Math.sin(LAT0)) / AN;
+  function albers(lon, lat) { var rho = Math.sqrt(Math.max(0, AC - 2 * AN * Math.sin(lat * D2R))) / AN, th = AN * (lon * D2R - LON0); return [rho * Math.sin(th), RHO0 - rho * Math.cos(th)]; }
+  function projector(view) {
+    var s, cx, cy, th = 0, region = view === 'region' && currentLat && currentLon;
+    if (region) { var c = albers(+currentLon, +currentLat); s = W / (2 * 650 / 3959); cx = c[0]; cy = c[1]; th = AN * (+currentLon * D2R - LON0); }
+    else { var a = albers(-124.8, 24.5), b = albers(-66.9, 24.5), t = albers(-96, 49.4), l = albers(-124.8, 49);
+      var minX = Math.min(a[0], l[0]), maxX = b[0], maxY = t[1], minY = Math.min(a[1], b[1]);
+      s = Math.min((W - 30) / (maxX - minX), (H - 96) / (maxY - minY)); cx = (minX + maxX) / 2; cy = (minY + maxY) / 2 + 14 / s; }
+    var ca = Math.cos(th), sa = Math.sin(th);
+    var f = function (lon, lat) { var q = albers(lon, lat), ex = (q[0] - cx) * s, ny = (q[1] - cy) * s; return [W / 2 + ca * ex + sa * ny, H / 2 + sa * ex - ca * ny]; };
+    f.inv = function (x, y) {
+      var dx = x - W / 2, dy = y - H / 2, ex = ca * dx + sa * dy, ny = sa * dx - ca * dy, q0 = ex / s + cx, q1 = ny / s + cy, r1 = RHO0 - q1;
+      var rho = Math.sqrt(q0 * q0 + r1 * r1), t = Math.atan2(q0, r1), sl = (AC - rho * rho * AN * AN) / (2 * AN);
+      return [(LON0 + t / AN) / D2R, Math.asin(Math.max(-1, Math.min(1, sl))) / D2R];
+    };
+    f.region = !!region; return f;
+  }
+  function boxOf(proj) {   // the frame's extent in latitude and longitude, from its edges
+    var lo = 1e9, hi = -1e9, la = 1e9, ha = -1e9;
+    for (var k = 0; k <= 20; k++) [[k * W / 20, 0], [k * W / 20, H], [0, k * H / 20], [W, k * H / 20]].forEach(function (p) { var q = proj.inv(p[0], p[1]); lo = Math.min(lo, q[0]); hi = Math.max(hi, q[0]); la = Math.min(la, q[1]); ha = Math.max(ha, q[1]); });
+    return { minLon: lo - 1, maxLon: hi + 1, minLat: Math.max(-89, la - 1), maxLat: Math.min(89, ha + 1) };
+  }
+
+  /* ---- times: every 6 hours from the last synoptic hour ---- */
+  function t0() { return Math.floor(Date.now() / (STEP * HOUR)) * STEP * HOUR; }
+  function tOf(i) { return t0() + i * STEP * HOUR; }
+  function whenOf(t) { var o = { weekday: 'short', hour: 'numeric' }; if (locTimezone) o.timeZone = locTimezone; return new Date(t).toLocaleString('en-US', o).replace(',', ''); }
+
+  /* ---- data ---- */
+  function load(m, lev, view, t) {
+    var proj = projector(view), b = boxOf(proj), step = proj.region ? 0.25 : 0.5;
+    var g = { lat0: Math.floor(b.minLat / step) * step, lon0: Math.floor(b.minLon / step) * step }; g.ny = Math.round((Math.ceil(b.maxLat / step) * step - g.lat0) / step) + 1; g.nx = Math.round((Math.ceil(b.maxLon / step) * step - g.lon0) / step) + 1; g.step = step;
+    var key = [m, lev, view, view === 'region' ? (+currentLat).toFixed(2) + ',' + (+currentLon).toFixed(2) : 'us', t].join('|'), c = cache[key];
+    if (c && (c.f || c.p) && Date.now() - c.at < 3 * HOUR) return c.f ? Promise.resolve(c.f) : c.p;
+    if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
+    var body = { timesList: [new Date(t).toISOString().replace('.000Z', 'Z')], grid: { minLatitude: g.lat0, maxLatitude: +(g.lat0 + (g.ny - 1) * step).toFixed(3), minLongitude: g.lon0, maxLongitude: +(g.lon0 + (g.nx - 1) * step).toFixed(3), step: step }, variables: LV[lev].vars(m) }, pr;
+    GSRUN.own = true; try { pr = gsPost(MODELS[m].id, body); } finally { GSRUN.own = false; }
+    c = cache[key] = { at: Date.now(), f: null, p: null };
+    order.push(key); while (order.length > 40) delete cache[order.shift()];
+    c.p = pr.then(function (rows) {
+      var n = g.nx * g.ny, F = { g: g, t: t, run: 0, z: new Array(n), s: new Array(n), u: null, v: null, w: null, n: 0 };
+      if (LV[lev].barbs) { F.u = new Array(n); F.v = new Array(n); }
+      if (lev === '700') F.w = new Array(n);
+      (rows || []).forEach(function (r) {
+        var j = Math.round((+r.lat - g.lat0) / step), i = Math.round((+r.lon - g.lon0) / step); if (!(j >= 0 && j < g.ny && i >= 0 && i < g.nx)) { i = Math.round((+r.lon - 360 - g.lon0) / step); if (!(j >= 0 && j < g.ny && i >= 0 && i < g.nx)) return; }
+        var k = j * g.nx + i, ra = Date.parse(r.forecasted_at); if (ra > F.run) F.run = ra;
+        F.z[k] = r.z != null && isFinite(+r.z) ? +r.z : null;
+        if (lev === '500') { var av = r.av != null ? +r.av : r.vo != null ? +r.vo + 2 * 7.2921e-5 * Math.sin(+r.lat * D2R) : null; F.s[k] = av == null || !isFinite(av) ? null : av * 1e5 * (+r.lat < 0 ? -1 : 1); }
+        else if (lev === '850') F.s[k] = r.t != null ? +r.t - 273.15 : null;
+        else if (lev === '700') { F.s[k] = r.rh != null ? +r.rh : null; F.w[k] = r.w != null ? +r.w : null; }
+        else if (lev === '250') F.s[k] = r.u != null && r.v != null ? Math.hypot(+r.u, +r.v) * 1.943844 : null;
+        if (F.u) { F.u[k] = r.u != null ? +r.u : null; F.v[k] = r.v != null ? +r.v : null; }
+        F.n++;
+      });
+      if (!F.n) throw new Error('NODATA');
+      if (lev === '500') F.s = smooth(F.s, g, 1);   // vorticity at 0.25° is grainy; one pass of a 3 × 3 average, as the usual charts do
+      if (F.w) F.w = smooth(F.w, g, 2);
+      c.f = F; c.p = null; return F;
+    }, function (e) { delete cache[key]; throw e; });
+    return c.p;
+  }
+  function smooth(a, g, n) {
+    for (var p = 0; p < n; p++) { var o = new Array(a.length);
+      for (var j = 0; j < g.ny; j++) for (var i = 0; i < g.nx; i++) { var sm = 0, c = 0;
+        for (var dj = -1; dj <= 1; dj++) for (var di = -1; di <= 1; di++) { var jj = j + dj, ii = i + di; if (jj < 0 || ii < 0 || jj >= g.ny || ii >= g.nx) continue; var x = a[jj * g.nx + ii]; if (x != null) { sm += x; c++; } }
+        o[j * g.nx + i] = a[j * g.nx + i] == null || !c ? null : sm / c; }
+      a = o; }
+    return a;
+  }
+  function at(F, arr, lon, lat) {   // bilinear, null where a corner is missing
+    var g = F.g, x = (lon - g.lon0) / g.step, y = (lat - g.lat0) / g.step, i = Math.floor(x), j = Math.floor(y);
+    if (i < 0 || j < 0 || i >= g.nx - 1 || j >= g.ny - 1) return null;
+    var a = arr[j * g.nx + i], b = arr[j * g.nx + i + 1], c = arr[(j + 1) * g.nx + i], d = arr[(j + 1) * g.nx + i + 1]; if (a == null || b == null || c == null || d == null) return null;
+    var fx = x - i, fy = y - j; return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+  }
+
+  /* ---- drawing ---- */
+  function barb(x, y, u, v) {   // a wind barb in knots, the staff pointing the way the wind comes from
+    var kt = Math.hypot(u, v) * 1.943844; if (!(kt >= 2.5)) return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.4" style="fill:none;stroke:#F1F5F9;stroke-width:1.1"></circle>';
+    var dx = -u / Math.hypot(u, v), dy = v / Math.hypot(u, v), L = 22, ex = x + dx * L, ey = y + dy * L, px = -dy, py = dx, d = 'M' + x.toFixed(1) + ',' + y.toFixed(1) + 'L' + ex.toFixed(1) + ',' + ey.toFixed(1), n = Math.round(kt / 5) * 5, pos = 0, flags = '';
+    while (n >= 50) { var bx = ex - dx * pos, by = ey - dy * pos; flags += 'M' + bx.toFixed(1) + ',' + by.toFixed(1) + 'L' + (bx + px * 9).toFixed(1) + ',' + (by + py * 9).toFixed(1) + 'L' + (bx - dx * 5).toFixed(1) + ',' + (by - dy * 5).toFixed(1) + 'Z'; pos += 7; n -= 50; }
+    while (n >= 10) { var cx2 = ex - dx * pos, cy2 = ey - dy * pos; d += 'M' + cx2.toFixed(1) + ',' + cy2.toFixed(1) + 'L' + (cx2 + px * 9 + dx * 3).toFixed(1) + ',' + (cy2 + py * 9 + dy * 3).toFixed(1); pos += 3.5; n -= 10; }
+    if (n >= 5) { if (!pos) pos = 3.5; var hx = ex - dx * pos, hy = ey - dy * pos; d += 'M' + hx.toFixed(1) + ',' + hy.toFixed(1) + 'L' + (hx + px * 4.8 + dx * 1.6).toFixed(1) + ',' + (hy + py * 4.8 + dy * 1.6).toFixed(1); }
+    return '<path d="' + d + '" style="fill:none;stroke:#F1F5F9;stroke-width:1.2;stroke-linecap:round"></path>' + (flags ? '<path d="' + flags + '" style="fill:#F1F5F9;stroke:none"></path>' : '');
+  }
+  function isolines(F, arr, level, proj) {   // contour lines of one level, projected and smoothed
+    var U = USNOW._t, g = F.g, out = [];
+    U.contour(arr, g.nx, g.ny, level).forEach(function (ln) {
+      if (ln.length < 4) return;
+      var pts = U.chaikin(U.chaikin(ln.map(function (q) { return proj(g.lon0 + q[0] * g.step, g.lat0 + q[1] * g.step); }))), len = 0;
+      for (var i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      if (len >= 50) out.push({ pts: pts, len: len });
+    });
+    return out;
+  }
+  function draw(F, geo, ov) {
+    var el = document.getElementById('uaMap'), stage = el && el.querySelector('.ol-stage'); if (!stage) return;
+    var proj = projector(S.view), lev = S.lev, sh = SHADE[lev], spec = LV[lev], Fn = "Inter, system-ui, sans-serif", o = [];
+    var region = proj.region, lat0 = +currentLat, lon0 = +currentLon;
+    // the shading, pixel by pixel at a quarter of the frame, smoothed when drawn
+    var cw = 500, chh = 320, cv = document.createElement('canvas'); cv.width = cw; cv.height = chh;
+    var cx = cv.getContext('2d'), img = cx.createImageData(cw, chh);
+    for (var py = 0; py < chh; py++) for (var px = 0; px < cw; px++) {
+      var q = proj.inv((px + 0.5) * W / cw, (py + 0.5) * H / chh), val = at(F, F.s, q[0], q[1]), c = shadeAt(sh, val), k4 = (py * cw + px) * 4; if (!c) continue;
+      img.data[k4] = c[0][0]; img.data[k4 + 1] = c[0][1]; img.data[k4 + 2] = c[0][2]; img.data[k4 + 3] = R(c[1] * 255);
+    }
+    cx.putImageData(img, 0, 0);
+    var big = document.createElement('canvas'); big.width = W; big.height = H; var bx = big.getContext('2d'); bx.imageSmoothingEnabled = true; bx.imageSmoothingQuality = 'high'; bx.drawImage(cv, 0, 0, W, H);
+    var lower48 = function (s2) { return s2.id !== '02' && s2.id !== '15' && +s2.id < 57; };
+    var landD = OLMAP.path(geo, geo.states, proj, region ? null : lower48);
+    var bm = BASEMAP.build(proj, W, H);
+    o.push('<svg class="regmap-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(MODELS[S.m].label + ' ' + spec.title + ', ' + whenOf(F.t)) + '">');
+    o.push('<rect x="0" y="0" width="' + W + '" height="' + H + '" style="fill:' + (bm ? bm.water : '#070B14') + '"></rect>' + (bm ? BASEMAP.under(bm) : ''));
+    o.push('<path d="' + landD + '" style="fill:#18222F;stroke:none"></path>');
+    if (bm) o.push(BASEMAP.top(bm));
+    o.push('<image href="' + big.toDataURL('image/png') + '" x="0" y="0" width="' + W + '" height="' + H + '" preserveAspectRatio="none" style="pointer-events:none"></image>');
+    o.push('<path d="' + landD + '" style="fill:none;stroke:rgba(255,255,255,0.62);stroke-width:' + (region ? 1.3 : 0.9) + ';stroke-linejoin:round;pointer-events:none"></path>');
+    var boxes = [];
+    // rising air at 700 mb: dashed orange, -4 and -10 microbars a second (-0.4 and -1 Pa/s), after two passes of smoothing
+    if (F.w) [-0.4, -1.0].forEach(function (lv, n) { var d = ''; isolines(F, F.w.map(function (x) { return x == null ? null : -x; }), -lv, proj).forEach(function (l) { if (l.len >= 90) d += USNOW._t.pathOf(l.pts); });
+      if (d) o.push('<path d="' + d + '" style="fill:none;stroke:#FB923C;stroke-width:' + (n ? 2 : 1.3) + ';stroke-dasharray:5 4;stroke-linejoin:round;pointer-events:none"></path>'); });
+    // the 0 °C line at 850 mb
+    if (lev === '850') { var d0 = ''; isolines(F, F.s, 0, proj).forEach(function (l) { d0 += USNOW._t.pathOf(l.pts); });
+      if (d0) o.push('<path d="' + d0 + '" style="fill:none;stroke:#E0F2FE;stroke-width:2.2;stroke-dasharray:10 5;stroke-linejoin:round;pointer-events:none"></path>'); }
+    // heights, labelled in decametres
+    var zs = F.z.filter(function (x) { return x != null; }), zlo = Math.min.apply(null, zs), zhi = Math.max.apply(null, zs), hd = '', labs = [];
+    for (var lv = Math.ceil(zlo / spec.ci) * spec.ci; lv <= zhi; lv += spec.ci) isolines(F, F.z, lv, proj).forEach(function (l) { hd += USNOW._t.pathOf(l.pts); if (l.len > 180) labs.push({ pts: l.pts, lev: lv }); });
+    o.push('<path d="' + hd + '" style="fill:none;stroke:rgba(7,11,20,0.55);stroke-width:3.2;stroke-linejoin:round;pointer-events:none"></path><path d="' + hd + '" style="fill:none;stroke:#F8FAFC;stroke-width:1.4;stroke-linejoin:round;pointer-events:none"></path>');
+    labs.forEach(function (Lb) { for (var k2 = 0; k2 < 3; k2++) { var q = Lb.pts[Math.floor(Lb.pts.length * (0.3 + 0.2 * k2))]; if (!q || q[0] < 20 || q[0] > W - 20 || q[1] < 84 || q[1] > H - 50) continue;
+      var b2 = [q[0] - 15, q[1] - 8, q[0] + 15, q[1] + 8]; if (boxes.some(function (x) { return b2[0] < x[2] && b2[2] > x[0] && b2[1] < x[3] && b2[3] > x[1]; })) continue; boxes.push(b2);
+      o.push('<text x="' + q[0].toFixed(1) + '" y="' + (q[1] + 4).toFixed(1) + '" style="font:700 11px ' + Fn + ';fill:#fff;text-anchor:middle;paint-order:stroke;stroke:rgba(7,11,20,0.9);stroke-width:3.5px;pointer-events:none">' + R(Lb.lev / 10) + '</text>'); break; } });
+    // wind barbs on a lattice
+    if (F.u) { var gap = region ? 62 : 52, bs = [];
+      for (var by2 = 96; by2 < H - 40; by2 += gap) for (var bx2 = 24 + ((by2 / gap) % 2) * gap / 2; bx2 < W - 20; bx2 += gap) {
+        var q2 = proj.inv(bx2, by2), uu = at(F, F.u, q2[0], q2[1]), vv = at(F, F.v, q2[0], q2[1]); if (uu == null || vv == null) continue;
+        // the grid's north is the map's north only along the central meridian: turn the wind by the map's lean at that point
+        var p0 = proj(q2[0], q2[1]), p1 = proj(q2[0], q2[1] + 0.5), ang = Math.atan2(p1[0] - p0[0], -(p1[1] - p0[1])), ca = Math.cos(ang), sa = Math.sin(ang);
+        bs.push(barb(bx2, by2, uu * ca + vv * sa, -uu * sa + vv * ca)); }
+      o.push('<g style="pointer-events:none;opacity:0.92">' + bs.join('') + '</g>'); }
+    // reference cities and the loaded place
+    var cities = OLMAP.cities, major = OLMAP.major;
+    cities.forEach(function (c) { if (!region && !major[c[0]]) return; var q = proj(c[2], c[1]); if (q[0] < 14 || q[0] > W - 80 || q[1] < 86 || q[1] > H - 50) return;
+      o.push('<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="2" style="fill:#fff;stroke:#070B14;stroke-width:1;pointer-events:none"></circle><text x="' + (q[0] + 5).toFixed(1) + '" y="' + (q[1] + 4).toFixed(1) + '" style="font:500 10.5px ' + Fn + ';fill:#E2E8F0;paint-order:stroke;stroke:rgba(7,11,20,0.9);stroke-width:3px;pointer-events:none">' + esc(c[0]) + '</text>'); });
+    if (currentLat) { var hq = proj(lon0, lat0); if (hq[0] > 6 && hq[0] < W - 6 && hq[1] > 6 && hq[1] < H - 6) o.push('<circle cx="' + hq[0].toFixed(1) + '" cy="' + hq[1].toFixed(1) + '" r="5.5" style="fill:rgba(7,11,20,0.6);stroke:#A5D4F4;stroke-width:2;pointer-events:none"></circle>'); }
+    // title
+    var title = MODELS[S.m].label + ' ' + spec.title, fh = F.run ? R((F.t - F.run) / HOUR) : null,
+        sub = whenOf(F.t) + (F.run ? ' · ' + String(new Date(F.run).getUTCHours()).padStart(2, '0') + 'Z run, hour ' + fh : '') + ' · heights in decametres', tw = Math.min(W - 24, Math.max(title.length * 11 + 36, sub.length * 7.2 + 30));
+    o.push('<rect x="12" y="12" width="' + R(tw) + '" height="60" rx="4" style="fill:rgba(9,14,26,0.9);stroke:rgba(255,255,255,0.16);stroke-width:1"></rect>');
+    o.push('<text x="26" y="38" style="font:700 20px ' + Fn + ';fill:#fff">' + esc(title) + '</text><text x="26" y="59" style="font:500 12px ' + Fn + ';fill:#A9B2C3">' + esc(sub) + '</text>');
+    // legend
+    var st = sh.stops, sw = 30, lw = st.length * sw, extra = lev === '850' ? ' · dashed line: 0 °C' : lev === '700' ? ' · orange: rising air' : '';
+    o.push('<rect x="12" y="' + (H - 48) + '" width="' + R(lw + 28 + (sh.unit.length + extra.length) * 6.4) + '" height="38" rx="4" style="fill:rgba(9,14,26,0.9);stroke:rgba(255,255,255,0.16);stroke-width:1"></rect>');
+    st.forEach(function (x, i) { o.push('<rect x="' + (20 + i * sw) + '" y="' + (H - 40) + '" width="' + sw + '" height="9" style="fill:rgb(' + x[1].map(R).join(',') + ');fill-opacity:' + Math.min(1, x[2] + 0.2) + '"></rect><text x="' + (20 + i * sw) + '" y="' + (H - 18) + '" style="font:500 10px ' + Fn + ';fill:#A9B2C3">' + x[0] + '</text>'); });
+    o.push('<text x="' + (26 + lw) + '" y="' + (H - 32) + '" style="font:500 11px ' + Fn + ';fill:#A9B2C3">' + esc(sh.unit + extra) + '</text>');
+    o.push('</svg>');
+    stage.innerHTML = o.join(''); stage.classList.remove('is-loading');
+    stage._proj = proj;
+    var det = el.querySelector('.regmap-detail'); if (det && !det.getAttribute('data-keep')) det.innerHTML = currentLat ? spot(F, lon0, lat0, true) : '';
+  }
+  function spot(F, lon, lat, home) {   // the values at one place, in words
+    var lev = S.lev, z = at(F, F.z, lon, lat), s = at(F, F.s, lon, lat), bits = [];
+    if (z == null) return 'No values at this spot.';
+    bits.push('height <b>' + R(z).toLocaleString() + ' m</b>');
+    if (s != null && lev !== '250') bits.push(lev === '500' ? 'absolute vorticity <b>' + s.toFixed(1) + '</b> ×10⁻⁵ s⁻¹' : lev === '850' ? 'temperature <b>' + s.toFixed(1) + ' °C</b> (' + R(s * 9 / 5 + 32) + ' °F)' : lev === '700' ? 'humidity <b>' + R(s) + '%</b>' : 'wind <b>' + R(s) + ' kt</b>');
+    if (F.u) { var u = at(F, F.u, lon, lat), v2 = at(F, F.v, lon, lat); if (u != null && v2 != null) { var dir = (Math.atan2(-u, -v2) / D2R + 360) % 360; bits.push('wind ' + R(dir / 10) * 10 + '° at <b>' + R(Math.hypot(u, v2) * 1.943844) + ' kt</b>'); } }
+    if (F.w) { var w = at(F, F.w, lon, lat); if (w != null) bits.push(w < -0.1 ? 'air <b>rising</b> (' + (w * 10).toFixed(1) + ' µb/s)' : w > 0.1 ? 'air sinking (' + (w * 10).toFixed(1) + ' µb/s)' : 'little vertical motion'); }
+    var ln = document.getElementById('locName'), place = home ? ((ln && ln.textContent) || '').split(',')[0] || 'Loaded location' : lat.toFixed(2) + ', ' + lon.toFixed(2);
+    return '<b>' + esc(place) + ':</b> ' + LV[lev].label + ' ' + bits.join(', ') + '.' + (home ? ' <span class="rg-note">Tap the map for the values anywhere.</span>' : '');
+  }
+
+  /* ---- controls ---- */
+  function chip(label, on, attrs) { return '<button type="button" class="cpc-nav-btn' + (on ? ' active' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" ' + attrs + '>' + esc(label) + '</button>'; }
+  function bar() {
+    var el = document.getElementById('uaMap'); if (!el) return;
+    if (!el.querySelector('.ol-stage')) {
+      el.innerHTML = '<div class="regmap-layers"><div class="cpc-nav ua-lev" role="group" aria-label="Level"></div><div class="cpc-nav ua-mod" role="group" aria-label="Model"></div><div class="cpc-nav ua-view" role="group" aria-label="Frame"></div></div>' +
+        '<div class="regmap-stage ol-stage ua-stage" style="aspect-ratio:' + W + ' / ' + H + '"><div class="state-load">Loading the map…</div></div>' +
+        '<div class="regmap-row ua-time"><button type="button" class="cpc-nav-btn" data-uplay="1" aria-label="Play">Play</button><label class="regmap-slider regmap-step"><input type="range" class="ua-slider" min="0" max="' + NSTEP + '" step="1" value="0" aria-label="Forecast hour"><output class="ua-out"></output></label>' +
+        '<span class="regmap-stepby"><button type="button" class="cpc-nav-btn" data-uby="-1" aria-label="Six hours earlier">‹</button><button type="button" class="cpc-nav-btn" data-uby="1" aria-label="Six hours later">›</button></span></div>' +
+        '<div class="regmap-detail" aria-live="polite"></div>' +
+        '<div class="rg-note ua-note">From GribStream: the GFS or the ECMWF IFS at 0.25°, every 6 hours to 10 days. Each frame is asked for when it is first shown (about 40 to 100 GribStream credits) and kept for the session.</div>';
+      el.addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('button') : null;
+        if (b && b.hasAttribute('data-ulev')) { S.lev = b.getAttribute('data-ulev'); save(); stopPlay(); show(); return; }
+        if (b && b.hasAttribute('data-umod')) { S.m = b.getAttribute('data-umod'); save(); stopPlay(); show(); return; }
+        if (b && b.hasAttribute('data-uview')) { S.view = b.getAttribute('data-uview'); save(); stopPlay(); show(); return; }
+        if (b && b.hasAttribute('data-uby')) { stopPlay(); S.i = Math.max(0, Math.min(NSTEP, S.i + +b.getAttribute('data-uby'))); show(); return; }
+        if (b && b.hasAttribute('data-uplay')) { if (S.play) stopPlay(); else startPlay(); return; }
+        var stg = e.target.closest ? e.target.closest('.ua-stage') : null;
+        if (stg && S.f && stg._proj) { var r = stg.getBoundingClientRect(), q = stg._proj.inv((e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height), det = el.querySelector('.regmap-detail');
+          if (det) { det.setAttribute('data-keep', '1'); det.innerHTML = spot(S.f, q[0], q[1], false); } }
+      });
+      var sl = el.querySelector('.ua-slider');
+      sl.addEventListener('input', function () { el.querySelector('.ua-out').textContent = label(+sl.value); });
+      sl.addEventListener('change', function () { stopPlay(); S.i = +sl.value; show(); });
+    }
+    el.querySelector('.ua-lev').innerHTML = Object.keys(LV).map(function (k) { return chip(LV[k].label, k === S.lev, 'data-ulev="' + k + '"'); }).join('');
+    el.querySelector('.ua-mod').innerHTML = Object.keys(MODELS).map(function (k) { return chip(MODELS[k].label, k === S.m, 'data-umod="' + k + '"'); }).join('');
+    el.querySelector('.ua-view').innerHTML = chip('My region', S.view === 'region', 'data-uview="region"' + (currentLat ? '' : ' disabled')) + chip('National', S.view === 'us', 'data-uview="us"');
+    var sl2 = el.querySelector('.ua-slider'); if (+sl2.value !== S.i) sl2.value = S.i; el.querySelector('.ua-out').textContent = label(S.i);
+    var pb = el.querySelector('[data-uplay]'); pb.textContent = S.play ? 'Pause' : 'Play'; pb.setAttribute('aria-label', S.play ? 'Pause' : 'Play');
+  }
+  function label(i) { return whenOf(tOf(i)) + (i ? ' · +' + i * STEP + ' h' : ' · latest'); }
+  function show() {
+    var el = document.getElementById('uaMap'); if (!el) return Promise.resolve();
+    if (S.view === 'region' && !currentLat) S.view = 'us';
+    bar();
+    var stage = el.querySelector('.ol-stage'), my = ++S.seq, det = el.querySelector('.regmap-detail');
+    if (det) det.removeAttribute('data-keep');
+    if (stage.querySelector('svg')) stage.classList.add('is-loading');
+    return Promise.all([load(S.m, S.lev, S.view, tOf(S.i)), REGMAP.geo(), BASEMAP.load()]).then(function (res) {
+      if (my !== S.seq) return; S.f = res[0]; draw(res[0], res[1]);
+    }).catch(function (e) {
+      if (my !== S.seq) return; stopPlay();
+      var m = (e && e.message) || 'network error'; stage.classList.remove('is-loading');
+      stage.innerHTML = '<div class="state-load">' + (m === 'NOGS' ? 'Upper-air maps need GribStream (the GS_TOKEN secret).' : m === 'NODATA' ? esc(MODELS[S.m].label + ' has nothing for ' + whenOf(tOf(S.i)) + ' yet. Try an earlier hour or the other model.') :
+        'This map could not be loaded (' + esc(m) + ').') + ' <button type="button" class="btn-link" onclick="UAMAP.show()">Try again</button></div>';
+    });
+  }
+  function startPlay() {
+    if (S.i >= NSTEP) S.i = 0;
+    S.play = { on: true }; bar();
+    var me = S.play, next = function () { if (S.play !== me || _currentSection !== 'upper' || document.hidden) return stopPlay();
+      if (S.i >= NSTEP) return stopPlay(); S.i++; show().then(function () { if (S.play === me) setTimeout(next, 900); }); };
+    setTimeout(next, 300);
+  }
+  function stopPlay() { if (!S.play) return; S.play = null; bar(); }
+  return { show: show, stop: stopPlay, _S: S, _load: load, _proj: projector };
+})();
 
 /* ══════════════════════════════════════════════════════════════════
    HIGH-RESOLUTION RADAR AND SATELLITE (v3.12.0)
@@ -15122,7 +15645,8 @@ var SND = (function () {
     if (!(ps > 500) || r.sfc_t == null) return null;
     var add = function (p, z, tK, tdK, u, v, w) { if ([p, z, tK, tdK, u, v].some(function (x) { return x == null || isNaN(x); })) return; var t = tK - 273.15, td = Math.min(t, tdK - 273.15); P.p.push(p); P.z.push(z); P.t.push(t); P.td.push(td); P.u.push(u * KT); P.v.push(v * KT); P.w.push(w == null ? null : w); };
     add(ps, zs, r.sfc_t, r.sfc_td, r.sfc_u, r.sfc_v, null);
-    LEVELS.forEach(function (p) { if (p >= ps - 1 || !(r['z' + p] > zs + 1)) return; add(p, r['z' + p], r['t' + p], r['d' + p], r['u' + p], r['v' + p], r['w' + p]); });
+    if (r._lv) r._lv.forEach(function (x) { if (x.p >= ps - 1 || x.p < 100 || !(x.z > zs + 1)) return; add(x.p, x.z, x.t, x.d, x.u, x.v, null); });   // v3.71.0: an observed sounding, at its own levels
+    else LEVELS.forEach(function (p) { if (p >= ps - 1 || !(r['z' + p] > zs + 1)) return; add(p, r['z' + p], r['t' + p], r['d' + p], r['u' + p], r['v' + p], r['w' + p]); });
     if (P.p.length < 10) return null;
     P.n = P.p.length; P.sfcZ = zs; P.valid = r.forecasted_time; P.run = r.forecasted_at;
     P.tv = P.p.map(function (p, i) { return virtemp(p, P.t[i], P.td[i]); });
@@ -16905,7 +17429,7 @@ var SECTABS = (function () {
   var GROUPS = [
     [['hourly', 'Hourly'], ['afd', 'Discussion'], ['models', 'Models'], ['spc', 'Severe storms'], ['wpc', 'Rain and snow'], ['cpc', 'Long range']],
     [['aqi', 'Air quality'], ['climate', 'Daily climate'], ['astro', 'Sun and moon'], ['cams', 'Webcams'], ['kalshi', 'Kalshi']],
-    [['regional', 'Weather maps'], ['maps', 'Windy map'], ['home', 'US map']]
+    [['regional', 'Weather maps'], ['upper', 'Upper air'], ['maps', 'Windy map'], ['home', 'US map']]
   ], last = {};
   function kalshiOn() { var g = document.getElementById('kalshiNavGroup'); return !!g && !g.classList.contains('hidden'); }
   function groupOf(name) { for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].some(function (t) { return t[0] === name; })) return GROUPS[i]; return null; }
