@@ -833,22 +833,22 @@ function renderPeriod(p) {
       '<div class="normals-title"> CLIMATE NORMALS &amp; RECORDS — ' + cn.date + '</div>' +
       '<div class="normals-grid">' +
         (cn.avgHigh != null ? '<div class="normals-item">' +
-          '<div class="normals-label">NORMAL HIGH</div>' +
+          '<div class="normals-label">Normal high</div>' +
           '<div class="normals-value" style="color:var(--neg);">' + cn.avgHigh + '\u00B0F</div>' +
           '<div class="normals-sub">1991\u20132020 avg</div>' +
         '</div>' : '') +
         (cn.avgLow != null ? '<div class="normals-item">' +
-          '<div class="normals-label">NORMAL LOW</div>' +
+          '<div class="normals-label">Normal low</div>' +
           '<div class="normals-value" style="color:var(--info);">' + cn.avgLow + '\u00B0F</div>' +
           '<div class="normals-sub">1991\u20132020 avg</div>' +
         '</div>' : '') +
         (cn.recordHigh ? '<div class="normals-item">' +
-          '<div class="normals-label">RECORD HIGH</div>' +
+          '<div class="normals-label">Record high</div>' +
           '<div class="normals-value" style="color:var(--neg);">' + cn.recordHigh.value + '\u00B0F</div>' +
           '<div class="normals-sub">' + cn.recordHigh.year + '</div>' +
         '</div>' : '') +
         (cn.recordLow ? '<div class="normals-item">' +
-          '<div class="normals-label">RECORD LOW</div>' +
+          '<div class="normals-label">Record low</div>' +
           '<div class="normals-value" style="color:var(--info);">' + cn.recordLow.value + '\u00B0F</div>' +
           '<div class="normals-sub">' + cn.recordLow.year + '</div>' +
         '</div>' : '') +
@@ -1294,7 +1294,7 @@ async function fetchSPCDiscussion(panel) {
         if (text && text.length > 50) {
           textEl.textContent = text;
           if (issuanceTime) {
-            metaEl.textContent = 'ISSUED: ' + fmtIssued(issuanceTime);
+            metaEl.textContent = 'Issued: ' + fmtIssued(issuanceTime);
           }
           spcDiscussionCache[panel] = Date.now();
           return;
@@ -1882,9 +1882,9 @@ async function fetchWethr(stationCode) {
     // ===== PRECIPITATION =====
     if (precip && precip.total_mtd != null) {
       h += '<div class="card" style="padding:14px;margin-bottom:10px;">';
-      h += '<div style="font-size:12px;letter-spacing:1.5px;color:var(--info);font-weight:700;margin-bottom:8px;"> PRECIPITATION \u2014 ' + esc(precip.station_name || stationCode) + '</div>';
+      h += '<div style="font-size:12px;letter-spacing:0;color:var(--info);font-weight:700;margin-bottom:8px;"> PRECIPITATION \u2014 ' + esc(precip.station_name || stationCode) + '</div>';
       h += '<div style="display:flex;gap:16px;align-items:baseline;">';
-      h += '<div><div style="font-size:12px;color:var(--text-muted);">MTD</div><div style="font-size:26px;font-weight:700;color:var(--text-bright);">' + precip.total_mtd + '"</div></div>';
+      h += '<div><div style="font-size:12px;color:var(--text-muted);">Month to date</div><div style="font-size:26px;font-weight:700;color:var(--text-bright);">' + precip.total_mtd + '"</div></div>';
       h += '<div><div style="font-size:12px;color:var(--text-muted);">Official</div><div style="font-size:16px;color:var(--text-dim);">' + precip.official_mtd + '"</div></div>';
       h += '<div><div style="font-size:12px;color:var(--text-muted);">Today</div><div style="font-size:16px;color:var(--text-dim);">' + precip.today_precip + '"</div></div>';
       if (precip.has_trace) h += '<div style="font-size:12px;color:var(--warn-c);align-self:center;">Trace \u2022</div>';
@@ -1898,7 +1898,7 @@ async function fetchWethr(stationCode) {
       h += '<span class="panel-title">24H observation history</span>';
       h += '<span style="font-size:12px;color:var(--text-muted);margin-left:auto;">tap to expand</span></div>';
       h += '<div id="wethrHistTable" class="hidden" style="overflow-x:auto;max-height:400px;overflow-y:auto;">';
-      h += '<table class="hourly-table" style="font-size:12px;"><thead><tr><th>TIME</th><th>TEMP</th><th>DEW</th><th>RH</th><th>WIND</th><th>GUST</th><th>VIS</th><th>6H HI</th><th>6H LO</th></tr></thead><tbody>';
+      h += '<table class="hourly-table" style="font-size:12px;"><thead><tr><th>Time</th><th>Temp</th><th>Dew</th><th>RH</th><th>Wind</th><th>Gust</th><th>Vis</th><th>6H hi</th><th>6H lo</th></tr></thead><tbody>';
       var hArr = Array.isArray(history) ? history : (history.data || []);
       hArr.sort(function(a,b) { return new Date(b.observation_time) - new Date(a.observation_time); });
       hArr.forEach(function(o) {
@@ -1915,7 +1915,7 @@ async function fetchWethr(stationCode) {
       });
       h += '</tbody></table></div></div>';
     }
-    h += '<div style="margin-top:8px;text-align:right;"><a href="https://wethr.net/market/' + stationCode.replace(/^K/,'').toLowerCase() + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0.5px;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">VIEW ON WETHR.NET &#8599;</a></div>';
+    h += '<div style="margin-top:8px;text-align:right;"><a href="https://wethr.net/market/' + stationCode.replace(/^K/,'').toLowerCase() + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">VIEW ON WETHR.NET &#8599;</a></div>';
 
     el.innerHTML = h;
 
@@ -2008,7 +2008,7 @@ function connectWethrStream(stationCode) {
         var d = JSON.parse(e.data);
         dotEl.style.background = '#4ADE80';
         if (d.suspect_temperature) {
-          addLog('SUSPECT: ' + d.suspect_temperature.raw_fahrenheit + '°F — ' + d.suspect_temperature.reason, '#F87171');
+          addLog('Suspect: ' + d.suspect_temperature.raw_fahrenheit + '°F — ' + d.suspect_temperature.reason, '#F87171');
           return;
         }
         var tF = d.temperature_fahrenheit != null ? Math.round(d.temperature_fahrenheit * 10) / 10 : '--';
@@ -2029,10 +2029,10 @@ function connectWethrStream(stationCode) {
     });
 
     wethrSSE.addEventListener('new_high', function(e) {
-      try { var d = JSON.parse(e.data); addLog('NEW HIGH: ' + d.value_f + '°F (was ' + d.prev_value_f + '°F) [' + d.logic + ']', '#F87171'); dotEl.style.background = '#F87171'; setTimeout(function(){dotEl.style.background='#4ADE80';},3000); } catch(x) {}
+      try { var d = JSON.parse(e.data); addLog('New high: ' + d.value_f + '°F (was ' + d.prev_value_f + '°F) [' + d.logic + ']', '#F87171'); dotEl.style.background = '#F87171'; setTimeout(function(){dotEl.style.background='#4ADE80';},3000); } catch(x) {}
     });
     wethrSSE.addEventListener('new_low', function(e) {
-      try { var d = JSON.parse(e.data); addLog('NEW LOW: ' + d.value_f + '°F (was ' + d.prev_value_f + '°F) [' + d.logic + ']', '#60A5FA'); dotEl.style.background = '#60A5FA'; setTimeout(function(){dotEl.style.background='#4ADE80';},3000); } catch(x) {}
+      try { var d = JSON.parse(e.data); addLog('New low: ' + d.value_f + '°F (was ' + d.prev_value_f + '°F) [' + d.logic + ']', '#60A5FA'); dotEl.style.background = '#60A5FA'; setTimeout(function(){dotEl.style.background='#4ADE80';},3000); } catch(x) {}
     });
     wethrSSE.addEventListener('dsm', function(e) {
       try { var d = JSON.parse(e.data); addLog('DSM: High ' + d.high_f + '°F / Low ' + d.low_f + '°F for ' + d.for_date, '#FBBF24'); } catch(x) {}
@@ -2243,9 +2243,9 @@ async function fetchCLI(lat, lon) {
 
     // Status badge
     if (isFinal) {
-      h += '<div style="display:inline-block;font-size:12px;font-weight:700;letter-spacing:1px;padding:3px 10px;border-radius:3px;margin-bottom:10px;background:rgba(104,211,145,0.15);color:var(--pos);border:1px solid rgba(104,211,145,0.3);"> FINAL — SETTLEMENT PRODUCT</div>';
+      h += '<div style="display:inline-block;font-size:12px;font-weight:700;letter-spacing:0;padding:3px 10px;border-radius:3px;margin-bottom:10px;background:rgba(104,211,145,0.15);color:var(--pos);border:1px solid rgba(104,211,145,0.3);"> Final — settlement product</div>';
     } else {
-      h += '<div style="display:inline-block;font-size:12px;font-weight:700;letter-spacing:1px;padding:3px 10px;border-radius:3px;margin-bottom:10px;background:rgba(246,173,85,0.15);color:var(--orange);border:1px solid rgba(246,173,85,0.3);">\u23F3 PRELIMINARY — HIGH MAY NOT BE FINAL</div>';
+      h += '<div style="display:inline-block;font-size:12px;font-weight:700;letter-spacing:0;padding:3px 10px;border-radius:3px;margin-bottom:10px;background:rgba(246,173,85,0.15);color:var(--orange);border:1px solid rgba(246,173,85,0.3);">\u23F3 PRELIMINARY — HIGH MAY NOT BE FINAL</div>';
     }
 
     // Header
@@ -2257,7 +2257,7 @@ async function fetchCLI(lat, lon) {
     h += '</div>';
     // Product issuance time from product field
     if (issuedAt) {
-      h += '<div style="font-size:12px;color:var(--text-muted);">ISSUED: ' + fmtIssued(issuedAt) + '</div>';
+      h += '<div style="font-size:12px;color:var(--text-muted);">Issued: ' + fmtIssued(issuedAt) + '</div>';
     }
     h += '</div>';
 
@@ -2267,7 +2267,7 @@ async function fetchCLI(lat, lon) {
     if (c.high !== null && c.high !== undefined) {
       var hiClr = c.high >= 100 ? '#F87171' : c.high >= 85 ? '#FB923C' : c.high >= 70 ? '#FBBF24' : '#4ADE80';
       h += '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:4px;padding:10px;">' +
-        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:1px;">OBSERVED HIGH</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:0;">Observed high</div>' +
         '<div style="font-size:24px;font-weight:700;color:' + hiClr + ';">' + c.high + '°F</div>' +
         (c.high_time ? '<div style="font-size:12px;color:var(--text-dim);">at ' + c.high_time + '</div>' : '') +
         (c.high_normal !== null ? '<div style="font-size:12px;color:var(--text-dim);">Normal: ' + c.high_normal + '°F' +
@@ -2280,7 +2280,7 @@ async function fetchCLI(lat, lon) {
     if (c.low !== null && c.low !== undefined) {
       var loClr = c.low <= 32 ? '#60A5FA' : c.low <= 50 ? '#4ADE80' : '#FBBF24';
       h += '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:4px;padding:10px;">' +
-        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:1px;">OBSERVED LOW</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:0;">Observed low</div>' +
         '<div style="font-size:24px;font-weight:700;color:' + loClr + ';">' + c.low + '°F</div>' +
         (c.low_time ? '<div style="font-size:12px;color:var(--text-dim);">at ' + c.low_time + '</div>' : '') +
         (c.low_normal !== null ? '<div style="font-size:12px;color:var(--text-dim);">Normal: ' + c.low_normal + '°F' +
@@ -2294,9 +2294,9 @@ async function fetchCLI(lat, lon) {
     var precipVal = c.precip !== null && c.precip !== undefined ? (typeof c.precip === 'string' ? c.precip : c.precip.toFixed(2)) : null;
     if (precipVal !== null) {
       h += '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:4px;padding:10px;">' +
-        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:1px;">PRECIP</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:0;">Precip</div>' +
         '<div style="font-size:24px;font-weight:700;color:var(--text-bright);">' + precipVal + '"</div>' +
-        (c.precip_month !== null && c.precip_month !== undefined ? '<div style="font-size:12px;color:var(--text-dim);">MTD: ' + c.precip_month + '"</div>' : '') +
+        (c.precip_month !== null && c.precip_month !== undefined ? '<div style="font-size:12px;color:var(--text-dim);">Month to date: ' + c.precip_month + '"</div>' : '') +
         '</div>';
     }
 
@@ -2304,7 +2304,7 @@ async function fetchCLI(lat, lon) {
     if (c.high !== null && c.low !== null) {
       var avg = Math.round((c.high + c.low) / 2);
       h += '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:4px;padding:10px;">' +
-        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:1px;">AVG TEMP</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:0;">Avg temp</div>' +
         '<div style="font-size:24px;font-weight:700;color:var(--text-bright);">' + avg + '°F</div>' +
         (c.high_normal !== null && c.low_normal !== null ? '<div style="font-size:12px;color:var(--text-dim);">Normal: ' + Math.round((c.high_normal + c.low_normal)/2) + '°F</div>' : '') +
         '</div>';
@@ -2313,7 +2313,7 @@ async function fetchCLI(lat, lon) {
     // Wind
     if (c.highest_gust_speed) {
       h += '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:4px;padding:10px;">' +
-        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:1px;">PEAK GUST</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);letter-spacing:0;">Peak gust</div>' +
         '<div style="font-size:24px;font-weight:700;color:var(--text-bright);">' + c.highest_gust_speed + ' mph</div>' +
         (c.highest_gust_direction ? '<div style="font-size:12px;color:var(--text-dim);">from ' + c.highest_gust_direction + '°</div>' : '') +
         '</div>';
@@ -2323,18 +2323,18 @@ async function fetchCLI(lat, lon) {
 
     // Settlement note
     if (isFinal) {
-      h += '<div style="font-size:12px;color:var(--pos);padding:6px 10px;background:rgba(104,211,145,0.08);border:1px solid rgba(104,211,145,0.15);border-radius:3px;margin-bottom:10px;letter-spacing:0.3px;">' +
+      h += '<div style="font-size:12px;color:var(--pos);padding:6px 10px;background:rgba(104,211,145,0.08);border:1px solid rgba(104,211,145,0.15);border-radius:3px;margin-bottom:10px;letter-spacing:0;">' +
         'FINAL CLI — This is the settlement product for Kalshi KXHIGH/KXLOW markets. These observed values are official.</div>';
     } else {
-      h += '<div style="font-size:12px;color:var(--orange);padding:6px 10px;background:rgba(246,173,85,0.08);border:1px solid rgba(246,173,85,0.15);border-radius:3px;margin-bottom:10px;letter-spacing:0.3px;">' +
+      h += '<div style="font-size:12px;color:var(--orange);padding:6px 10px;background:rgba(246,173,85,0.08);border:1px solid rgba(246,173,85,0.15);border-radius:3px;margin-bottom:10px;letter-spacing:0;">' +
         'PRELIMINARY — The high/low may change. Kalshi settles on the FINAL CLI issued after midnight LST (12:30\u20135:00 AM local standard time). The max/min thermometer can capture peaks between METAR reports.</div>';
     }
 
     // Raw product link
     if (c.link) {
       h += '<div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">' +
-        '<a href="https://mesonet.agron.iastate.edu' + c.link + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0.5px;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">VIEW RAW CLI &#8599;</a>' +
-        '<a href="https://mesonet.agron.iastate.edu/wx/afos/p.php?pil=' + pil + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0.5px;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">IEM ARCHIVE &#8599;</a>' +
+        '<a href="https://mesonet.agron.iastate.edu' + c.link + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">VIEW RAW CLI &#8599;</a>' +
+        '<a href="https://mesonet.agron.iastate.edu/wx/afos/p.php?pil=' + pil + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">IEM ARCHIVE &#8599;</a>' +
         '</div>';
     }
 
@@ -2343,7 +2343,7 @@ async function fetchCLI(lat, lon) {
     // Previous day comparison if available
     if (prev && isFinal) {
       h += '<div class="card" style="padding:10px;margin-top:6px;font-size:13px;color:var(--text-dim);">' +
-        '<span style="color:var(--text-muted);letter-spacing:0.5px;">PREVIOUS: </span>' + prev.valid + ' — ' +
+        '<span style="color:var(--text-muted);letter-spacing:0;">Previous: </span>' + prev.valid + ' — ' +
         'High: <b style="color:var(--accent);">' + prev.high + '°F</b>' +
         (prev.high_time ? ' at ' + prev.high_time : '') +
         ' | Low: <b>' + prev.low + '°F</b>' +
@@ -2560,30 +2560,30 @@ async function fetchClimate(lat, lon) {
     var dayName = new Date(d.time[yIdx] + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
     var html = '<div class="card">' +
-      '<div style="font-size:15px;color:var(--accent);font-weight:600;letter-spacing:0.5px;margin-bottom:12px;">' +
+      '<div style="font-size:15px;color:var(--accent);font-weight:600;letter-spacing:0;margin-bottom:12px;">' +
         ' ' + dayName +
       '</div>' +
 
       // Temperature section
       '<div class="climate-section">' +
-        '<div class="climate-section-title"> TEMPERATURE</div>' +
+        '<div class="climate-section-title"> Temperature</div>' +
         '<div class="climate-grid">' +
           '<div class="climate-item">' +
-            '<div class="climate-label">HIGH</div>' +
+            '<div class="climate-label">High</div>' +
             '<div class="climate-value" style="color:var(--neg);">' + (hi != null ? Math.round(hi) + '\u00B0F' : '--') + cmpArrow(hi, dbHi, '\u00B0') + '</div>' +
             (feelsHi != null ? '<div class="climate-sub">Felt like ' + Math.round(feelsHi) + '\u00B0F</div>' : '') +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">LOW</div>' +
+            '<div class="climate-label">Low</div>' +
             '<div class="climate-value" style="color:var(--info);">' + (lo != null ? Math.round(lo) + '\u00B0F' : '--') + cmpArrow(lo, dbLo, '\u00B0') + '</div>' +
             (feelsLo != null ? '<div class="climate-sub">Felt like ' + Math.round(feelsLo) + '\u00B0F</div>' : '') +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">MEAN</div>' +
+            '<div class="climate-label">Mean</div>' +
             '<div class="climate-value">' + (mean != null ? Math.round(mean) + '\u00B0F' : '--') + '</div>' +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">RANGE</div>' +
+            '<div class="climate-label">Range</div>' +
             '<div class="climate-value">' + (hi != null && lo != null ? Math.round(hi - lo) + '\u00B0' : '--') + '</div>' +
           '</div>' +
         '</div>' +
@@ -2591,22 +2591,22 @@ async function fetchClimate(lat, lon) {
 
       // Precipitation section
       '<div class="climate-section">' +
-        '<div class="climate-section-title"> PRECIPITATION</div>' +
+        '<div class="climate-section-title"> Precipitation</div>' +
         '<div class="climate-grid">' +
           '<div class="climate-item">' +
-            '<div class="climate-label">TOTAL</div>' +
+            '<div class="climate-label">Total</div>' +
             '<div class="climate-value">' + (precip != null ? precip.toFixed(2) + '"' : '--') + cmpArrow(precip, dbPrecip, '"', 2) + '</div>' +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">RAIN</div>' +
+            '<div class="climate-label">Rain</div>' +
             '<div class="climate-value">' + (rain != null ? rain.toFixed(2) + '"' : '--') + '</div>' +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">SNOW</div>' +
+            '<div class="climate-label">Snow</div>' +
             '<div class="climate-value">' + (snow != null ? snow.toFixed(1) + '"' : '--') + '</div>' +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">PRECIP HOURS</div>' +
+            '<div class="climate-label">Precip hours</div>' +
             '<div class="climate-value">' + (precipHrs != null ? precipHrs + 'h' : '--') + '</div>' +
           '</div>' +
         '</div>' +
@@ -2614,18 +2614,18 @@ async function fetchClimate(lat, lon) {
 
       // Wind section
       '<div class="climate-section">' +
-        '<div class="climate-section-title"> WIND</div>' +
+        '<div class="climate-section-title"> Wind</div>' +
         '<div class="climate-grid">' +
           '<div class="climate-item">' +
-            '<div class="climate-label">MAX SUSTAINED</div>' +
+            '<div class="climate-label">Max sustained</div>' +
             '<div class="climate-value">' + (windMax != null ? Math.round(windMax) + ' mph' : '--') + cmpArrow(windMax, dbWind, 'mph') + '</div>' +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">MAX GUST</div>' +
+            '<div class="climate-label">Max gust</div>' +
             '<div class="climate-value">' + (gustMax != null ? Math.round(gustMax) + ' mph' : '--') + '</div>' +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">DOMINANT DIR</div>' +
+            '<div class="climate-label">Dominant dir</div>' +
             '<div class="climate-value">' + (windDir != null ? degCompass(windDir) + ' (' + Math.round(windDir) + '\u00B0)' : '--') + '</div>' +
           '</div>' +
         '</div>' +
@@ -2636,34 +2636,34 @@ async function fetchClimate(lat, lon) {
         '<div class="climate-section-title"> SOLAR &amp; UV</div>' +
         '<div class="climate-grid">' +
           '<div class="climate-item">' +
-            '<div class="climate-label">SUNRISE</div>' +
+            '<div class="climate-label">Sunrise</div>' +
             '<div class="climate-value">' + fmtTime(sunriseY) + '</div>' +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">SUNSET</div>' +
+            '<div class="climate-label">Sunset</div>' +
             '<div class="climate-value">' + fmtTime(sunsetY) + '</div>' +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">DAYLIGHT</div>' +
+            '<div class="climate-label">Daylight</div>' +
             '<div class="climate-value">' + fmtDur(daylightSec) + '</div>' +
           '</div>' +
           '<div class="climate-item">' +
-            '<div class="climate-label">SUNSHINE</div>' +
+            '<div class="climate-label">Sunshine</div>' +
             '<div class="climate-value">' + fmtDur(sunshineSec) + (sunPct != null ? ' <span style="color:var(--text-dim);">(' + sunPct + '%)</span>' : '') + '</div>' +
           '</div>' +
           (uvMax != null ? '<div class="climate-item">' +
-            '<div class="climate-label">UV INDEX MAX</div>' +
+            '<div class="climate-label">UV index max</div>' +
             '<div class="climate-value" style="color:' + uvColor(uvMax) + ';">' + uvMax.toFixed(1) + ' — ' + uvLevel(uvMax) + '</div>' +
           '</div>' : '') +
           (radiation != null ? '<div class="climate-item">' +
-            '<div class="climate-label">SOLAR RADIATION</div>' +
+            '<div class="climate-label">Solar radiation</div>' +
             '<div class="climate-value">' + radiation.toFixed(1) + 'MJ/m\u00B2</div>' +
           '</div>' : '') +
         '</div>' +
       '</div>' +
 
       // Comparison note
-      '<div style="font-size:12px;color:var(--text-muted);margin-top:12px;letter-spacing:0.3px;border-top:1px solid rgba(255,255,255,0.05);padding-top:10px;">' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-top:12px;letter-spacing:0;border-top:1px solid rgba(255,255,255,0.05);padding-top:10px;">' +
         'Arrows show change vs. ' + (new Date(dbStr + 'T12:00:00')).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) +
       '</div>' +
     '</div>';
@@ -2724,7 +2724,7 @@ function buildDailySummary(data, targetEl, opts) {
     if (!dailyMap[key]) dailyMap[key] = [];
     dailyMap[key].push(r);
   });
-  var html = '<div style="font-size:15px;letter-spacing:1.5px;color:var(--accent);padding:10px 14px 4px;">DAILY FORECAST</div>';
+  var html = '<div style="font-size:15px;letter-spacing:0;color:var(--accent);padding:10px 14px 4px;">Daily forecast</div>';
   Object.keys(dailyMap).forEach(function(dayKey) {
     var rows = dailyMap[dayKey];
     var temps = rows.map(function(r) { return kToF(r.temp); }).filter(function(v) { return v != null; });
@@ -3109,15 +3109,15 @@ async function fetchGsGfs(lat, lon) {
 
     // Snapshot
     var g = '<div class="panel-title">GFS snapshot — '+fmtGsTime(f.forecasted_time)+fmtModelRun(data)+'</div><div class="gs-grid">';
-    g+='<div class="gs-metric"><div class="gs-metric-label">TEMP</div><div class="gs-metric-value" style="color:var(--accent);">'+kToF(f.temp)+'°F</div></div>';
-    g+='<div class="gs-metric"><div class="gs-metric-label">DEWPOINT</div><div class="gs-metric-value">'+kToF(f.dewpt)+'°F</div></div>';
-    g+='<div class="gs-metric"><div class="gs-metric-label">WIND</div><div class="gs-metric-value">'+msToMph(f.wind_speed)+' mph</div><div class="gs-metric-sub">'+wd+'</div></div>';
-    if(f.gust!=null) g+='<div class="gs-metric"><div class="gs-metric-label">GUSTS</div><div class="gs-metric-value">'+msToMph(f.gust)+' mph</div></div>';
+    g+='<div class="gs-metric"><div class="gs-metric-label">Temp</div><div class="gs-metric-value" style="color:var(--accent);">'+kToF(f.temp)+'°F</div></div>';
+    g+='<div class="gs-metric"><div class="gs-metric-label">Dewpoint</div><div class="gs-metric-value">'+kToF(f.dewpt)+'°F</div></div>';
+    g+='<div class="gs-metric"><div class="gs-metric-label">Wind</div><div class="gs-metric-value">'+msToMph(f.wind_speed)+' mph</div><div class="gs-metric-sub">'+wd+'</div></div>';
+    if(f.gust!=null) g+='<div class="gs-metric"><div class="gs-metric-label">Gusts</div><div class="gs-metric-value">'+msToMph(f.gust)+' mph</div></div>';
     var cC=f.cape>2500?'#F87171':f.cape>1000?'#FBBF24':'#4ADE80';
     g+='<div class="gs-metric"><div class="gs-metric-label">CAPE</div><div class="gs-metric-value" style="color:'+cC+';">'+Math.round(f.cape||0)+'</div><div class="gs-metric-sub">J/kg</div></div>';
-    if(f.cloud!=null) g+='<div class="gs-metric"><div class="gs-metric-label">CLOUD</div><div class="gs-metric-value">'+Math.round(f.cloud)+'%</div></div>';
-    if(f.snod!=null && f.snod > 0) g+='<div class="gs-metric"><div class="gs-metric-label">SNOW DEPTH</div><div class="gs-metric-value" style="color:var(--text-1);">'+Math.round(f.snod*39.37)+'"</div></div>';
-    if(f.csnow!=null && f.csnow > 0) g+='<div class="gs-metric"><div class="gs-metric-label">SNOWING</div><div class="gs-metric-value" style="color:var(--text-1);">&#10052; YES</div></div>';
+    if(f.cloud!=null) g+='<div class="gs-metric"><div class="gs-metric-label">Cloud</div><div class="gs-metric-value">'+Math.round(f.cloud)+'%</div></div>';
+    if(f.snod!=null && f.snod > 0) g+='<div class="gs-metric"><div class="gs-metric-label">Snow depth</div><div class="gs-metric-value" style="color:var(--text-1);">'+Math.round(f.snod*39.37)+'"</div></div>';
+    if(f.csnow!=null && f.csnow > 0) g+='<div class="gs-metric"><div class="gs-metric-label">Snowing</div><div class="gs-metric-value" style="color:var(--text-1);">&#10052; YES</div></div>';
     g+='</div>';
     document.getElementById('gsGfsSnapshot').innerHTML=g;
 
@@ -3146,8 +3146,8 @@ async function fetchGsGfs(lat, lon) {
 
     // Table with snow columns
     var hasAnySnow = data.some(function(r){return (r.snod!=null&&r.snod>0)||(r.csnow!=null&&r.csnow>0)||(r._snowStep&&r._snowStep>0);});
-    var th='<table class="hourly-table"><thead><tr><th>TIME</th><th>TEMP</th><th>DEW</th><th>WIND</th><th>GUST</th><th>DIR</th><th>CAPE</th><th>PRECIP</th>';
-    if(hasAnySnow) th+='<th>SNOW</th><th>DEPTH</th>';
+    var th='<table class="hourly-table"><thead><tr><th>Time</th><th>Temp</th><th>Dew</th><th>Wind</th><th>Gust</th><th>Dir</th><th>CAPE</th><th>Precip</th>';
+    if(hasAnySnow) th+='<th>Snow</th><th>Depth</th>';
     th+='</tr></thead><tbody>';
     data.forEach(function(r){
       var wd=r.wind_dir!=null?dirs[Math.round(r.wind_dir/22.5)%16]:'';
@@ -3210,11 +3210,11 @@ async function fetchGsEcmwf(lat, lon) {
 
     var wd=f.wind_dir!=null?dirs[Math.round(f.wind_dir/22.5)%16]:'';
     var g='<div class="panel-title">ECMWF IFS snapshot — '+fmtGsTime(f.forecasted_time)+fmtModelRun(data)+'</div><div class="gs-grid">';
-    g+='<div class="gs-metric"><div class="gs-metric-label">TEMP</div><div class="gs-metric-value" style="color:var(--accent);">'+kToF(f.temp)+'°F</div></div>';
-    if(hasDew) g+='<div class="gs-metric"><div class="gs-metric-label">DEWPOINT</div><div class="gs-metric-value">'+kToF(f.dewpt)+'°F</div></div>';
-    g+='<div class="gs-metric"><div class="gs-metric-label">WIND</div><div class="gs-metric-value">'+msToMph(f.wind_speed)+' mph</div><div class="gs-metric-sub">'+wd+'</div></div>';
+    g+='<div class="gs-metric"><div class="gs-metric-label">Temp</div><div class="gs-metric-value" style="color:var(--accent);">'+kToF(f.temp)+'°F</div></div>';
+    if(hasDew) g+='<div class="gs-metric"><div class="gs-metric-label">Dewpoint</div><div class="gs-metric-value">'+kToF(f.dewpt)+'°F</div></div>';
+    g+='<div class="gs-metric"><div class="gs-metric-label">Wind</div><div class="gs-metric-value">'+msToMph(f.wind_speed)+' mph</div><div class="gs-metric-sub">'+wd+'</div></div>';
     if(hasMslp) g+='<div class="gs-metric"><div class="gs-metric-label">MSLP</div><div class="gs-metric-value">'+(f.mslp/100).toFixed(1)+'</div><div class="gs-metric-sub">hPa</div></div>';
-    if(hasCloud) g+='<div class="gs-metric"><div class="gs-metric-label">CLOUD</div><div class="gs-metric-value">'+ecCloudPct(f.cloud)+'%</div></div>';
+    if(hasCloud) g+='<div class="gs-metric"><div class="gs-metric-label">Cloud</div><div class="gs-metric-value">'+ecCloudPct(f.cloud)+'%</div></div>';
     g+='</div>';
     document.getElementById('gsEcmwfSnapshot').innerHTML=g;
 
@@ -3246,7 +3246,7 @@ async function fetchGsEcmwf(lat, lon) {
     }
 
     // Table
-    var th='<table class="hourly-table"><thead><tr><th>TIME</th><th>TEMP</th>'+(hasDew?'<th>DEW</th>':'')+'<th>WIND</th><th>DIR</th>'+(hasMslp?'<th>MSLP</th>':'')+(hasPrecip?'<th>PRECIP</th>':'')+(hasCloud?'<th>CLOUD</th>':'')+'</tr></thead><tbody>';
+    var th='<table class="hourly-table"><thead><tr><th>Time</th><th>Temp</th>'+(hasDew?'<th>Dew</th>':'')+'<th>Wind</th><th>Dir</th>'+(hasMslp?'<th>MSLP</th>':'')+(hasPrecip?'<th>Precip</th>':'')+(hasCloud?'<th>Cloud</th>':'')+'</tr></thead><tbody>';
     data.forEach(function(r){
       var wd=r.wind_dir!=null?dirs[Math.round(r.wind_dir/22.5)%16]:'';
       th+='<tr><td>'+fmtGsTime(r.forecasted_time)+'</td><td class="temp-cell">'+kToF(r.temp)+'°</td>';
@@ -3307,15 +3307,15 @@ async function fetchGsFourcast(lat, lon) {
     if (!f || f.temp == null) throw new Error('No valid data rows returned');
     var wd = f.wind_dir != null ? dirs[Math.round(f.wind_dir/22.5)%16] : '';
     var g='<div class="panel-title">FourCastNet snapshot — '+fmtGsTime(f.forecasted_time)+fmtModelRun(data)+'</div><div class="gs-grid">';
-    g+='<div class="gs-metric"><div class="gs-metric-label">TEMP</div><div class="gs-metric-value" style="color:var(--accent);">'+kToF(f.temp)+'°F</div></div>';
-    g+='<div class="gs-metric"><div class="gs-metric-label">WIND</div><div class="gs-metric-value">'+(f.wind_speed!=null?msToMph(f.wind_speed):'--')+' mph</div><div class="gs-metric-sub">'+wd+'</div></div>';
+    g+='<div class="gs-metric"><div class="gs-metric-label">Temp</div><div class="gs-metric-value" style="color:var(--accent);">'+kToF(f.temp)+'°F</div></div>';
+    g+='<div class="gs-metric"><div class="gs-metric-label">Wind</div><div class="gs-metric-value">'+(f.wind_speed!=null?msToMph(f.wind_speed):'--')+' mph</div><div class="gs-metric-sub">'+wd+'</div></div>';
     g+='</div>';
     document.getElementById('gsFourcastSnapshot').innerHTML=g;
     buildDailySummary(data,'gsFourcastDailySummary',{});
     var labels=data.map(function(r){return fmtGsTimeShort(r.forecasted_time);});
     makeGsLineChart('gsFourcastTempChart',labels,[{label:'Temp °F',data:data.map(function(r){return kToF(r.temp);}),borderColor:'#86EFAC',backgroundColor:'rgba(154,230,180,0.1)',fill:true}],'°F');
     makeGsLineChart('gsFourcastWindChart',labels,[{label:'Wind mph',data:data.map(function(r){return r.wind_speed!=null?msToMph(r.wind_speed):null;}),borderColor:'#86EFAC',backgroundColor:'rgba(154,230,180,0.1)',fill:true}],'mph');
-    var th='<table class="hourly-table"><thead><tr><th>TIME</th><th>TEMP</th><th>WIND</th><th>DIR</th></tr></thead><tbody>';
+    var th='<table class="hourly-table"><thead><tr><th>Time</th><th>Temp</th><th>Wind</th><th>Dir</th></tr></thead><tbody>';
     data.forEach(function(r){
       var wd=r.wind_dir!=null?dirs[Math.round(r.wind_dir/22.5)%16]:'';
       th+='<tr><td>'+fmtGsTime(r.forecasted_time)+'</td><td class="temp-cell">'+kToF(r.temp)+'°</td><td>'+(r.wind_speed!=null?msToMph(r.wind_speed):'--')+'</td><td>'+wd+'</td></tr>';
@@ -3440,19 +3440,19 @@ async function fetchHourSounding(model, isoTime) {
 
     // Key indices
     h += '<div class="hsm-grid">';
-    h += '<div class="hsm-item"><div class="hsm-item-label">SURFACE</div><div class="hsm-item-value">' + (sfcTF||'--') + '°/' + (sfcDwF||'--') + '°</div></div>';
-    h += '<div class="hsm-item"><div class="hsm-item-label">SFC WIND</div><div class="hsm-item-value">' + (sfcWs||'--') + ' ' + sfcWd + '</div></div>';
+    h += '<div class="hsm-item"><div class="hsm-item-label">Surface</div><div class="hsm-item-value">' + (sfcTF||'--') + '°/' + (sfcDwF||'--') + '°</div></div>';
+    h += '<div class="hsm-item"><div class="hsm-item-label">SFC wind</div><div class="hsm-item-value">' + (sfcWs||'--') + ' ' + sfcWd + '</div></div>';
     var capeClr = cape>=1500?'#F87171':cape>=500?'#FBBF24':'#4ADE80';
     h += '<div class="hsm-item"><div class="hsm-item-label">CAPE</div><div class="hsm-item-value" style="color:'+capeClr+';">' + cape + '</div></div>';
     h += '<div class="hsm-item"><div class="hsm-item-label">CIN</div><div class="hsm-item-value">' + cin + '</div></div>';
-    if (lapse) h += '<div class="hsm-item"><div class="hsm-item-label">LAPSE 850-500</div><div class="hsm-item-value">' + lapse + '°/km</div></div>';
-    if (frzLvl) h += '<div class="hsm-item"><div class="hsm-item-label">FREEZING LVL</div><div class="hsm-item-value">' + Math.round(frzLvl*3.28084) + ' ft</div></div>';
+    if (lapse) h += '<div class="hsm-item"><div class="hsm-item-label">Lapse 850-500</div><div class="hsm-item-value">' + lapse + '°/km</div></div>';
+    if (frzLvl) h += '<div class="hsm-item"><div class="hsm-item-label">Freezing LVL</div><div class="hsm-item-value">' + Math.round(frzLvl*3.28084) + ' ft</div></div>';
     if (shear6) h += '<div class="hsm-item"><div class="hsm-item-label">0-6km SHEAR</div><div class="hsm-item-value">' + shear6 + ' kt</div></div>';
     h += '</div>';
 
     // Level table
     h += '<table class="hourly-table" style="font-size:13px;margin-top:8px;"><thead><tr>' +
-      '<th>MB</th><th>HGT</th><th>TEMP</th><th>DEW</th><th>RH</th><th>WIND</th><th>SPD</th></tr></thead><tbody>';
+      '<th>mb</th><th>HGT</th><th>Temp</th><th>Dew</th><th>RH</th><th>Wind</th><th>Spd</th></tr></thead><tbody>';
     // Surface row
     h += '<tr style="color:var(--accent);"><td>SFC</td><td>--</td><td>' + (sfcTF||'--') + '°</td><td>' + (sfcDwF||'--') + '°</td><td>--</td><td>' + sfcWd + '</td><td>' + (sfcWs||'--') + '</td></tr>';
     lvlData.forEach(function(l) {
@@ -3654,9 +3654,9 @@ async function fetchGsSoundingStd(lat, lon) {
     idx += '<div class="gs-metric"><div class="gs-metric-label">CIN</div><div class="gs-metric-value">'+cin+'</div><div class="gs-metric-sub">J/kg</div></div>';
     if (lapse850_500) {
       var lClr = lapse850_500 > 8 ? '#F87171' : lapse850_500 > 7 ? '#FBBF24' : '#4ADE80';
-      idx += '<div class="gs-metric"><div class="gs-metric-label">LAPSE 850-500</div><div class="gs-metric-value" style="color:'+lClr+';">'+lapse850_500+'</div><div class="gs-metric-sub">°C/km</div></div>';
+      idx += '<div class="gs-metric"><div class="gs-metric-label">Lapse 850-500</div><div class="gs-metric-value" style="color:'+lClr+';">'+lapse850_500+'</div><div class="gs-metric-sub">°C/km</div></div>';
     }
-    if (lapse700_500) idx += '<div class="gs-metric"><div class="gs-metric-label">LAPSE 700-500</div><div class="gs-metric-value">'+lapse700_500+'</div><div class="gs-metric-sub">°C/km</div></div>';
+    if (lapse700_500) idx += '<div class="gs-metric"><div class="gs-metric-label">Lapse 700-500</div><div class="gs-metric-value">'+lapse700_500+'</div><div class="gs-metric-sub">°C/km</div></div>';
     if (sfc6km != null) {
       var sClr = sfc6km > 60 ? '#F87171' : sfc6km > 40 ? '#FBBF24' : sfc6km > 25 ? '#FB923C' : '#4ADE80';
       idx += '<div class="gs-metric"><div class="gs-metric-label">0-6km SHEAR</div><div class="gs-metric-value" style="color:'+sClr+';">'+sfc6km+'</div><div class="gs-metric-sub">kt</div></div>';
@@ -3667,9 +3667,9 @@ async function fetchGsSoundingStd(lat, lon) {
     }
     if (kIndex != null) {
       var kClr = kIndex > 35 ? '#F87171' : kIndex > 25 ? '#FBBF24' : '#4ADE80';
-      idx += '<div class="gs-metric"><div class="gs-metric-label">K-INDEX</div><div class="gs-metric-value" style="color:'+kClr+';">'+kIndex+'</div></div>';
+      idx += '<div class="gs-metric"><div class="gs-metric-label">K-index</div><div class="gs-metric-value" style="color:'+kClr+';">'+kIndex+'</div></div>';
     }
-    if (freezeLvl != null) idx += '<div class="gs-metric"><div class="gs-metric-label">FREEZING LVL</div><div class="gs-metric-value">'+freezeLvl.toLocaleString()+'</div><div class="gs-metric-sub">ft AGL</div></div>';
+    if (freezeLvl != null) idx += '<div class="gs-metric"><div class="gs-metric-label">Freezing LVL</div><div class="gs-metric-value">'+freezeLvl.toLocaleString()+'</div><div class="gs-metric-sub">ft AGL</div></div>';
     idx += '</div>';
     document.getElementById('gsSoundingIndices').innerHTML = idx;
 
@@ -3687,7 +3687,7 @@ async function fetchGsSoundingStd(lat, lon) {
     else if (cape >= 500 && shear6 >= 20) { threat = 'MARGINAL'; threatClr = '#FB923C'; }
     else if (cape >= 300) { threat = 'MARGINAL'; threatClr = '#FB923C'; }
 
-    aHtml += '<div style="margin-bottom:12px;"><span style="font-weight:700;font-size:16px;letter-spacing:2px;color:'+threatClr+';">THREAT LEVEL: '+threat+'</span></div>';
+    aHtml += '<div style="margin-bottom:12px;"><span style="font-weight:700;font-size:16px;letter-spacing:0;color:'+threatClr+';">Threat level: '+threat+'</span></div>';
 
     // ---- STABLE ATMOSPHERE (CAPE < 250) — most days ----
     if (cape < 250) {
@@ -3833,7 +3833,7 @@ async function fetchGsSoundingStd(lat, lon) {
     });
 
     // ---- LEVEL TABLE ----
-    var th = '<table class="hourly-table"><thead><tr><th>LEVEL</th><th>HEIGHT</th><th>TEMP</th><th>DEWPT</th><th>RH</th><th>WIND</th><th>DIR</th><th>SPREAD</th></tr></thead><tbody>';
+    var th = '<table class="hourly-table"><thead><tr><th>Level</th><th>Height</th><th>Temp</th><th>Dewpt</th><th>RH</th><th>Wind</th><th>Dir</th><th>Spread</th></tr></thead><tbody>';
     // Add surface row
     var sfcWd = r.sfc_wdir != null ? dirs[Math.round(r.sfc_wdir / 22.5) % 16] : '';
     th += '<tr style="border-bottom:2px solid var(--accent);"><td style="color:var(--accent);">SFC</td><td>0 ft</td><td class="temp-cell">' + kToF(r.sfc_temp) + '°</td><td>' + kToF(r.sfc_dewpt) + '°</td><td>--</td><td>' + Math.round((r.sfc_wspd||0)*2.237) + '</td><td>' + sfcWd + '</td><td>' + (kToF(r.sfc_temp) - kToF(r.sfc_dewpt)) + '°</td></tr>';
@@ -4163,7 +4163,7 @@ async function sendChatMessage() {
   var trimmedHistory = chatHistory.slice(-12);
   while (trimmedHistory.length && trimmedHistory[0].role !== 'user') trimmedHistory.shift();
   trimmedHistory = trimmedHistory.map(function (m, i) { var q = i < trimmedHistory.length - 1 && m.role === 'user' && typeof m.content === 'string' ? m.content.indexOf('\n\nUSER QUESTION: ') : -1;
-    return q > 0 && m.content.indexOf('SCREEN CONTEXT:') === 0 ? { role: 'user', content: m.content.slice(q + 2) } : m; });
+    return q > 0 && m.content.indexOf('Screen context:') === 0 ? { role: 'user', content: m.content.slice(q + 2) } : m; });
 
   try {
     var sendHist = trimmedHistory, picNote = '';
@@ -5047,13 +5047,13 @@ async function fetchGsHrrr15(lat, lon) {
     makeGsBarChart('gsHrrr15PrecipChart',labels,[{label:'Rate',data:precip,backgroundColor:'#60A5FA'}],'in/hr');
     // Table
     var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-    var th='<table class="hourly-table"><thead><tr><th>TIME</th><th>TEMP</th>'+(dew[0]!=null?'<th>DEW</th>':'')+'<th>WIND</th>'+(gusts[0]!=null?'<th>GUST</th>':'')+'<th>PRECIP</th></tr></thead><tbody>';
+    var th='<table class="hourly-table"><thead><tr><th>Time</th><th>Temp</th>'+(dew[0]!=null?'<th>Dew</th>':'')+'<th>Wind</th>'+(gusts[0]!=null?'<th>Gust</th>':'')+'<th>Precip</th></tr></thead><tbody>';
     var step=data.length>48?4:1;
     for(var i=0;i<data.length;i+=step){var r=data[i];var wd=r.wind_dir!=null?dirs[Math.round(r.wind_dir/22.5)%16]:'';
       th+='<tr style="cursor:pointer;" onclick="fetchHourSounding(\'hrrr\',\''+r.forecasted_time+'\')" title="Tap for sounding"><td>'+fmtGsTime(r.forecasted_time)+'</td><td class="temp-cell">'+kToF(r.temp)+'°</td>'+(dew[0]!=null?'<td>'+kToF(r.dewpt)+'°</td>':'')+'<td>'+msToMph(r.wind_speed)+' '+wd+'</td>'+(gusts[0]!=null?'<td>'+(msToMph(r.gust)||'--')+'</td>':'')+'<td>'+(r.precip_rate?(r.precip_rate*141.732).toFixed(3):'0.000')+'</td></tr>';}
     th+='</tbody></table>';
     if(usedModel!=='hrrrsubh')th+='<div style="font-size:12px;color:var(--warn);padding:8px;text-align:center;">Using standard HRRR (hourly) — sub-hourly unavailable</div>';
-    th+='<div style="font-size:12px;color:var(--text-muted);padding:6px;text-align:center;letter-spacing:0.5px;">TAP ANY ROW FOR VERTICAL SOUNDING AT THAT HOUR</div>';
+    th+='<div style="font-size:12px;color:var(--text-muted);padding:6px;text-align:center;letter-spacing:0;">Tap any row for vertical sounding at that hour</div>';
     document.getElementById('gsHrrr15Table').innerHTML=th;
     loadEl.classList.add('hidden'); contentEl.classList.remove('hidden');
   } catch(e) { loadEl.textContent='Render error: '+e.message; loadEl.style.color='var(--err)'; }
@@ -5084,7 +5084,7 @@ async function fetchGsRtma(lat, lon) {
     var latest=data[data.length-1];
     if(latest){var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
       var wd=latest.wind_dir!=null?dirs[Math.round(latest.wind_dir/22.5)%16]:'';
-      var h='<div class="panel-title">Latest RTMA analysis <span class="gs-rtma-badge">GRIDDED</span></div><div class="gs-grid">';
+      var h='<div class="panel-title">Latest RTMA analysis <span class="gs-rtma-badge">Gridded</span></div><div class="gs-grid">';
       h+='<div class="gs-metric"><div class="gs-metric-label">Temperature</div><div class="gs-metric-value" style="color:var(--accent);">'+kToF(latest.temp)+'°F</div></div>';
       if(latest.dewpt!=null)h+='<div class="gs-metric"><div class="gs-metric-label">Dewpoint</div><div class="gs-metric-value">'+kToF(latest.dewpt)+'°F</div></div>';
       h+='<div class="gs-metric"><div class="gs-metric-label">Wind</div><div class="gs-metric-value">'+msToMph(latest.wind_speed)+' mph</div><div class="gs-metric-sub">'+wd+'</div></div>';
@@ -5100,7 +5100,7 @@ async function fetchGsRtma(lat, lon) {
     var wDs=[{label:'Wind mph',data:winds,borderColor:'#60A5FA',backgroundColor:'rgba(99,179,237,0.1)',fill:true}];
     if(gusts[0]!=null)wDs.push({label:'Gusts mph',data:gusts,borderColor:'#F87171',fill:false,borderDash:[4,3]});
     makeGsLineChart('gsRtmaWindChart',labels,wDs,'mph');
-    var th='<table class="hourly-table"><thead><tr><th>TIME</th><th>TEMP</th>'+(dew[0]!=null?'<th>DEW</th>':'')+'<th>WIND</th>'+(gusts[0]!=null?'<th>GUST</th>':'')+'</tr></thead><tbody>';
+    var th='<table class="hourly-table"><thead><tr><th>Time</th><th>Temp</th>'+(dew[0]!=null?'<th>Dew</th>':'')+'<th>Wind</th>'+(gusts[0]!=null?'<th>Gust</th>':'')+'</tr></thead><tbody>';
     var dirs2=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
     var initRows=12;
     // Newest first: the ascending table hid the most recent analyses and
@@ -5110,7 +5110,7 @@ async function fetchGsRtma(lat, lon) {
       th+='<tr'+hideStyle+'><td>'+fmtGsTime(r.forecasted_time)+'</td><td class="temp-cell">'+kToF(r.temp)+'°</td>'+(dew[0]!=null?'<td>'+kToF(r.dewpt)+'°</td>':'')+'<td>'+msToMph(r.wind_speed)+' '+wd2+'</td>'+(gusts[0]!=null?'<td>'+(msToMph(r.gust)||'--')+'</td>':'')+'</tr>';}
     th+='</tbody></table>';
     if(data.length>initRows){
-      th+='<div style="text-align:center;padding:8px;"><button onclick="toggleRtmaRows(this)" class="gs-sub-btn" style="padding:5px 14px;font-size:12px;">SHOW ALL '+data.length+' ANALYSES</button></div>';
+      th+='<div style="text-align:center;padding:8px;"><button onclick="toggleRtmaRows(this)" class="gs-sub-btn" style="padding:5px 14px;font-size:12px;">Show all '+data.length+' ANALYSES</button></div>';
     }
     document.getElementById('gsRtmaTable').innerHTML=th;
     loadEl.classList.add('hidden');contentEl.classList.remove('hidden');
@@ -5259,10 +5259,10 @@ async function fetchGsVerify(lat, lon) {
     // Build hourly verification table
     var hasRrfs = rrfsData.length > 0;
     var hasHrrr = hrrrData.length > 0;
-    var th = '<table class="hourly-table" style="font-size:13px;"><thead><tr><th>TIME</th>';
+    var th = '<table class="hourly-table" style="font-size:13px;"><thead><tr><th>Time</th>';
     th += '<th style="color:var(--ac);">URMA °F</th>';
-    if (hasHrrr) th += '<th style="color:var(--warn-c);">HRRR °F</th><th>ERR</th>';
-    if (hasRrfs) th += '<th style="color:var(--neg);">RRFS °F</th><th>ERR</th>';
+    if (hasHrrr) th += '<th style="color:var(--warn-c);">HRRR °F</th><th>Err</th>';
+    if (hasRrfs) th += '<th style="color:var(--neg);">RRFS °F</th><th>Err</th>';
     th += '<th style="color:var(--ac);">URMA mph</th>';
     if (hasHrrr) th += '<th style="color:var(--warn-c);">HRRR mph</th>';
     if (hasRrfs) th += '<th style="color:var(--neg);">RRFS mph</th>';
@@ -5381,23 +5381,23 @@ async function fetchGsRap(lat, lon) {
     // ---- Current Snapshot Grid ----
     var gHtml = '<div class="panel-title">RAP surface snapshot &mdash; ' + fmtGsTime(first.forecasted_time) + fmtModelRun(data) + '</div>';
     gHtml += '<div class="gs-grid">';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">TEMP</div><div class="gs-metric-value" style="color:var(--accent);">' + kToF(first.temp) + '°F</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">DEWPOINT</div><div class="gs-metric-value">' + kToF(first.dewpt) + '°F</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Temp</div><div class="gs-metric-value" style="color:var(--accent);">' + kToF(first.temp) + '°F</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Dewpoint</div><div class="gs-metric-value">' + kToF(first.dewpt) + '°F</div></div>';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">RH</div><div class="gs-metric-value">' + (first.rh != null ? Math.round(first.rh) + '%' : '--') + '</div></div>';
     var wd = first.wind_dir != null ? dirs[Math.round(first.wind_dir / 22.5) % 16] : '';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">WIND</div><div class="gs-metric-value">' + msToMph(first.wind_speed) + ' mph</div><div class="gs-metric-sub">' + wd + '</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">GUSTS</div><div class="gs-metric-value">' + (msToMph(first.gust) || '--') + ' mph</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">PRESSURE</div><div class="gs-metric-value">' + (paToInHgGs(first.pressure) || '--') + '</div><div class="gs-metric-sub">inHg</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">VISIBILITY</div><div class="gs-metric-value">' + (mToMiGs(first.vis) || '--') + ' mi</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">CEILING</div><div class="gs-metric-value">' + (mToFtGs(first.ceiling) || '--') + ' ft</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Wind</div><div class="gs-metric-value">' + msToMph(first.wind_speed) + ' mph</div><div class="gs-metric-sub">' + wd + '</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Gusts</div><div class="gs-metric-value">' + (msToMph(first.gust) || '--') + ' mph</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Pressure</div><div class="gs-metric-value">' + (paToInHgGs(first.pressure) || '--') + '</div><div class="gs-metric-sub">inHg</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Visibility</div><div class="gs-metric-value">' + (mToMiGs(first.vis) || '--') + ' mi</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Ceiling</div><div class="gs-metric-value">' + (mToFtGs(first.ceiling) || '--') + ' ft</div></div>';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">CAPE</div><div class="gs-metric-value" style="color:' + (first.cape > 1000 ? '#F87171' : first.cape > 500 ? '#FBBF24' : '#4ADE80') + ';">' + Math.round(first.cape || 0) + '</div><div class="gs-metric-sub">J/kg</div></div>';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">CIN</div><div class="gs-metric-value">' + Math.round(first.cin || 0) + '</div><div class="gs-metric-sub">J/kg</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">REFLECTIVITY</div><div class="gs-metric-value">' + (first.refc != null ? Math.round(first.refc) + ' dBZ' : '--') + '</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">CLOUD COVER</div><div class="gs-metric-value">' + (first.cloud != null ? Math.round(first.cloud) + '%' : '--') + '</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">HELICITY</div><div class="gs-metric-value">' + (first.helicity != null ? Math.round(first.helicity) : '--') + '</div><div class="gs-metric-sub">m²/s² (0-1km)</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Reflectivity</div><div class="gs-metric-value">' + (first.refc != null ? Math.round(first.refc) + ' dBZ' : '--') + '</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Cloud cover</div><div class="gs-metric-value">' + (first.cloud != null ? Math.round(first.cloud) + '%' : '--') + '</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Helicity</div><div class="gs-metric-value">' + (first.helicity != null ? Math.round(first.helicity) : '--') + '</div><div class="gs-metric-sub">m²/s² (0-1km)</div></div>';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">PWAT</div><div class="gs-metric-value">' + (kgm2ToInGs(first.pwat) || '--') + '"</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">PBL HEIGHT</div><div class="gs-metric-value">' + (mToFtGs(first.pbl) || '--') + ' ft</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">PRECIP RATE</div><div class="gs-metric-value">' + (prateToInHr(first.precip_rate) || '0.000') + '</div><div class="gs-metric-sub">in/hr</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">PBL height</div><div class="gs-metric-value">' + (mToFtGs(first.pbl) || '--') + ' ft</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Precip rate</div><div class="gs-metric-value">' + (prateToInHr(first.precip_rate) || '0.000') + '</div><div class="gs-metric-sub">in/hr</div></div>';
     gHtml += '</div>';
     document.getElementById('gsRapCurrentGrid').innerHTML = gHtml;
 
@@ -5425,8 +5425,8 @@ async function fetchGsRap(lat, lon) {
 
     // ---- Hourly Table ----
     var th = '<table class="hourly-table"><thead><tr>';
-    th += '<th>TIME</th><th>TEMP</th><th>DEW</th><th>RH</th><th>WIND</th><th>GUST</th>';
-    th += '<th>VIS</th><th>CEIL</th><th>PRES</th><th>CAPE</th><th>REFL</th><th>PRECIP</th><th>CLOUD</th>';
+    th += '<th>Time</th><th>Temp</th><th>Dew</th><th>RH</th><th>Wind</th><th>Gust</th>';
+    th += '<th>Vis</th><th>Ceil</th><th>Pres</th><th>CAPE</th><th>REFL</th><th>Precip</th><th>Cloud</th>';
     th += '</tr></thead><tbody>';
     data.forEach(function(r) {
       var wd = r.wind_dir != null ? dirs[Math.round(r.wind_dir / 22.5) % 16] : '';
@@ -5450,7 +5450,7 @@ async function fetchGsRap(lat, lon) {
         '</tr>';
     });
     th += '</tbody></table>';
-    th += '<div style="font-size:12px;color:var(--text-muted);padding:6px;text-align:center;letter-spacing:0.5px;">TAP ANY ROW FOR VERTICAL SOUNDING AT THAT HOUR</div>';
+    th += '<div style="font-size:12px;color:var(--text-muted);padding:6px;text-align:center;letter-spacing:0;">Tap any row for vertical sounding at that hour</div>';
     document.getElementById('gsRapTable').innerHTML = th;
 
     loadEl.classList.add('hidden');
@@ -5564,29 +5564,29 @@ async function fetchGsRrfs(lat, lon) {
     // ---- Current Snapshot Grid ----
     var gHtml = '<div class="panel-title">RRFS surface snapshot &mdash; ' + fmtGsTime(first.forecasted_time) + fmtModelRun(data) + '</div>';
     gHtml += '<div class="gs-grid">';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">TEMP</div><div class="gs-metric-value" style="color:var(--accent);">' + kToF(first.temp) + '°F</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">DEWPOINT</div><div class="gs-metric-value">' + kToF(first.dewpt) + '°F</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Temp</div><div class="gs-metric-value" style="color:var(--accent);">' + kToF(first.temp) + '°F</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Dewpoint</div><div class="gs-metric-value">' + kToF(first.dewpt) + '°F</div></div>';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">RH</div><div class="gs-metric-value">' + (first.rh != null ? Math.round(first.rh) + '%' : '--') + '</div></div>';
     var wd = first.wind_dir != null ? dirs[Math.round(first.wind_dir / 22.5) % 16] : '';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">WIND</div><div class="gs-metric-value">' + msToMph(first.wind_speed) + ' mph</div><div class="gs-metric-sub">' + wd + '</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">GUSTS</div><div class="gs-metric-value">' + (msToMph(first.gust) || '--') + ' mph</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">PRESSURE</div><div class="gs-metric-value">' + (paToInHgGs(first.pressure) || '--') + '</div><div class="gs-metric-sub">inHg</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">VISIBILITY</div><div class="gs-metric-value">' + (mToMiGs(first.vis) || '--') + ' mi</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">CEILING</div><div class="gs-metric-value">' + (mToFtGs(first.ceiling) || '--') + ' ft</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Wind</div><div class="gs-metric-value">' + msToMph(first.wind_speed) + ' mph</div><div class="gs-metric-sub">' + wd + '</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Gusts</div><div class="gs-metric-value">' + (msToMph(first.gust) || '--') + ' mph</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Pressure</div><div class="gs-metric-value">' + (paToInHgGs(first.pressure) || '--') + '</div><div class="gs-metric-sub">inHg</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Visibility</div><div class="gs-metric-value">' + (mToMiGs(first.vis) || '--') + ' mi</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Ceiling</div><div class="gs-metric-value">' + (mToFtGs(first.ceiling) || '--') + ' ft</div></div>';
     // CAPE with severity coloring
     var capeVal = first.cape || 0;
     var capeClr = capeVal > 2500 ? '#F87171' : capeVal > 1000 ? '#FBBF24' : capeVal > 500 ? '#FB923C' : '#4ADE80';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">CAPE</div><div class="gs-metric-value" style="color:' + capeClr + ';">' + Math.round(capeVal) + '</div><div class="gs-metric-sub">J/kg</div></div>';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">CIN</div><div class="gs-metric-value">' + Math.round(first.cin || 0) + '</div><div class="gs-metric-sub">J/kg</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">REFLECTIVITY</div><div class="gs-metric-value">' + (first.refc != null ? Math.round(first.refc) + ' dBZ' : '--') + '</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">CLOUD COVER</div><div class="gs-metric-value">' + (first.cloud != null ? Math.round(first.cloud) + '%' : '--') + '</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Reflectivity</div><div class="gs-metric-value">' + (first.refc != null ? Math.round(first.refc) + ' dBZ' : '--') + '</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Cloud cover</div><div class="gs-metric-value">' + (first.cloud != null ? Math.round(first.cloud) + '%' : '--') + '</div></div>';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">0-1km SRH</div><div class="gs-metric-value">' + (first.helicity1 != null ? Math.round(first.helicity1) : '--') + '</div><div class="gs-metric-sub">m²/s²</div></div>';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">0-3km SRH</div><div class="gs-metric-value">' + (first.helicity3 != null ? Math.round(first.helicity3) : '--') + '</div><div class="gs-metric-sub">m²/s²</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">UPD HELICITY</div><div class="gs-metric-value" style="color:' + (first.upd_helicity > 100 ? '#F87171' : first.upd_helicity > 25 ? '#FBBF24' : 'inherit') + ';">' + (first.upd_helicity != null ? Math.round(first.upd_helicity) : '--') + '</div><div class="gs-metric-sub">m²/s² (0-2km)</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">LIGHTNING</div><div class="gs-metric-value" style="color:' + (first.lightning > 0 ? '#FBBF24' : 'inherit') + ';">' + (first.lightning != null ? first.lightning.toFixed(4) : '--') + '</div><div class="gs-metric-sub">fl/km²/s</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">ECHO TOPS</div><div class="gs-metric-value">' + (mToFtGs(first.echo_top) || '--') + ' ft</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Upd helicity</div><div class="gs-metric-value" style="color:' + (first.upd_helicity > 100 ? '#F87171' : first.upd_helicity > 25 ? '#FBBF24' : 'inherit') + ';">' + (first.upd_helicity != null ? Math.round(first.upd_helicity) : '--') + '</div><div class="gs-metric-sub">m²/s² (0-2km)</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Lightning</div><div class="gs-metric-value" style="color:' + (first.lightning > 0 ? '#FBBF24' : 'inherit') + ';">' + (first.lightning != null ? first.lightning.toFixed(4) : '--') + '</div><div class="gs-metric-sub">fl/km²/s</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">Echo tops</div><div class="gs-metric-value">' + (mToFtGs(first.echo_top) || '--') + ' ft</div></div>';
     gHtml += '<div class="gs-metric"><div class="gs-metric-label">PWAT</div><div class="gs-metric-value">' + (kgm2ToInGs(first.pwat) || '--') + '"</div></div>';
-    gHtml += '<div class="gs-metric"><div class="gs-metric-label">PBL HEIGHT</div><div class="gs-metric-value">' + (mToFtGs(first.pbl) || '--') + ' ft</div></div>';
+    gHtml += '<div class="gs-metric"><div class="gs-metric-label">PBL height</div><div class="gs-metric-value">' + (mToFtGs(first.pbl) || '--') + ' ft</div></div>';
     gHtml += '</div>';
     document.getElementById('gsRrfsCurrentGrid').innerHTML = gHtml;
 
@@ -5622,8 +5622,8 @@ async function fetchGsRrfs(lat, lon) {
 
     // ---- Hourly Table ----
     var th = '<table class="hourly-table"><thead><tr>';
-    th += '<th>TIME</th><th>TEMP</th><th>DEW</th><th>WIND</th><th>GUST</th>';
-    th += '<th>VIS</th><th>CEIL</th><th>CAPE</th><th>REFL</th><th>SRH1</th><th>UPHL</th><th>LTNG</th><th>ECHO</th><th>PRECIP</th>';
+    th += '<th>Time</th><th>Temp</th><th>Dew</th><th>Wind</th><th>Gust</th>';
+    th += '<th>Vis</th><th>Ceil</th><th>CAPE</th><th>REFL</th><th>SRH1</th><th>UPHL</th><th>LTNG</th><th>Echo</th><th>Precip</th>';
     th += '</tr></thead><tbody>';
     data.forEach(function(r) {
       var wd = r.wind_dir != null ? dirs[Math.round(r.wind_dir / 22.5) % 16] : '';
@@ -5651,7 +5651,7 @@ async function fetchGsRrfs(lat, lon) {
         '</tr>';
     });
     th += '</tbody></table>';
-    document.getElementById('gsRrfsTable').innerHTML = th + '<div style="font-size:12px;color:var(--text-muted);padding:6px;text-align:center;letter-spacing:0.5px;">TAP ANY ROW FOR VERTICAL SOUNDING AT THAT HOUR</div>';
+    document.getElementById('gsRrfsTable').innerHTML = th + '<div style="font-size:12px;color:var(--text-muted);padding:6px;text-align:center;letter-spacing:0;">Tap any row for vertical sounding at that hour</div>';
 
     loadEl.classList.add('hidden');
     contentEl.classList.remove('hidden');
@@ -5774,13 +5774,13 @@ async function fetchGsAifs(lat, lon) {
     // Snapshot
     var g = '<div class="panel-title">AIFS snapshot — ' + fmtGsTime(first.forecasted_time) + fmtModelRun(data) + '</div>';
     g += '<div class="gs-grid">';
-    g += '<div class="gs-metric"><div class="gs-metric-label">TEMP</div><div class="gs-metric-value" style="color:var(--accent);">' + kToF(first.temp) + '°F</div></div>';
-    if (hasDew) g += '<div class="gs-metric"><div class="gs-metric-label">DEWPOINT</div><div class="gs-metric-value">' + kToF(first.dewpt) + '°F</div></div>';
+    g += '<div class="gs-metric"><div class="gs-metric-label">Temp</div><div class="gs-metric-value" style="color:var(--accent);">' + kToF(first.temp) + '°F</div></div>';
+    if (hasDew) g += '<div class="gs-metric"><div class="gs-metric-label">Dewpoint</div><div class="gs-metric-value">' + kToF(first.dewpt) + '°F</div></div>';
     var wd = first.wind_dir != null ? dirs[Math.round(first.wind_dir / 22.5) % 16] : '';
-    g += '<div class="gs-metric"><div class="gs-metric-label">WIND</div><div class="gs-metric-value">' + msToMph(first.wind_speed) + ' mph</div><div class="gs-metric-sub">' + wd + '</div></div>';
+    g += '<div class="gs-metric"><div class="gs-metric-label">Wind</div><div class="gs-metric-value">' + msToMph(first.wind_speed) + ' mph</div><div class="gs-metric-sub">' + wd + '</div></div>';
     if (hasMslp) g += '<div class="gs-metric"><div class="gs-metric-label">MSLP</div><div class="gs-metric-value">' + (first.mslp / 100).toFixed(1) + '</div><div class="gs-metric-sub">hPa</div></div>';
-    if (hasSp) g += '<div class="gs-metric"><div class="gs-metric-label">SFC PRES</div><div class="gs-metric-value">' + paToInHgGs(first.sp) + '</div><div class="gs-metric-sub">inHg</div></div>';
-    if (hasCloud) g += '<div class="gs-metric"><div class="gs-metric-label">CLOUD</div><div class="gs-metric-value">' + cloudPct(first.cloud) + '%</div></div>';
+    if (hasSp) g += '<div class="gs-metric"><div class="gs-metric-label">SFC pres</div><div class="gs-metric-value">' + paToInHgGs(first.sp) + '</div><div class="gs-metric-sub">inHg</div></div>';
+    if (hasCloud) g += '<div class="gs-metric"><div class="gs-metric-label">Cloud</div><div class="gs-metric-value">' + cloudPct(first.cloud) + '%</div></div>';
     if (hasTcw) g += '<div class="gs-metric"><div class="gs-metric-label">TCW</div><div class="gs-metric-value">' + first.tcw.toFixed(1) + '</div><div class="gs-metric-sub">kg/m²</div></div>';
     g += '</div>';
     document.getElementById('gsAifsSnapshot').innerHTML = g;
@@ -5839,12 +5839,12 @@ async function fetchGsAifs(lat, lon) {
     }
 
     // Table
-    var th = '<table class="hourly-table"><thead><tr><th>TIME</th><th>TEMP</th>';
-    if (hasDew) th += '<th>DEW</th>';
-    th += '<th>WIND</th><th>DIR</th>';
+    var th = '<table class="hourly-table"><thead><tr><th>Time</th><th>Temp</th>';
+    if (hasDew) th += '<th>Dew</th>';
+    th += '<th>Wind</th><th>Dir</th>';
     if (hasMslp) th += '<th>MSLP</th>';
-    if (hasPrecip) th += '<th>PRECIP</th>';
-    if (hasCloud) th += '<th>CLOUD</th>';
+    if (hasPrecip) th += '<th>Precip</th>';
+    if (hasCloud) th += '<th>Cloud</th>';
     th += '</tr></thead><tbody>';
     data.forEach(function(r) {
       var wd = r.wind_dir != null ? dirs[Math.round(r.wind_dir / 22.5) % 16] : '';
@@ -5919,9 +5919,9 @@ async function fetchGsGraphcast(lat, lon) {
     // Snapshot
     var g = '<div class="panel-title">AIGFS snapshot — ' + fmtGsTime(first.forecasted_time) + fmtModelRun(data) + '</div>';
     g += '<div class="gs-grid">';
-    g += '<div class="gs-metric"><div class="gs-metric-label">TEMP</div><div class="gs-metric-value" style="color:var(--accent);">' + kToF(first.temp) + '°F</div></div>';
+    g += '<div class="gs-metric"><div class="gs-metric-label">Temp</div><div class="gs-metric-value" style="color:var(--accent);">' + kToF(first.temp) + '°F</div></div>';
     var wd = first.wind_dir != null ? dirs[Math.round(first.wind_dir / 22.5) % 16] : '';
-    g += '<div class="gs-metric"><div class="gs-metric-label">WIND</div><div class="gs-metric-value">' + msToMph(first.wind_speed) + ' mph</div><div class="gs-metric-sub">' + wd + '</div></div>';
+    g += '<div class="gs-metric"><div class="gs-metric-label">Wind</div><div class="gs-metric-value">' + msToMph(first.wind_speed) + ' mph</div><div class="gs-metric-sub">' + wd + '</div></div>';
     g += '</div>';
     document.getElementById('gsGraphcastSnapshot').innerHTML = g;
 
@@ -5935,7 +5935,7 @@ async function fetchGsGraphcast(lat, lon) {
     ], 'mph');
 
     // Table
-    var th = '<table class="hourly-table"><thead><tr><th>TIME</th><th>TEMP</th><th>WIND</th><th>DIR</th></tr></thead><tbody>';
+    var th = '<table class="hourly-table"><thead><tr><th>Time</th><th>Temp</th><th>Wind</th><th>Dir</th></tr></thead><tbody>';
     data.forEach(function(r) {
       var wd = r.wind_dir != null ? dirs[Math.round(r.wind_dir / 22.5) % 16] : '';
       th += '<tr><td>' + fmtGsTime(r.forecasted_time) + '</td><td class="temp-cell">' + kToF(r.temp) + '°</td>';
@@ -5947,7 +5947,7 @@ async function fetchGsGraphcast(lat, lon) {
     loadEl.classList.add('hidden');
     contentEl.classList.remove('hidden');
   } catch(e) {
-    loadEl.textContent = 'AIGFS: ' + e.message;
+    loadEl.textContent = 'Aigfs: ' + e.message;
     loadEl.style.color = 'var(--err)';
     console.error('[GS-GRAPHCAST]', e);
   }
@@ -5969,7 +5969,7 @@ async function fetchGsSevere(){
     data.sort(function(a,b){return new Date(a.forecasted_time)-new Date(b.forecasted_time);});
     loadEl.classList.add('hidden');
     if(!data.length){contentEl.innerHTML='<div class="card" style="color:var(--pos);text-align:center;padding:30px;">&#10003; No severe thresholds met in next 48h</div>';return;}
-    var html='<div class="card" style="margin-bottom:8px;padding:10px 14px;color:var(--err);"><span style="font-size:13px;font-weight:700;letter-spacing:1px;">&#9888;&#65039; '+data.length+' TIMESTEP'+(data.length>1?'S':'')+' EXCEEDING THRESHOLDS</span></div>';
+    var html='<div class="card" style="margin-bottom:8px;padding:10px 14px;color:var(--err);"><span style="font-size:13px;font-weight:700;letter-spacing:0;">&#9888;&#65039; '+data.length+' TIMESTEP'+(data.length>1?'S':'')+' EXCEEDING THRESHOLDS</span></div>';
     data.forEach(function(r){var tags=[];if(r.cape>=capeMin)tags.push('CAPE: '+Math.round(r.cape)+'J/kg');if(r.gust>=gustMin)tags.push('Gust: '+msToMph(r.gust)+' mph');
       html+='<div class="gs-severe-window"><div class="gs-sw-time">'+fmtGsTime(r.forecasted_time)+'</div><div class="gs-sw-vals">'+tags.join(' | ')+' | Temp: '+kToF(r.temp)+'°F | Dew: '+kToF(r.dewpt)+'°F | Wind: '+msToMph(r.wind_speed)+' mph</div></div>';});
     contentEl.innerHTML=html;
@@ -6015,12 +6015,12 @@ async function fetchGsNbm(lat, lon) {
     var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
     var f=data[0];
     var g='<div class="panel-title">NBM snapshot — '+fmtGsTime(f.forecasted_time)+fmtModelRun(data)+'</div><div class="gs-grid">';
-    g+='<div class="gs-metric"><div class="gs-metric-label">TEMP</div><div class="gs-metric-value" style="color:var(--accent);">'+kToF(f.temp)+'°F</div></div>';
-    if(f.dewpt!=null) g+='<div class="gs-metric"><div class="gs-metric-label">DEWPOINT</div><div class="gs-metric-value">'+kToF(f.dewpt)+'°F</div></div>';
-    g+='<div class="gs-metric"><div class="gs-metric-label">WIND</div><div class="gs-metric-value">'+msToMph(f.wind_speed)+' mph</div></div>';
-    if(f.gust!=null) g+='<div class="gs-metric"><div class="gs-metric-label">GUSTS</div><div class="gs-metric-value">'+msToMph(f.gust)+' mph</div></div>';
-    if(f.tstm_prob!=null) {var tClr=f.tstm_prob>50?'#F87171':f.tstm_prob>20?'#FBBF24':'#4ADE80'; g+='<div class="gs-metric"><div class="gs-metric-label">TSTM PROB</div><div class="gs-metric-value" style="color:'+tClr+';">'+Math.round(f.tstm_prob)+'%</div></div>';}
-    if(hasNbmSnow) { var totalSnow=0; data.forEach(function(r){totalSnow+=(r._snowStep||0);}); var totalSnowIn=(totalSnow*39.3701).toFixed(1); if(parseFloat(totalSnowIn)>0) g+='<div class="gs-metric"><div class="gs-metric-label">TOTAL SNOW</div><div class="gs-metric-value" style="color:var(--info);">'+totalSnowIn+'&quot;</div></div>'; }
+    g+='<div class="gs-metric"><div class="gs-metric-label">Temp</div><div class="gs-metric-value" style="color:var(--accent);">'+kToF(f.temp)+'°F</div></div>';
+    if(f.dewpt!=null) g+='<div class="gs-metric"><div class="gs-metric-label">Dewpoint</div><div class="gs-metric-value">'+kToF(f.dewpt)+'°F</div></div>';
+    g+='<div class="gs-metric"><div class="gs-metric-label">Wind</div><div class="gs-metric-value">'+msToMph(f.wind_speed)+' mph</div></div>';
+    if(f.gust!=null) g+='<div class="gs-metric"><div class="gs-metric-label">Gusts</div><div class="gs-metric-value">'+msToMph(f.gust)+' mph</div></div>';
+    if(f.tstm_prob!=null) {var tClr=f.tstm_prob>50?'#F87171':f.tstm_prob>20?'#FBBF24':'#4ADE80'; g+='<div class="gs-metric"><div class="gs-metric-label">TSTM prob</div><div class="gs-metric-value" style="color:'+tClr+';">'+Math.round(f.tstm_prob)+'%</div></div>';}
+    if(hasNbmSnow) { var totalSnow=0; data.forEach(function(r){totalSnow+=(r._snowStep||0);}); var totalSnowIn=(totalSnow*39.3701).toFixed(1); if(parseFloat(totalSnowIn)>0) g+='<div class="gs-metric"><div class="gs-metric-label">Total snow</div><div class="gs-metric-value" style="color:var(--info);">'+totalSnowIn+'&quot;</div></div>'; }
     g+='</div>';
     document.getElementById('gsNbmSnapshot').innerHTML=g;
 
@@ -6054,7 +6054,7 @@ async function fetchGsNbm(lat, lon) {
     // Table — per-step precip and snow in inches
     var hasDew=data[0]&&data[0].dewpt!=null,hasGust=data[0]&&data[0].gust!=null,hasTstm=data[0]&&data[0].tstm_prob!=null,hasPrecip=data[0]&&data[0].precip!=null;
     var tStep=Math.max(1,Math.floor(data.length/56));
-    var th='<table class="hourly-table"><thead><tr><th>TIME</th><th>TEMP</th>'+(hasDew?'<th>DEW</th>':'')+'<th>WIND</th>'+(hasGust?'<th>GUST</th>':'')+(hasTstm?'<th>TSTM%</th>':'')+(hasPrecip?'<th>PRECIP</th>':'')+(hasNbmSnow?'<th>SNOW</th>':'')+'</tr></thead><tbody>';
+    var th='<table class="hourly-table"><thead><tr><th>Time</th><th>Temp</th>'+(hasDew?'<th>Dew</th>':'')+'<th>Wind</th>'+(hasGust?'<th>Gust</th>':'')+(hasTstm?'<th>TSTM%</th>':'')+(hasPrecip?'<th>Precip</th>':'')+(hasNbmSnow?'<th>Snow</th>':'')+'</tr></thead><tbody>';
     for(var i=0;i<data.length;i+=tStep){var r=data[i];
       var tF=r.temp!=null?kToF(r.temp):'--'; var dF=r.dewpt!=null?kToF(r.dewpt):'--'; var w=r.wind_speed!=null?msToMph(r.wind_speed):'--';
       var precipIn=r._precipStep!=null?(r._precipStep*0.03937).toFixed(2):'0.00';
@@ -6436,7 +6436,7 @@ async function fetchCurrentObservation(lat, lon, seq) {
       html += '<div id="currentExpand" class="hidden" style="margin-top:10px;">';
 
       // Sparkline
-      html += '<div style="margin-bottom:10px;"><div style="font-size:12px;color:var(--text-muted);letter-spacing:0.8px;margin-bottom:4px;">Temperature, last 6 hours</div><canvas id="currentSparkline" width="600" height="50"></canvas></div>';
+      html += '<div style="margin-bottom:10px;"><div style="font-size:12px;color:var(--text-muted);letter-spacing:0;margin-bottom:4px;">Temperature, last 6 hours</div><canvas id="currentSparkline" width="600" height="50"></canvas></div>';
 
       // Observation log table
       html += '<div style="overflow-x:auto;max-height:300px;overflow-y:auto;">' +
@@ -6471,7 +6471,7 @@ async function fetchCurrentObservation(lat, lon, seq) {
 
       // NWS Time Series link
       html += '<div style="margin-top:10px;text-align:right;">' +
-        '<a href="https://www.weather.gov/wrh/timeseries?site=' + obs._stationId + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0.5px;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">NWS TIME SERIES &#8599;</a>' +
+        '<a href="https://www.weather.gov/wrh/timeseries?site=' + obs._stationId + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">NWS TIME SERIES &#8599;</a>' +
         '</div>';
 
       html += '</div>'; // close currentExpand
@@ -6753,7 +6753,7 @@ async function fetchRegional(lat, lon) {
         '</div>' +
         // 6h trend summary row
         (obs.obsCount > 1 ? '<div class="station-trend-row">' +
-          '<span style="color:var(--text-muted);font-weight:600;letter-spacing:0.5px;">6H TRENDS:</span>' +
+          '<span style="color:var(--text-muted);font-weight:600;letter-spacing:0;">6H trends:</span>' +
           (obs.trends.temp != null ? '<span>Temp ' + trendArrow(obs.trends.temp, '\u00B0', false) + '</span>' : '') +
           (obs.trends.dewpoint != null ? '<span>Dew ' + trendArrow(obs.trends.dewpoint, '\u00B0', false) + '</span>' : '') +
           (obs.trends.pressure != null ? '<span>Baro ' + pressureTrendArrow(obs.trends.pressure) + '</span>' : '') +
@@ -6764,7 +6764,7 @@ async function fetchRegional(lat, lon) {
         '<div class="station-expand">' +
           // Sparkline canvas for temp history
           (obs.tempHistory && obs.tempHistory.length > 2 ?
-            '<div class="station-sparkline"><div style="font-size:12px;color:var(--text-muted);letter-spacing:0.8px;margin-bottom:4px;">Temperature, last 6 hours</div><canvas id="spark' + idx + '" width="600" height="50"></canvas></div>' : '') +
+            '<div class="station-sparkline"><div style="font-size:12px;color:var(--text-muted);letter-spacing:0;margin-bottom:4px;">Temperature, last 6 hours</div><canvas id="spark' + idx + '" width="600" height="50"></canvas></div>' : '') +
           '<div class="station-expand-grid">' +
             (obs.temp != null ? '<div class="station-expand-item"><div class="station-expand-label">Temperature</div><div class="station-expand-value">' + obs.temp + '\u00B0F ' + (obs.trends.temp != null ? trendArrow(obs.trends.temp, '\u00B0', false) : '') + '</div><div class="station-expand-sub">' + ((obs.temp - 32) * 5/9).toFixed(1) + '\u00B0C</div></div>' : '') +
             (feelsVal ? '<div class="station-expand-item"><div class="station-expand-label">' + feelsLabel + '</div><div class="station-expand-value" style="color:' + (feelsLabel === 'Wind Chill' ? '#60A5FA' : '#F87171') + ';">' + feelsVal + '</div></div>' : '') +
@@ -6780,7 +6780,7 @@ async function fetchRegional(lat, lon) {
           var histHtml = '';
           if (obs.fullHistory && obs.fullHistory.length > 1) {
             histHtml = '<div class="obs-history-wrap">' +
-              '<div style="font-size:12px;color:var(--text-muted);letter-spacing:0.8px;margin-bottom:6px;">OBSERVATION LOG — PAST 6 HOURS (' + obs.fullHistory.length + ' readings)</div>' +
+              '<div style="font-size:12px;color:var(--text-muted);letter-spacing:0;margin-bottom:6px;">Observation log — past 6 hours (' + obs.fullHistory.length + ' readings)</div>' +
               '<table class="obs-history-table"><thead><tr>' +
               '<th>Time</th><th>Temp</th><th>Dew</th><th>RH</th><th>Wind</th><th>Gust</th><th>Baro</th><th>Vis</th><th>Cond</th>' +
               '</tr></thead><tbody>';
@@ -6804,8 +6804,8 @@ async function fetchRegional(lat, lon) {
 
           html += histHtml +
           '<div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">' +
-            '<div style="font-size:12px;color:var(--text-muted);letter-spacing:0.3px;">STATION: ' + esc(obs.name) + (obs.stationName ? ' (' + esc(obs.stationName) + ')' : '') + (obs.time ? ' | OBS: ' + obs.time : '') + ' | ' + obs.obsCount + ' readings/6h</div>' +
-            '<a href="https://www.weather.gov/wrh/timeseries?site=' + obs.name + '" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0.5px;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">NWS TIME SERIES &#8599;</a>' +
+            '<div style="font-size:12px;color:var(--text-muted);letter-spacing:0;">Station: ' + esc(obs.name) + (obs.stationName ? ' (' + esc(obs.stationName) + ')' : '') + (obs.time ? ' | OBS: ' + obs.time : '') + ' | ' + obs.obsCount + ' readings/6h</div>' +
+            '<a href="https://www.weather.gov/wrh/timeseries?site=' + obs.name + '" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="font-size:13px;color:var(--accent);text-decoration:none;letter-spacing:0;padding:4px 10px;border:1px solid rgba(124,192,238,0.3);border-radius:2px;">NWS TIME SERIES &#8599;</a>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -7258,15 +7258,15 @@ async function doFetch(opts) {
           '<div class="alert-full-body" id="alertBody' + idx + '">' +
             '<div style="margin-bottom:10px;color:var(--text);">' + esc(a.headline) + '</div>' +
             '<div class="alert-full-meta">' +
-              (a.urgency ? '<span>URGENCY: ' + esc(a.urgency) + '</span>' : '') +
-              (a.certainty ? '<span>CERTAINTY: ' + esc(a.certainty) + '</span>' : '') +
-              (a.sender ? '<span>FROM: ' + esc(a.sender) + '</span>' : '') +
-              (eff ? '<span>EFFECTIVE: ' + esc(eff) + '</span>' : '') +
-              (exp ? '<span>EXPIRES: ' + esc(exp) + '</span>' : '') +
+              (a.urgency ? '<span>Urgency: ' + esc(a.urgency) + '</span>' : '') +
+              (a.certainty ? '<span>Certainty: ' + esc(a.certainty) + '</span>' : '') +
+              (a.sender ? '<span>From: ' + esc(a.sender) + '</span>' : '') +
+              (eff ? '<span>Effective: ' + esc(eff) + '</span>' : '') +
+              (exp ? '<span>Expires: ' + esc(exp) + '</span>' : '') +
             '</div>' +
             (a.description ? '<div class="alert-full-desc">' + esc(a.description) + '</div>' : '') +
             (a.instruction ? '<div class="alert-full-desc" style="color:var(--warn);">' +
-              '<span style="font-weight:700;font-size:12px;letter-spacing:1.5px;">INSTRUCTIONS:</span><br>' +
+              '<span style="font-weight:700;font-size:12px;letter-spacing:0;">Instructions:</span><br>' +
               esc(a.instruction) + '</div>' : '') +
           '</div>' +
         '</div>';
@@ -13771,7 +13771,7 @@ var HRMAP = (function () {
   function build(k) {
     var el = document.getElementById('hrMap-' + k); if (!el || el.querySelector('.hr-stage')) return el;
     el.innerHTML = '<div class="regmap-layers"><div class="cpc-nav hr-bases" role="group" aria-label="Imagery"></div><div class="cpc-nav hr-views" role="group" aria-label="Frame"></div></div>' +
-      '<div class="regmap-bar hr-bar"><button type="button" class="gs-refresh-btn" data-play="1">Play loop</button><span class="hr-tl"><span class="hr-tl-k">Radar</span><input type="range" class="hr-slider" min="0" max="0" value="0" step="1" aria-label="Frame time"></span>' +
+      '<div class="regmap-bar hr-bar"><button type="button" class="gs-refresh-btn" data-play="1">Play loop</button><input type="range" class="hr-slider" min="0" max="0" value="0" step="1" aria-label="Frame time">' +
       (k === 'radar' ? '<span class="hr-tl hr-tl-f"><span class="hr-tl-k">HRRR forecast, next 3 hours</span><input type="range" class="hr-fut" min="0" max="12" value="0" step="1" aria-label="Forecast time, HRRR simulated radar"></span>' +
         '<button type="button" class="gs-refresh-btn" data-fplay="1" aria-pressed="false">Play forecast</button>' : '') +
       '<span class="hr-time"></span><button type="button" class="gs-refresh-btn" data-refresh="1">Refresh</button><button type="button" class="gs-refresh-btn regmap-save" data-save="1">Save image</button></div>' +
@@ -15584,7 +15584,7 @@ SND.describe = function () {
   var st = SND._state, P = st.prof, host = document.getElementById('sndHrrr'), tb = document.getElementById('sndTables'), run = document.getElementById('sndRun');
   if (!host || host.classList.contains('hidden')) return '';
   if (!P || !tb || !tb.innerText.trim()) return 'HRRR sounding: still loading, or it failed to load.\n';
-  var out = 'HRRR SOUNDING SHOWN ON SCREEN: ' + (run ? run.textContent : '') + '\n';
+  var out = 'HRRR sounding shown on screen: ' + (run ? run.textContent : '') + '\n';
   out += 'Profile (pressure mb, height ft above ground, temperature F, dew point F, wind direction/speed kt):\n';
   for (var i = 0; i < P.n; i++) {
     var d = (Math.round(Math.atan2(-P.u[i], -P.v[i]) * 180 / Math.PI) + 360) % 360, s = Math.round(Math.sqrt(P.u[i] * P.u[i] + P.v[i] * P.v[i]));

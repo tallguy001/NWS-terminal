@@ -852,7 +852,7 @@
           <button class="gs-sub-btn" data-mtab="rrfs" onclick="switchModelsTab('rrfs', this)">RRFS</button>
           <button class="gs-sub-btn" data-mtab="rap" onclick="switchModelsTab('rap', this)">RAP</button>
           <button class="gs-sub-btn" data-mtab="gfs" onclick="switchModelsTab('gfs', this)">GFS</button>
-          <button class="gs-sub-btn" data-mtab="ecmwf" onclick="switchModelsTab('ecmwf', this)">ECMWF IFS</button>
+          <button class="gs-sub-btn" data-mtab="ecmwf" onclick="switchModelsTab('ecmwf', this)">ECMWF ifs</button>
           <button class="gs-sub-btn" data-mtab="aifs" onclick="switchModelsTab('aifs', this)">AIFS</button>
           <button class="gs-sub-btn" data-mtab="graphcast" onclick="switchModelsTab('graphcast', this)">AIGFS (GraphCast)</button>
           <button class="gs-sub-btn" data-mtab="fourcast" onclick="switchModelsTab('fourcast', this)">FourCastNet</button>
@@ -1117,7 +1117,7 @@
               </div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
-              <button class="btn" onclick="fetchGsSevere()" style="padding:6px 16px;">SCAN 48H</button>
+              <button class="btn" onclick="fetchGsSevere()" style="padding:6px 16px;">Scan 48H</button>
               <span style="font-size:14px;color:var(--text-dim);">Filter: CAPE &ge; threshold OR Gusts &ge; threshold</span>
             </div>
           </div>
@@ -1279,7 +1279,7 @@
           <div class="card" style="margin-bottom:8px;padding:10px 14px;">
             <div class="panel-title">RRFS &mdash; rapid refresh forecast system (3km)</div>
             <div style="font-size:14px;color:var(--text-dim);margin-bottom:10px;">
-              NOAA&rsquo;s next-gen storm-scale model replacing HRRR &amp; RAP. FV3 dynamical core, 3km convection-allowing, hourly cycling with radar/satellite/aircraft assimilation. Unified North America domain. Forecasts to 84h. <span style="color:var(--warn);">EXPERIMENTAL</span> &mdash; 15-day archive, may change without notice. Best for: severe storms, lightning, hail, updraft helicity, aviation ceilings.
+              NOAA&rsquo;s next-gen storm-scale model replacing HRRR &amp; RAP. FV3 dynamical core, 3km convection-allowing, hourly cycling with radar/satellite/aircraft assimilation. Unified North America domain. Forecasts to 84h. <span style="color:var(--warn);">Experimental</span> &mdash; 15-day archive, may change without notice. Best for: severe storms, lightning, hail, updraft helicity, aviation ceilings.
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <button class="gs-sub-btn active" onclick="gsRrfsRange(24,this)" style="padding:5px 10px;">24H</button>
@@ -1507,7 +1507,7 @@
               HRRR hourly: a full sounding every 25 mb for any of the next 48 hours, with parcels, shear, composites, winter fields and analogs. RAP and GFS: the simpler profile at eight standard levels.
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-              <span style="font-size:13px;color:var(--text-muted);margin-right:4px;">MODEL:</span>
+              <span style="font-size:13px;color:var(--text-muted);margin-right:4px;">Model:</span>
               <button class="gs-sub-btn active" onclick="gsSoundingModel('hrrr',this)" style="padding:5px 10px;">HRRR hourly</button>
               <button class="gs-sub-btn" onclick="gsSoundingModel('rap',this)" style="padding:5px 10px;">RAP</button>
               <button class="gs-sub-btn" onclick="gsSoundingModel('gfs',this)" style="padding:5px 10px;">GFS</button>
@@ -1530,7 +1530,7 @@
               <div style="position:relative;height:310px;"><canvas id="gsSoundingWindChart"></canvas></div>
             </div>
             <div class="card" style="padding:0;overflow-x:auto;">
-              <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:15px;letter-spacing:1.5px;color:var(--accent);">LEVEL DATA</div>
+              <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:15px;letter-spacing:1.5px;color:var(--accent);">Level data</div>
               <div style="overflow-x:auto;"><div id="gsSoundingTable"></div></div>
             </div>
           </div>
@@ -1683,7 +1683,7 @@
     <div class="field">
       <div class="field-head">
         <label for="gsTokenInput">GribStream token</label>
-        <span class="gs-status off" id="gsStatus">NO TOKEN</span>
+        <span class="gs-status off" id="gsStatus">No token</span>
       </div>
       <div class="field-hint">Powers every numerical model panel. Free tier at <a href="https://gribstream.com" target="_blank" rel="noopener">gribstream.com</a>.</div>
       <div class="field-row">

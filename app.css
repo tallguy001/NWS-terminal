@@ -2943,3 +2943,6 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 #hrMap-radar > .hr-hint { order: 5; }
 .hr-bar > .hr-tl { align-self: flex-end; }
 .hr-bar .hr-time { order: -1; flex: 0 0 100%; font-family: var(--font-ui); font-size: 18px; font-weight: 600; color: var(--text-1); }
+.regmap-onmap { left: auto; right: 14px; }
+.hr-fut-banner { top: auto; bottom: 46px; }
+@media (max-width: 720px) { .hr-fut-banner { top: auto; bottom: 40px; } .regmap-onmap { left: auto; right: 10px; } }
