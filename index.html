@@ -10,18 +10,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://api.weather.gov" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-<meta name="theme-color" content="#0B0E14">
+<meta name="theme-color" content="#0F1A2B">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.67.1">
+<link rel="stylesheet" href="/app.css?v=3.68.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -194,14 +194,31 @@
 
     <!-- FORECAST SECTION -->
     <div id="section-forecast" class="section-panel">
-      <div class="section">
-        <h2 class="section-label">Current conditions<span class="sec-age" data-age="forecast"></span></h2>
-        <div class="card"><div id="currentText"></div><div id="rtmaCurrent"></div><div id="radarOverhead"></div><div id="observersNear"></div></div>
-      </div>
+      <section class="section nw-cur" aria-labelledby="nwCurH">
+        <h2 class="sr-only" id="nwCurH">Current conditions</h2><span class="sec-age nw-age" data-age="forecast"></span>
+        <div id="currentText"></div>
+        <div class="nw-details"><div id="rtmaCurrent"></div><div id="radarOverhead"></div><div id="observersNear"></div></div>
+      </section>
 
-      <div class="section">
-        <h2 class="section-label">Seven-day outlook</h2>
-        <div class="card week-strip" id="weekStrip"></div>
+      <section class="section nw-trace-sec hidden" id="nwTraceSec" aria-labelledby="nwTraceH">
+        <div class="nw-trace-head">
+          <h2 class="nw-h" id="nwTraceH">The last 24 hours and the next 48</h2>
+          <span class="nw-key"><svg width="26" height="6" aria-hidden="true"><line x1="1" x2="25" y1="3" y2="3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>Observed</span>
+          <span class="nw-key fc"><svg width="26" height="6" aria-hidden="true"><line x1="1" x2="25" y1="3" y2="3" stroke="currentColor" stroke-width="2" stroke-dasharray="5 4"/></svg><span id="nwTraceFc">NWS hourly forecast</span></span>
+          <span class="nw-key"><i class="nw-night-sw" aria-hidden="true"></i>Night</span>
+        </div>
+        <div id="nwTrace" class="nw-trace"></div>
+      </section>
+
+      <div class="nw-pair">
+        <section class="section nw-afd" id="nwAfd" aria-labelledby="nwAfdH">
+          <h2 class="nw-h" id="nwAfdH">From the forecaster</h2>
+          <div id="nwAfdBody"><p class="nw-muted">Loading the forecast discussion…</p></div>
+        </section>
+        <section class="section nw-week" aria-labelledby="nwWeekH">
+          <h2 class="nw-h" id="nwWeekH">The week</h2>
+          <div class="week-strip" id="weekStrip"></div>
+        </section>
       </div>
 
       <div class="section">
@@ -1819,6 +1836,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.67.1" defer></script>
+<script src="/app.js?v=3.68.0" defer></script>
 </body>
 </html>
