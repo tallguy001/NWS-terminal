@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.69.0">
+<link rel="stylesheet" href="/app.css?v=3.70.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -241,8 +241,9 @@
     <div id="section-radar" class="section-panel hidden">
       <div class="section">
         <h2 class="section-label sec-quiet">Radar, high resolution</h2>
+        <p class="hr-note" id="hrNote"></p>
         <div class="card regmap-card" id="hrMap-radar"></div>
-        <div class="source-note">Radar: NOAA MRMS base reflectivity mosaic; Site radar and Velocity are one NWS radar's own super-resolution scan. Lightning: NWS Ocean Prediction Center strike density from the NLDN and GLD360 ground networks, 15 minutes at a time, by way of NOAA nowCOAST; with a lightning key on the server, live flashes on the newest frames from the WarPulse Lightning API. Satellite: GOES, served by NOAA nowCOAST. Each frame is requested at the size and projection of the map, so it is not stretched. Highways, lakes and neighbouring countries: Natural Earth. City names: GeoNames (CC BY 4.0).</div>
+        <details class="src-fold"><summary>Sources</summary><div class="source-note">Radar: NOAA MRMS base reflectivity mosaic; Site radar and Velocity are one NWS radar's own super-resolution scan. Lightning: NWS Ocean Prediction Center strike density from the NLDN and GLD360 ground networks, 15 minutes at a time, by way of NOAA nowCOAST; with a lightning key on the server, live flashes on the newest frames from the WarPulse Lightning API. Satellite: GOES, served by NOAA nowCOAST. Each frame is requested at the size and projection of the map, so it is not stretched. Highways, lakes and neighbouring countries: Natural Earth. City names: GeoNames (CC BY 4.0).</div></details>
         <h2 class="section-label" style="margin-top:var(--s5);">Radar, NEXRAD base reflectivity</h2>
         <div class="card" style="padding:0; overflow:hidden;">
           <div id="radarMap"></div>
@@ -366,7 +367,7 @@
           <div class="regmap-stage" id="regMapStage"><div class="state-load">Load a location to draw the map.</div></div>
           <div class="regmap-detail" id="regMapDetail" aria-live="polite"></div>
         </div>
-        <div class="source-note">Station reports: aviationweather.gov (latest) and Iowa Environmental Mesonet (25-hour history). Forecasts, including rain and snow amounts: NWS digital forecast. Alerts: NWS. Storm reports and NWS observer reports: Iowa Environmental Mesonet. Volunteer rain and snow reports: CoCoRaHS (cocorahs.org). Rainfall: NWS river forecast centre analysis. Model values: GribStream. Market prices: Kalshi public data, not advice. The colour field blends the plotted values and is not an analysis. Town names on the map: GeoNames (CC BY 4.0) and US Census Bureau; tap a label for the station's own name. County and state lines: US Census Bureau.</div>
+        <details class="src-fold"><summary>Sources</summary><div class="source-note">Station reports: aviationweather.gov (latest) and Iowa Environmental Mesonet (25-hour history). Forecasts, including rain and snow amounts: NWS digital forecast. Alerts: NWS. Storm reports and NWS observer reports: Iowa Environmental Mesonet. Volunteer rain and snow reports: CoCoRaHS (cocorahs.org). Rainfall: NWS river forecast centre analysis. Model values: GribStream. Market prices: Kalshi public data, not advice. The colour field blends the plotted values and is not an analysis. Town names on the map: GeoNames (CC BY 4.0) and US Census Bureau; tap a label for the station's own name. County and state lines: US Census Bureau.</div></details>
         <div id="regStationsBlock">
         <h2 class="section-label" style="margin-top:var(--s5);">Nearest observation stations<span class="sec-age" data-age="regional"></span></h2>
         <div id="regionalContainer">
@@ -1823,6 +1824,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.69.0" defer></script>
+<script src="/app.js?v=3.70.0" defer></script>
 </body>
 </html>

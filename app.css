@@ -1862,7 +1862,7 @@ td { padding: 10px var(--s3); }
 .regmap-stage { position: relative; width: 100%; background: #070B14; border-radius: var(--r-sm); overflow: hidden; min-height: 160px; display: grid; place-items: center; }
 .regmap-field, .regmap-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .regmap-stn { cursor: pointer; outline: none; }
-.regmap-stn:focus-visible rect:first-child { stroke: #5EEAD4; stroke-width: 2px; }
+.regmap-stn:focus-visible rect:first-child { stroke: #A5D4F4; stroke-width: 2px; }
 .regmap-detail { margin-top: var(--s3); font-size: var(--fs-sm); color: var(--text-2); min-height: 1.4em; }
 .regmap-detail b { color: var(--text-1); font-weight: 600; }
 .regmap-id { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-3); }
@@ -1899,7 +1899,7 @@ td { padding: 10px var(--s3); }
 .hr-layers img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .hr-layers img.hr-over { opacity: 0.85; }
 .hr-bar { align-items: center; }
-.hr-slider { flex: 1 1 140px; min-width: 120px; accent-color: #2DD4BF; }
+.hr-slider { flex: 1 1 140px; min-width: 120px; accent-color: var(--ac); }
 .hr-time { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); color: var(--text-2); min-width: 9.5em; }
 .hr-stage.is-loading { opacity: 0.75; }
 
@@ -2114,7 +2114,7 @@ td { padding: 10px var(--s3); }
    ============================================================ */
 .regmap-modes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-bottom: var(--s4); }
 .regmap-mode {
-  --rm: #2DD4BF; --rm-bg: rgba(45,212,191,0.10); --rm-bd: rgba(45,212,191,0.55);
+  --rm: #7CC0EE; --rm-bg: rgba(124,192,238,0.12); --rm-bd: rgba(124,192,238,0.55);
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
   min-height: 60px; padding: var(--s3) var(--s4);
   background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-md);
@@ -2254,7 +2254,7 @@ td { padding: 10px var(--s3); }
 @media print { .usn-stage { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
 
 /* v3.42.2: the opening page's note when a tab is tapped and there is no place to show */
-.home-pick { margin: 0 0 var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--ac); border-radius: var(--r-md); background: rgba(94, 234, 212, 0.08); color: var(--text-1); font-size: var(--fs-base); }
+.home-pick { margin: 0 0 var(--s3); padding: var(--s3) var(--s4); border: 1px solid var(--ac); border-radius: var(--r-md); background: var(--ac-bg); color: var(--text-1); font-size: var(--fs-base); }
 
 /* ── v3.43.0: one menu for a long list of choices (PICK); first used by Current Maps and Forecast Maps ── */
 .regmap-card { position: relative; }
@@ -2434,10 +2434,10 @@ td { padding: 10px var(--s3); }
 /* Maps keep their dark ground in both modes, so radar and colour scales read the same: everything laid over a map keeps the dark tokens. */
 :root[data-theme="light"] .regmap-stage, :root[data-theme="light"] .map-pop {
   color-scheme: dark;
-  --bg-base: #0B0E14; --bg-surface: #12151C; --bg-raised: #171B24; --bg-overlay: #1C212C; --bg-2: #12151C;
-  --border-subtle: #1E2531; --border-default: #2A3140; --border-strong: #3A4356;
-  --text-1: #E6EAF2; --text-2: #A9B2C3; --text-3: #7C8798; --text-4: #6B7686;
-  --ac: #2DD4BF; --ac-hi: #5EEAD4; --ac-bg: rgba(45, 212, 191, .10); --ac-border: rgba(45, 212, 191, .35);
+  --bg-base: #0F1A2B; --bg-surface: #16233A; --bg-raised: #1B2A44; --bg-overlay: #1F2F4A; --bg-2: #16233A;   /* v3.70.0: the navy of the dark mode */
+  --border-subtle: #1F2E47; --border-default: #2A3B58; --border-strong: #3C4F70;
+  --text-1: #E8EEF6; --text-2: #B9C5D5; --text-3: #9AAAC0; --text-4: #8191A8;
+  --ac: #7CC0EE; --ac-hi: #A5D4F4; --ac-bg: rgba(124, 192, 238, .13); --ac-border: rgba(124, 192, 238, .38);
   --pos: #4ADE80; --warn-c: #FBBF24; --neg: #F87171; --info: #60A5FA; --violet: #A78BFA; --orange: #FB923C;
   --sh3: 0 12px 32px rgba(0, 0, 0, .6);
 }
@@ -2470,10 +2470,10 @@ td { padding: 10px var(--s3); }
 :root[data-theme="light"] .sev-extreme { color: #BE123C; }
 :root[data-theme="light"] .mg-sky { fill: #9AA8BC; }
 :root[data-theme="light"] .keyrow-st.on { color: var(--pos); } :root[data-theme="light"] .keyrow-st.warn, :root[data-theme="light"] .gs-run-late .stat-value, :root[data-theme="light"] .gs-run-late .stat-label, :root[data-theme="light"] .usn-place-name i { color: var(--warn-c); }
-:root[data-theme="light"] .regmap-mode { --rm: #0F766E; --rm-bg: rgba(15, 118, 110, .09); --rm-bd: rgba(15, 118, 110, .5); }
+:root[data-theme="light"] .regmap-mode { --rm: #1F6FB2; --rm-bg: rgba(31, 111, 178, .09); --rm-bd: rgba(31, 111, 178, .5); }
 :root[data-theme="light"] .regmap-mode[data-mode="fc"] { --rm: #6D28D9; --rm-bg: rgba(109, 40, 217, .08); --rm-bd: rgba(109, 40, 217, .5); }
 :root[data-theme="light"] .regmap-card[data-mode="fc"] .cpc-nav-btn.active, :root[data-theme="light"] .regmap-card[data-mode="fc"] .pick-opt.active { background: rgba(109, 40, 217, .08); color: #6D28D9; }
-:root[data-theme="light"] .hr-slider { accent-color: #0F766E; } :root[data-theme="light"] .regmap-card[data-mode="fc"] .regmap-slider input { accent-color: #6D28D9; }
+:root[data-theme="light"] .hr-slider { accent-color: var(--ac); } :root[data-theme="light"] .regmap-card[data-mode="fc"] .regmap-slider input { accent-color: #6D28D9; }
 /* the switch itself */
 .theme-btn { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); color: var(--text-3); cursor: pointer; flex: none; }
 .theme-btn:hover { background: var(--bg-raised); color: var(--text-1); border-color: var(--border-default); }
@@ -2634,7 +2634,7 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 
 /* ── v3.60.0: the sounding for the selected location: its marker on the Forecast maps can be tapped, and its button stands under the map ── */
 .regmap-homehit { cursor: pointer; }
-.regmap-homehit:focus-visible { stroke: #5EEAD4; stroke-width: 2px; }
+.regmap-homehit:focus-visible { stroke: #A5D4F4; stroke-width: 2px; }
 .regmap-sndnote b { color: var(--text-2); font-weight: 600; }
 
 /* ── v3.61.0: the selected location's report on every map; the line that says whose observations it shows ── */
@@ -2898,3 +2898,48 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 @media (max-width: 720px) { .topbar .fresh { display: none; } .topbar .loc-actions .btn { width: 40px; height: 40px; padding: 0; } }
 .ps-searchrow .search { order: 0; flex: 1 1 auto; }
 @media (max-width: 720px) { .pick-x { order: 2; } .pick-find { order: 3; flex: 1 1 100%; max-width: none; } }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   v3.70.0 — the map and radar screens: the map edge to edge with its width and save on it, the time controls in a bar
+   beneath, forecast frames marked as forecast, the sounding inside a forecast map's pop-up, sources folded away.
+   ══════════════════════════════════════════════════════════════════ */
+#section-regional .regmap-card, #section-radar .regmap-card { padding: 0; background: none; border: 0; box-shadow: none; }
+.regmap-wrap { position: relative; }
+.regmap-wrap .regmap-stage { border-radius: 12px; overflow: hidden; }
+.regmap-onmap { position: absolute; left: 14px; top: 14px; z-index: 5; display: flex; gap: 8px; align-items: center; }
+.regmap-onmap .cpc-nav { background: var(--bg-base); border-radius: 11px; }
+.regmap-onmap .regmap-save { background: var(--bg-base); }
+#regMapCard > .regmap-opts { margin: 0; padding: 12px 0 6px; border-top: 0; }
+#regMapCard > .regmap-opts .regmap-row { gap: 12px; }
+.regmap-slider input[type="range"] { accent-color: var(--ac); }
+.regmap-stepby .cpc-nav-btn { min-width: 44px; min-height: 44px; font-size: 20px; border-radius: 10px; }
+.regmap-card[data-layer="fradar"] .regmap-stage { box-shadow: inset 0 0 0 3px var(--text-3); outline: 2px dashed var(--text-3); outline-offset: 3px; }
+.pop-snd { min-height: 200px; max-height: 260px; margin: 6px 0 2px; overflow: hidden; border-radius: 8px; background: var(--bg-base); }
+.pop-snd svg { width: 100%; height: auto; display: block; }
+.pop-snd .state-load { padding: 16px; font-size: 13px; }
+.src-fold { margin: 8px 0 var(--s4); }
+.src-fold summary { cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; font-size: 14px; color: var(--ac); }
+.src-fold .source-note { margin-top: 4px; }
+.hr-note { margin: 0 0 var(--s3); font-size: 15px; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.hr-bar { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.hr-tl { display: flex; flex-direction: column; gap: 2px; flex: 1 1 220px; min-width: 160px; }
+.hr-tl-k { font-size: 12px; color: var(--text-3); }
+.hr-tl .hr-slider { width: 100%; }
+.hr-tl-f { flex: 1 1 200px; padding-left: 12px; border-left: 2px solid var(--nw-now); }
+.hr-tl-f .hr-tl-k { color: var(--text-3); }
+.hr-fut { width: 100%; accent-color: var(--text-3); }
+.hr-stage.is-future { outline: 2px dashed var(--text-3); outline-offset: 3px; }
+.hr-stage.is-future .hr-layers, .hr-stage.is-future .hr-carry { visibility: hidden; }
+.hr-fut-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; opacity: .92; }
+.hr-fut-banner { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); max-width: calc(100% - 140px); box-sizing: border-box; padding: 9px 14px; border-radius: 10px; background: var(--bg-base); border: 1.5px dashed var(--text-3); color: var(--text-1); font-size: 14px; line-height: 1.35; text-align: center; z-index: 6; }
+.hr-fut-banner b { font-weight: 650; }
+@media (max-width: 720px) { .hr-fut-banner { left: 10px; right: 10px; transform: none; max-width: none; top: 10px; font-size: 13px; } .regmap-onmap { left: 10px; top: 10px; } }
+#hrMap-radar { display: flex; flex-direction: column; }
+#hrMap-radar > .regmap-layers { order: 1; }
+#hrMap-radar > .hr-stage { order: 2; border-radius: 12px; }
+#hrMap-radar > .hr-bar { order: 3; margin: 12px 0 0; }
+#hrMap-radar > .regmap-detail { order: 4; }
+#hrMap-radar > .hr-hint { order: 5; }
+.hr-bar > .hr-tl { align-self: flex-end; }
+.hr-bar .hr-time { order: -1; flex: 0 0 100%; font-family: var(--font-ui); font-size: 18px; font-weight: 600; color: var(--text-1); }

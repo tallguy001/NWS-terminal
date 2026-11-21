@@ -7335,7 +7335,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.69.0';
+var APP_VERSION = '3.70.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -10555,7 +10555,7 @@ var REGMAP = (function () {
      place whichever side is showing (the Forecast side used to be grouped by where the numbers came from). Where a map's source
      matters for telling it from its neighbour, it rides along as a short tag: [id, name, tag]. */
   var MODES = [
-    { id: 'now', label: 'Current', note: 'Observed now and over the last day', tag: 'CURRENT', color: '#A5D4F4', groups: [
+    { id: 'now', label: 'Current', note: 'Observed now and over the last day', tag: 'Observed', color: '#A5D4F4', groups: [
       ['Temperature', [['temp', 'Temperature'], ['dew', 'Dew point'], ['chg24', '24-hour change'], ['hilo', 'High and low today']]],
       ['Wind', [['wind', 'Wind'], ['gust', 'Peak gust'], ['pres', 'Pressure'], ['sfcmap', 'Surface map']]],
       ['Rain', [['precip', 'Station rain, 24 h'], ['obsrain', 'Observer rain'], ['rain', 'Rainfall analysis'], ['mrain', 'Radar and gauge rain']]],
@@ -10563,7 +10563,7 @@ var REGMAP = (function () {
       ['Storms', [['ltgmap', 'Lightning'], ['rot', 'Rotation'], ['hail', 'Hail size'], ['lsr', 'Storm reports']]],
       ['Sky and visibility', [['vis', 'Visibility']]],
       ['Hazards, air and water', [['alerts', 'Alerts'], ['rivers', 'River levels']]]] },
-    { id: 'fc', label: 'Forecast', note: 'NWS forecast and models, hours to two weeks ahead', tag: 'FORECAST', color: '#C4B5FD', groups: [
+    { id: 'fc', label: 'Forecast', note: 'NWS forecast and models, hours to two weeks ahead', tag: 'Forecast', color: '#C4B5FD', groups: [
       ['Temperature', [['fcst', 'Highs and lows', 'NWS'], ['model', 'Temperature', 'Models'], ['ghigh', 'Daily high', 'GFS/ECMWF'], ['glow', 'Daily low', 'GFS/ECMWF']]],
       ['Wind', [['mgust', 'Wind gusts', 'HRRR/RRFS']]],
       ['Rain', [['fcrain', 'Rain', 'NWS'], ['mqpf', 'Rain total', 'HRRR/RRFS'], ['mptype', 'Rain or snow', 'HRRR/RRFS'], ['fradar', 'Future radar', 'HRRR/RRFS']]],
@@ -12614,7 +12614,7 @@ var REGMAP = (function () {
     var ln = document.getElementById('regMapLayerNav'), rn = document.getElementById('regMapRangeNav'), sn = document.getElementById('regMapSub');
     if (!ln) return;
     var mode = modeOf(st.layer), MD = modeDef(mode), mn = document.getElementById('regMapModeNav'), card = document.getElementById('regMapCard'), sb = document.getElementById('regStationsBlock');
-    if (card) card.setAttribute('data-mode', mode);
+    if (card) { card.setAttribute('data-mode', mode); card.setAttribute('data-layer', st.layer); }
     if (sb) sb.classList.toggle('hidden', mode === 'fc');   // the station table is observations: it belongs to the Current side
     if (mn) mn.innerHTML = MODES.map(function (m) {
       var on = m.id === mode;
@@ -12837,8 +12837,8 @@ var REGMAP = (function () {
       s.push('<text x="' + R(mx) + '" y="' + y + '" style="font:700 ' + fs + 'px ' + F + ';fill:#fff;text-anchor:end;paint-order:stroke;stroke:rgba(7,11,20,0.75);stroke-width:4px;stroke-linejoin:round">' + esc(main) + '</text>');
       if (badge) s.push('<rect x="' + (x + 8) + '" y="' + (y - 21) + '" width="' + R(bwid) + '" height="22" rx="2" style="fill:#0B1730;stroke:rgba(255,255,255,0.28);stroke-width:1"></rect>' +
                         '<text x="' + R(x + 8 + bwid / 2) + '" y="' + (y - 5) + '" style="font:600 15px ' + F + ';fill:#fff;text-anchor:middle">' + esc(badge) + '</text>');
-      s.push('<rect x="' + R(x + 4 - lw / 2) + '" y="' + (y + 8) + '" width="' + R(lw) + '" height="21" rx="2" style="fill:rgba(14,23,44,0.88);stroke:' + (o.k ? '#F2B33D' : 'rgba(94,234,212,0.45)') + ';stroke-width:' + (o.k ? 1.6 : 1) + '"></rect>' +
-             '<text x="' + (x + 4) + '" y="' + (y + 23) + '" style="font:500 13px ' + F + ';fill:#E6EAF2;text-anchor:middle">' + esc(label) + '</text>');
+      s.push((o.k ? '<rect x="' + R(x + 4 - lw / 2) + '" y="' + (y + 8) + '" width="' + R(lw) + '" height="21" rx="2" style="fill:rgba(14,23,44,0.88);stroke:#F2B33D;stroke-width:1.6"></rect>' : '') +   // v3.70.0: names sit on the map, haloed, not in boxes
+             '<text x="' + (x + 4) + '" y="' + (y + 23) + '" style="font:500 13px ' + F + ';fill:#E6EEF6;text-anchor:middle' + (o.k ? '' : ';paint-order:stroke;stroke:rgba(7,11,20,0.8);stroke-width:3.5px;stroke-linejoin:round') + '">' + esc(label) + '</text>');
       if (o.k) {   // settlement station: amber outline, and the market favourite once it has loaded
         var tag = p.tag || 'Kalshi', tw2 = tag.length * 6.9 + 12;
         s.push('<rect x="' + R(x + 4 - tw2 / 2) + '" y="' + (y + 31) + '" width="' + R(tw2) + '" height="17" rx="2" style="fill:#F2B33D"></rect>' +
@@ -12866,12 +12866,11 @@ var REGMAP = (function () {
       sub = D.none && !pts.length ? 'Station reports did not load' : (view.back ? 'As of ' + clock(view.back) + ' ' + gsLocal(view.back).wd : 'Observed ' + when) + ' · ' + picks.length + ' of ' + pts.length + ' stations';
     }
     // CURRENT or FORECAST, in that side's colour, so the map says which it is on screen and in a saved image
-    var MDd = modeDef(modeOf(st.layer)), pillW = MDd.tag.length * 7.4 + 16, titleW = view.title.length * 11.5 + 36, pill = titleW + pillW + 6 <= W - 24;
+    var MDd = modeDef(modeOf(st.layer)), pillW = MDd.tag.length * 7 + 18, titleW = view.title.length * 11.5 + 36, pill = titleW + pillW + 6 <= W - 24;
     var tw = Math.min(W - 24, Math.max(titleW + (pill ? pillW + 6 : 0), sub.length * 7.4 + 30));
     s.push('<rect x="12" y="12" width="' + R(tw) + '" height="60" rx="4" style="fill:rgba(9,14,26,0.86);stroke:rgba(255,255,255,0.16);stroke-width:1"></rect>');
-    s.push('<rect x="12" y="12" width="4" height="60" rx="2" style="fill:' + MDd.color + '"></rect>');
     if (pill) s.push('<rect x="' + R(12 + tw - pillW - 10) + '" y="22" width="' + R(pillW) + '" height="20" rx="3" style="fill:' + MDd.color + '"></rect>' +
-                     '<text x="' + R(12 + tw - 10 - pillW / 2) + '" y="36" style="font:700 11px ' + M + ';fill:#0B1220;text-anchor:middle;letter-spacing:0.06em">' + MDd.tag + '</text>');
+                     '<text x="' + R(12 + tw - 10 - pillW / 2) + '" y="36" style="font:650 11.5px ' + F + ';fill:#0B1220;text-anchor:middle">' + MDd.tag + '</text>');
     s.push('<text x="26" y="38" style="font:700 20px ' + F + ';fill:#fff">' + esc(view.title) + '</text>');
     s.push('<text x="26" y="59" style="font:500 12px ' + M + ';fill:#A9B2C3">' + esc(sub) + '</text>');
     // legend
@@ -13183,6 +13182,13 @@ var REGMAP = (function () {
   function init() {
     sndInit();
     var card = document.getElementById('regMapCard'); if (!card) return;
+    (function () {   // v3.70.0: the map first, its width and save on it, its time controls in a bar beneath
+      var stage = document.getElementById('regMapStage'), opts = card.querySelector('.regmap-opts'), area = card.querySelector('.regmap-area');
+      if (!stage || card.querySelector('.regmap-wrap')) return;
+      var wrap = document.createElement('div'); wrap.className = 'regmap-wrap'; stage.parentNode.insertBefore(wrap, stage); wrap.appendChild(stage);
+      if (area) { area.classList.add('regmap-onmap'); wrap.appendChild(area); }
+      if (opts) wrap.parentNode.insertBefore(opts, wrap.nextSibling);
+    })();
     card.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null;
       if (b && b.hasAttribute('data-snd')) { sndOpen({ id: b.getAttribute('data-snd'), home: b.getAttribute('data-snd') === 'home', lat: +b.getAttribute('data-lat'), lon: +b.getAttribute('data-lon'), alt: b.getAttribute('data-nm') }, b); return; }   // v3.59.0
@@ -13226,7 +13232,37 @@ var REGMAP = (function () {
     setInterval(tick, 60000); document.addEventListener('visibilitychange', tick);
     renderBar();
   }
-  return { init: init, load: load, ensure: ensure, again: again, geo: loadGeo, _parse: parseMetar, _obs: function () { return D.stn; }, _shown: function () { return shown; }, _D: function () { return D; },
+  /* v3.70.0: the HRRR's 15-minute simulated radar over any box, for the Radar screen's forecast frames. One request covers
+     the next three hours; points under 5 dBZ are left out by the filter, so a dry box costs little. */
+  function futureGrid(bb) {
+    if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
+    var S = FRS.q, t0 = Math.ceil(Date.now() / S.step) * S.step, times = []; for (var i = 0; i < 12; i++) times.push(t0 + i * S.step);
+    var area = Math.max(0.01, (bb.maxLon - bb.minLon) * (bb.maxLat - bb.minLat)), step = Math.max(0.03, +Math.sqrt(area / 2600).toFixed(3));
+    var lat0 = Math.floor(bb.minLat / step) * step, lon0 = Math.floor(bb.minLon / step) * step;
+    return gsOwn(S.model, { fromTime: new Date(times[0] - 4 * 6e4).toISOString(), untilTime: new Date(times[11] + 4 * 6e4).toISOString(),
+      grid: { minLatitude: +lat0.toFixed(4), maxLatitude: +(+bb.maxLat).toFixed(4), minLongitude: +lon0.toFixed(4), maxLongitude: +(+bb.maxLon).toFixed(4), step: step },
+      variables: [FR_VAR], filter: { expression: 'c >= 5' } }).then(function (rows) {
+        var by = {}, run = 0;
+        (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), ra = Date.parse(r.forecasted_at); if (!isFinite(t)) return; (by[t] || (by[t] = [])).push(r); if (ra > run) run = ra; });
+        return { times: times, by: by, step: step, run: run, lv: FR_LV, col: FR_C };
+      });
+  }
+  /* v3.70.0: on a forecast map, tapping a station or the place draws its model sounding inside the pop-up (the button still
+     opens the full one). Observed maps keep the button alone, so a tap there costs no model credits. */
+  function sndMini(pop) {
+    var b = pop.querySelector('[data-snd]'), row = pop.querySelector('.regmap-sndrow'); if (!b || !row || !gsAvailable() || modeOf(st.layer) !== 'fc') return;
+    var o = { id: b.getAttribute('data-snd'), home: b.getAttribute('data-snd') === 'home', lat: +b.getAttribute('data-lat'), lon: +b.getAttribute('data-lon'), alt: b.getAttribute('data-nm') };
+    if (!isFinite(o.lat) || !isFinite(o.lon)) return;
+    var sm = sndStart(), box = document.createElement('div'); box.className = 'pop-snd';
+    box.innerHTML = '<div class="state-load">Loading the ' + esc(SPM[sm.m].label) + ' sounding\u2026</div>';
+    row.parentNode.insertBefore(box, row); b.textContent = 'Open the full sounding';
+    sndFetch(sm.m, sm.t0 + sm.i * HOUR, o).then(function (r) {
+      var x = null; try { x = SND.parts(r); } catch (e) { x = null; }
+      if (!box.isConnected) return; if (!x) { box.remove(); return; }
+      box.innerHTML = x.stage.replace(/sndClip/g, 'sndClipMini');
+    }).catch(function () { if (box.isConnected) box.remove(); });
+  }
+  return { futureGrid: futureGrid, sndMini: sndMini, init: init, load: load, ensure: ensure, again: again, geo: loadGeo, _parse: parseMetar, _obs: function () { return D.stn; }, _shown: function () { return shown; }, _D: function () { return D; },
            _view: function () { return view; }, _st: st, _layers: function () { return allLayers(); }, _modes: function () { return MODES; }, _snd: function () { return { SQ: SQ, SQC: SQC, start: sndStart, close: sndClose }; }, setMode: setMode, mode: function () { return modeOf(st.layer); } };
 })();
 document.addEventListener('DOMContentLoaded', function () { REGMAP.init(); });
@@ -13735,7 +13771,9 @@ var HRMAP = (function () {
   function build(k) {
     var el = document.getElementById('hrMap-' + k); if (!el || el.querySelector('.hr-stage')) return el;
     el.innerHTML = '<div class="regmap-layers"><div class="cpc-nav hr-bases" role="group" aria-label="Imagery"></div><div class="cpc-nav hr-views" role="group" aria-label="Frame"></div></div>' +
-      '<div class="regmap-bar hr-bar"><button type="button" class="gs-refresh-btn" data-play="1">Play loop</button><input type="range" class="hr-slider" min="0" max="0" value="0" step="1" aria-label="Frame time">' +
+      '<div class="regmap-bar hr-bar"><button type="button" class="gs-refresh-btn" data-play="1">Play loop</button><span class="hr-tl"><span class="hr-tl-k">Radar</span><input type="range" class="hr-slider" min="0" max="0" value="0" step="1" aria-label="Frame time"></span>' +
+      (k === 'radar' ? '<span class="hr-tl hr-tl-f"><span class="hr-tl-k">HRRR forecast, next 3 hours</span><input type="range" class="hr-fut" min="0" max="12" value="0" step="1" aria-label="Forecast time, HRRR simulated radar"></span>' +
+        '<button type="button" class="gs-refresh-btn" data-fplay="1" aria-pressed="false">Play forecast</button>' : '') +
       '<span class="hr-time"></span><button type="button" class="gs-refresh-btn" data-refresh="1">Refresh</button><button type="button" class="gs-refresh-btn regmap-save" data-save="1">Save image</button></div>' +
       '<div class="regmap-stage hr-stage" style="aspect-ratio:' + W + ' / ' + H + '"><div class="state-load">Loading imagery…</div></div><div class="regmap-detail" aria-live="polite"></div>' +
       '<div class="source-note hr-hint">Zoom with + and −, or pinch; the picture stays on the map and sharpens when the closer imagery arrives. Two fingers move the map, as does dragging with a mouse; the target button re-centres it on your location.</div>';
@@ -13752,8 +13790,11 @@ var HRMAP = (function () {
       else if (b.hasAttribute('data-play')) { if (s.timer || s.loading) stop(k, true); else play(k); }
       else if (b.hasAttribute('data-refresh')) { meta = {}; liveBox = null; show(k); }
       else if (b.hasAttribute('data-save')) saveImage(k);
+      else if (b.hasAttribute('data-fplay')) futPlay(k);
     });
-    el.querySelector('.hr-slider').addEventListener('input', function () { var s = state(k); stop(k, false); s.idx = +this.value; still(k); });
+    el.querySelector('.hr-slider').addEventListener('input', function () { var s = state(k); stop(k, false); futClear(k); s.idx = +this.value; still(k); });
+    var fs = el.querySelector('.hr-fut');
+    if (fs) fs.addEventListener('input', function () { var s = state(k); stop(k, false); futStop(k); s.fut = +this.value; if (s.fut) futShow(k); else { futClear(k); still(k); } });
     gestures(k, el.querySelector('.hr-stage'));
     return el;
   }
@@ -13793,6 +13834,7 @@ var HRMAP = (function () {
 
   function show(k, quiet) {   // quiet: only the frame changed (a zoom or a move), so the picture is kept while the new one is fetched
     var s = state(k), el = build(k); if (!el) return;
+    if (s.fut) futClear(k);
     var st0 = el.querySelector('.hr-stage'), keep = quiet && s.V && s.shown && st0 && (st0.querySelector('.hr-layers') || st0.querySelector('.hr-carry')) ? { V: s.V, loop: !!s.timer, at: s.frames[s.idx] ? s.frames[s.idx].at : null } : null;
     if (!(keep && keep.loop)) stop(k, false);   // a loop keeps playing through a zoom
     /* v3.54.0: each newly loaded city opens on Site radar with Lightning on, framed 240 miles wide on the city. Whatever is
@@ -14166,6 +14208,7 @@ var HRMAP = (function () {
     label(k);
   }
   function play(k) {   // the loop is fetched at a lighter size so seven frames fit in a tablet's memory
+    futClear(k);
     var s = state(k), el = document.getElementById('hrMap-' + k), box = el.querySelector('.hr-layers'), my = s.seq;
     if (!s.frames.length) return;
     s.loading = true; s.tok = (s.tok || 0) + 1; bar(k);
@@ -14227,8 +14270,63 @@ var HRMAP = (function () {
       }, 'image/png');
     }).catch(function (e) { if (det) det.textContent = 'The image could not be saved on this browser (' + ((e && e.message) || 'error') + ').'; });
   }
-  function leave(k) { if (inst[k]) stop(k, true); }
-  return { show: show, leave: leave, _state: state, _toNew: toNew, _albers: albers, _geom: { albers: albers, invAlbers: invAlbers, usView: function () { return viewOf({ view: 'us' }); }, overlay: overlay }, _ltg: { clip: ltgClip, marks: ltgMarks, pick: ltgFor, tier: ltgTier, slots: liveSlots, read: liveRead, time: liveTime, bounds: liveBounds, text: ltgText } };
+  /* ---- Forecast frames (v3.70.0). The Radar screen's timeline runs on past the newest scan into the HRRR's simulated radar,
+     fifteen minutes at a time for three hours. Those frames are model output drawn in the radar's own colours on the same map,
+     so they are always marked: a dashed edge and a "Forecast, not radar" banner. Any change of imagery, zoom or move goes
+     back to the radar. The model points come from REGMAP (GribStream), once per view every fifteen minutes. ---- */
+  var FUT_STOPS = [[5, '#04e9e7'], [10, '#019ff4'], [15, '#0300f4'], [20, '#02fd02'], [25, '#01c501'], [30, '#008e00'], [35, '#fdf802'], [40, '#e5bc00'], [45, '#fd9500'], [50, '#fd0000'], [55, '#d40000'], [60, '#bc0000'], [65, '#f800fd']];
+  function futCol(c) { var col = null; for (var i = 0; i < FUT_STOPS.length; i++) if (c >= FUT_STOPS[i][0]) col = FUT_STOPS[i][1]; return col; }
+  function futBox(V) {   // the frame's corners and edge midpoints, back to longitude and latitude
+    var b = V.bbox, pts = [[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]], [(b[0] + b[2]) / 2, b[1]], [(b[0] + b[2]) / 2, b[3]], [b[0], (b[1] + b[3]) / 2], [b[2], (b[1] + b[3]) / 2]].map(function (q) { return invAlbers(q[0], q[1]); });
+    var lo = pts.map(function (q) { return q[0]; }), la = pts.map(function (q) { return q[1]; });
+    return { minLon: Math.min.apply(null, lo), maxLon: Math.max.apply(null, lo), minLat: Math.max(20, Math.min.apply(null, la)), maxLat: Math.min(55, Math.max.apply(null, la)) };
+  }
+  function futEls(k) { var el = document.getElementById('hrMap-' + k); return el ? { el: el, stage: el.querySelector('.hr-stage'), time: el.querySelector('.hr-time'), fs: el.querySelector('.hr-fut') } : null; }
+  function futBanner(k, html) {
+    var e = futEls(k); if (!e || !e.stage) return; var b = e.stage.querySelector('.hr-fut-banner');
+    if (!b) { b = document.createElement('div'); b.className = 'hr-fut-banner'; e.stage.appendChild(b); }
+    b.innerHTML = html;
+  }
+  function futClear(k) {
+    var s = state(k), e = futEls(k); s.fut = 0; futStop(k); if (!e) return;
+    if (e.fs) e.fs.value = 0;
+    if (e.stage) { e.stage.classList.remove('is-future'); Array.prototype.forEach.call(e.stage.querySelectorAll('.hr-fut-img, .hr-fut-banner'), function (x) { x.remove(); }); }
+  }
+  function futStop(k) { var s = state(k); if (s.ftimer) { clearInterval(s.ftimer); s.ftimer = null; } var e = futEls(k), b = e && e.el.querySelector('[data-fplay]'); if (b) { b.textContent = 'Play forecast'; b.setAttribute('aria-pressed', 'false'); } }
+  function futPlay(k) {
+    var s = state(k), e = futEls(k); if (!e || !e.fs) return;
+    if (s.ftimer) { futStop(k); return; }
+    stop(k, false); var b = e.el.querySelector('[data-fplay]'); if (b) { b.textContent = 'Pause'; b.setAttribute('aria-pressed', 'true'); }
+    var step = function () { if (_currentSection !== 'radar' || document.hidden) { futStop(k); return; } s.fut = s.fut >= 12 ? 1 : (s.fut || 0) + 1; e.fs.value = s.fut; futShow(k); };
+    step(); s.ftimer = setInterval(step, 900);
+  }
+  function futShow(k) {
+    var s = state(k), e = futEls(k); if (!e || !e.stage || !s.fut) return;
+    var V = s.V || viewOf(s); e.stage.classList.add('is-future');
+    if (typeof REGMAP === 'undefined' || !REGMAP.futureGrid || !gsAvailable()) { futBanner(k, '<b>Forecast frames need GribStream.</b> Add the GS_TOKEN secret to see the HRRR simulated radar.'); return; }
+    var key = V.bbox.join(',') + ':' + Math.floor(Date.now() / 9e5);
+    if (!s.futD || s.futD.key !== key) { s.futD = { key: key, p: REGMAP.futureGrid(futBox(V)) }; futBanner(k, '<b>Forecast, not radar.</b> Loading the HRRR simulated radar\u2026'); }
+    var want = s.fut, my = s.futD;
+    my.p.then(function (d) {
+      if (s.futD !== my || s.fut !== want || !e.stage.isConnected) return;
+      var t = d.times[want - 1], rows = d.by[t] || [], cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var ctx = cv.getContext('2d'), cell = Math.max(2, d.step * 111000 / V.mpp), half = cell / 2 + 0.5;
+      rows.forEach(function (r) { var col = futCol(+r.c); if (!col) return; var q = V.proj(+r.lon, +r.lat); if (q[0] < -cell || q[1] < -cell || q[0] > W + cell || q[1] > H + cell) return; ctx.fillStyle = col; ctx.fillRect(q[0] - half, q[1] - half, cell + 1, cell + 1); });
+      var out = document.createElement('canvas'); out.width = W; out.height = H; var o2 = out.getContext('2d');
+      try { o2.filter = 'blur(' + Math.max(1, Math.round(cell * 0.35)) + 'px)'; } catch (x) { /* older browsers draw it unsoftened */ }
+      o2.drawImage(cv, 0, 0);
+      var img = e.stage.querySelector('.hr-fut-img'); if (!img) { img = document.createElement('img'); img.className = 'hr-fut-img'; img.alt = ''; e.stage.appendChild(img); }
+      img.src = out.toDataURL('image/png');
+      var lead = Math.round((t - Date.now()) / 6e4), when = new Date(t).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined });
+      futBanner(k, '<b>Forecast, not radar.</b> HRRR simulated radar for ' + esc(when) + (d.run ? ', from the ' + esc(new Date(d.run).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined })) + ' run' : '') + (rows.length ? '' : '. No echoes expected in view.'));
+      if (e.time) e.time.textContent = when + ' \u00B7 ' + (lead >= 60 ? Math.floor(lead / 60) + ' h ' + (lead % 60 ? lead % 60 + ' min ' : '') : lead + ' min ') + 'ahead';
+    }, function (err) {
+      if (s.futD === my) s.futD = null;
+      futBanner(k, '<b>Forecast frames did not load</b> (' + esc(err && err.message === 'NOGS' ? 'GribStream is not set up' : (err && err.message) || 'network error') + '). Move the radar slider to go back.');
+    });
+  }
+  function leave(k) { if (inst[k]) { stop(k, true); futClear(k); } }
+  return { show: show, leave: leave, futPlay: futPlay, _state: state, _toNew: toNew, _albers: albers, _geom: { albers: albers, invAlbers: invAlbers, usView: function () { return viewOf({ view: 'us' }); }, overlay: overlay }, _ltg: { clip: ltgClip, marks: ltgMarks, pick: ltgFor, tier: ltgTier, slots: liveSlots, read: liveRead, time: liveTime, bounds: liveBounds, text: ltgText } };
 })();
 
 
@@ -15764,6 +15862,8 @@ var NOWX = (function () {
       else items.push(['ok', 'No alerts for ' + esc(city)]);
     }
     var np = nextPrecip(); if (np) items.push(['drop', esc(np)]);
+    var hn = document.getElementById('hrNote');   // v3.70.0: the Radar screen says what is coming and offers the forecast frames
+    if (hn) hn.innerHTML = (np ? '<span>' + esc(np) + '.</span> ' : '') + '<button type="button" class="nw-link" onclick="if(typeof HRMAP!==\'undefined\')HRMAP.futPlay(\'radar\')">Play the HRRR forecast, next 3 hours</button>';
     var IC = {
       ok: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-4.8"/>',
       warn: '<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4m0 4h.01"/>',
@@ -16062,6 +16162,7 @@ var MAPPOP = (function () {
     pop.style.maxWidth = Math.min(grid ? 400 : 340, R.width - 16) + 'px';
     if (grid) { pop.classList.add('has-grid'); pop.querySelector('.map-pop-body').style.maxHeight = Math.max(150, Math.min(440, R.height - 44)) + 'px'; }
     stage.appendChild(pop);
+    if (sndRow && stage.id === 'regMapStage' && typeof REGMAP !== 'undefined' && REGMAP.sndMini) REGMAP.sndMini(pop);   // v3.70.0
     if (sndRow && grid) pop.querySelector('.map-pop-body').style.maxHeight = Math.max(110, Math.min(440, R.height - 44 - sndRow.offsetHeight - 8)) + 'px';   // v3.61.0
     var w = pop.offsetWidth, h = pop.offsetHeight, x = cx - R.left, y = cy - R.top, gap = 14;
     var left = Math.max(8, Math.min(R.width - w - 8, x - w / 2)), above = y - h - gap >= 8, top = above ? y - h - gap : Math.min(R.height - h - 8, y + gap);
