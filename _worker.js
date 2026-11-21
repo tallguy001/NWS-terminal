@@ -1,4 +1,4 @@
-/* NWS Terminal edge worker (v3.71.0)
+/* NWS Terminal edge worker (v3.71.1)
    - serves the app shell from static assets with security + cache headers
    - /p/<kind>/...   same-origin read-only proxy for NOAA hosts without CORS
    - /p/gs/...       GribStream POST proxy (keeps the token off third parties)
@@ -9,7 +9,7 @@
    - /api/config     what the server can do for the client
    - /api/health     liveness for uptime checks */
 
-const VERSION = '3.71.0';
+const VERSION = '3.71.1';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -449,7 +449,9 @@ function wrTrim(raw) {
   const list = Array.isArray(raw) ? raw : raw && Array.isArray(raw.WinterRoads) ? raw.WinterRoads : raw && typeof raw === 'object' ? [raw] : [], out = [];
   for (const c of list) {
     if (!c || typeof c !== 'object') continue;
-    const cond = String(c.Condition || c['Primary Condition'] || c.PrimaryCondition || c['Overall Status'] || '').trim().slice(0, 40);
+    let cond = String(c.Condition || c['Primary Condition'] || c.PrimaryCondition || c['Primary-Condition'] || c['Overall Status'] || c.OverallStatus || c.RoadCondition || c.SurfaceCondition || '').trim();
+    if (!cond) for (const k of Object.keys(c)) if (/condition|status/i.test(k) && typeof c[k] === 'string' && c[k].trim()) { cond = c[k].trim(); break; }   // whatever this feed calls it
+    cond = cond.slice(0, 40);
     const enc = [].concat(c.Polyline || c.EncodedPolyline || []).filter((x) => typeof x === 'string' && x.length > 3);
     const lines = [], b = [180, 90, -180, -90];
     for (const e of enc) {
@@ -481,8 +483,9 @@ async function wrList(env, ctx) {
   if (!res.ok) { if (wrMem && res.status !== 401 && res.status !== 403) return wrMem.list; throw stop(res.status, 'refused'); }
   let raw = null; try { raw = await res.json(); } catch { raw = null; }
   if (!raw) { if (wrMem) return wrMem.list; throw stop(502, 'no list'); }
-  const list = wrTrim(raw);
-  wrMem = { at: now, list };
+  const list = wrTrim(raw), first = Array.isArray(raw) ? raw[0] : raw;
+  list.fields = first && typeof first === 'object' ? Object.keys(first).slice(0, 30) : [];   // field names only, to tell an empty report from a renamed field
+  wrMem = { at: now, list, fields: list.fields };
   if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(list), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=600', 'X-Fetched-At': String(now) } })));
   return list;
 }
@@ -505,7 +508,7 @@ async function wiroads(request, env, ctx) {
     return json({ error: 'Wisconsin 511 road conditions are unavailable' + (s ? ' (' + s + ').' : '.') }, 502, NS);
   }
   const segs = list.filter((x) => !(x.b[2] < q[0] || x.b[0] > q[2] || x.b[3] < q[1] || x.b[1] > q[3]));
-  return json({ total: segs.length, segs, at: wrMem ? wrMem.at : 0 }, 200, NS);
+  return json({ total: segs.length, segs, at: wrMem ? wrMem.at : 0, fields: wrMem && wrMem.fields ? wrMem.fields : undefined }, 200, NS);
 }
 
 const WINDY_API = 'https://api.windy.com';

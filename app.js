@@ -7336,7 +7336,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.71.0';
+var APP_VERSION = '3.71.1';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -11477,9 +11477,9 @@ var REGMAP = (function () {
       sg.lines.forEach(function (ln) { lines.push({ pts: ln, color: cat[1], detail: det, aria: (sg.road || 'Road') + ': ' + (sg.c || 'no report') }); });
     });
     var order = ['Travel not advised', 'Completely covered', 'Partially covered', 'Normal', 'No report'];
-    var bad = R0.segs.filter(function (sg) { return rank(roadCat(sg.c)) <= 2; }).length;
+    var bad = R0.segs.filter(function (sg) { return rank(roadCat(sg.c)) <= 2; }).length, rep = R0.segs.filter(function (sg) { return sg.c && rank(roadCat(sg.c)) < 4; }).length;
     return { title: T, pts: refNames(), lines: lines, legendCat: order.filter(function (n) { return used[n]; }).map(function (n) { return [used[n][1], n]; }),
-             subText: 'WisDOT · ' + R0.segs.length + ' segments in view' + (bad ? ', ' + bad + ' covered or worse' : ', all normal') + (newest ? ' · latest report ' + clock(newest * 1000) : ''),
+             subText: 'WisDOT · ' + R0.segs.length + ' segments in view' + (bad ? ', ' + bad + ' covered or worse' : rep ? ', all reported normal' : ', no conditions reported now') + (newest ? ' · latest report ' + clock(newest * 1000) : ''),
              sub2: 'the condition WisDOT last reported on each state-maintained segment. Tap a road for its report',
              empty: R0.segs.length ? '' : 'No reported road segments in this view.' };
   }
