@@ -387,7 +387,7 @@ function renderFavorites() {
   var bar = document.getElementById('favoritesBar');
   bar.textContent = '';
   if (!favs.length) { renderEmptyRecents(); return; }
-  var lab = document.createElement('button'); lab.type = 'button'; lab.className = 'fav-label fav-label-btn'; lab.textContent = '\u2605 SAVED \u25BE'; lab.title = 'Sort and manage saved places';
+  var lab = document.createElement('button'); lab.type = 'button'; lab.className = 'fav-label fav-label-btn'; lab.textContent = 'Edit saved places'; lab.title = 'Sort and manage saved places';
   lab.addEventListener('click', function () { if (typeof PLACES !== 'undefined') PLACES.open(); });
   var sc = document.createElement('div'); sc.className = 'fav-scroll';
   favs.forEach(function (loc, i) {
@@ -6187,7 +6187,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // '/' focuses search, the way a terminal should
     if (e.key === '/' && document.activeElement !== $('locationInput')
         && !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) {
-      e.preventDefault(); $('locationInput').focus();
+      e.preventDefault(); if (typeof PLACESW !== 'undefined') PLACESW.open(); else $('locationInput').focus();
     }
   });
 
@@ -7008,7 +7008,8 @@ async function doFetch(opts) {
   // Wired straight to click handlers, so the first arg may be an Event.
   if (!opts || opts instanceof Event) opts = {};
   var loc = document.getElementById('locationInput').value.trim();
-  if (!loc) return;
+  if (!loc) { if (typeof PLACESW !== 'undefined') PLACESW.open(); return; }
+  if (typeof PLACESW !== 'undefined') PLACESW.close(false);
 
   var mySeq = ++_fetchSeq;          // stale-response guard
   var _stale = function () { return mySeq !== _fetchSeq; };
@@ -7187,6 +7188,7 @@ async function doFetch(opts) {
     // RENDER
     var displayName = geo.name ? geo.name : (city && state ? city + ', ' + state : loc);
     document.getElementById('locName').textContent = displayName;
+    if (typeof PLACESW !== 'undefined') PLACESW.setName(displayName);
     document.getElementById('locOffice').textContent = 'NWS office ' + office +
       '  \u2022  grid ' + (props.gridX || '') + ',' + (props.gridY || '') +
       '  \u2022  ' + Math.abs(geo.lat).toFixed(4) + '\u00B0' + (geo.lat >= 0 ? 'N' : 'S') + ' ' + Math.abs(geo.lon).toFixed(4) + '\u00B0' + (geo.lon >= 0 ? 'E' : 'W');
@@ -7333,7 +7335,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.68.0';
+var APP_VERSION = '3.69.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -12626,10 +12628,19 @@ var REGMAP = (function () {
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>' +
       (rec.length ? '<div class="pick-recent" role="group" aria-label="Maps used recently"><span class="pick-clock" title="Used recently"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' + rec.map(function (id) { return chip(names[id] + (srcs[id] ? ' · ' + srcs[id] : ''), false, 'data-layer="' + id + '"'); }).join('') + '</div>' : '');
     if (menu) {
-      var mh = '<div class="pick-head"><span>' + MD.label + ' maps \u00B7 ' + MD.note + '</span><button type="button" class="pick-x" aria-label="Close the list">\u00D7</button></div><div class="pick-cols">' + MD.groups.map(function (g) {
-        return '<div class="pick-col" role="group" aria-label="' + g[0] + '"><div class="pick-h">' + g[0] + '</div>' + g[1].map(function (p) {
-          return '<button type="button" class="pick-opt' + (p[0] === st.layer ? ' active' : '') + '" aria-pressed="' + (p[0] === st.layer ? 'true' : 'false') + '" data-layer="' + p[0] + '"><span class="pick-l">' + esc(p[1]) + '</span>' + (p[2] ? '<span class="pick-s">' + esc(p[2]) + '</span>' : '') + '</button>'; }).join('') + '</div>';
-      }).join('') + '</div>';
+      /* v3.69.0: one grid for both sides. Subjects are rows, in the order the two sides share; what was observed and what is
+         forecast sit side by side, so there is no Current / Forecast switch to flip first. A box filters the grid as you type. */
+      var subj = [], byS = {};
+      MODES.forEach(function (M) { M.groups.forEach(function (g) { if (subj.indexOf(g[0]) < 0) subj.push(g[0]); (byS[g[0]] || (byS[g[0]] = {}))[M.id] = g[1]; }); });
+      var opt = function (p) { return '<button type="button" class="pick-opt' + (p[0] === st.layer ? ' active' : '') + '" aria-pressed="' + (p[0] === st.layer ? 'true' : 'false') + '" data-layer="' + p[0] + '"><span class="pick-l">' + esc(p[1]) + '</span>' + (p[2] ? '<span class="pick-s">' + esc(p[2]) + '</span>' : '') + '</button>'; };
+      var mh = '<div class="pick-head"><span class="pick-title">Choose a map</span><label class="pick-find"><span class="sr-only">Find a map</span><input type="search" class="pick-q" placeholder="Find a map: snow, gusts, SPC, HRRR" autocomplete="off" spellcheck="false"></label><button type="button" class="pick-x" aria-label="Close the list">\u00D7</button></div>' +
+        '<div class="pick-grid" role="table" aria-label="Maps by subject"><div class="pick-gr pick-ghead" role="row"><span role="columnheader">Subject</span><span role="columnheader"><b>Observed</b> now and over the last day</span><span role="columnheader"><b>Forecast</b> hours to two weeks ahead</span></div>' +
+        subj.map(function (n) {
+          var a = byS[n].now || [], b = byS[n].fc || [];
+          return '<div class="pick-gr" role="row" data-subj="' + esc(n.toLowerCase()) + '"><span class="pick-subj" role="rowheader">' + esc(n) + '</span>' +
+            '<div class="pick-cell" role="cell">' + (a.length ? a.map(opt).join('') : '<span class="pick-none">Forecast only</span>') + '</div>' +
+            '<div class="pick-cell" role="cell">' + (b.length ? b.map(opt).join('') : '<span class="pick-none">Observed only</span>') + '</div></div>';
+        }).join('') + '<p class="pick-empty hidden">No map matches that. Try a subject, such as rain or wind, or a source, such as SPC.</p></div>';
       if (menu.getAttribute('data-h') !== mh) { menu.innerHTML = mh; menu.setAttribute('data-h', mh); }   // left alone when nothing changed, so an open list keeps its place
     }
     navSync();
@@ -12661,6 +12672,16 @@ var REGMAP = (function () {
     fitRecent();   // last, once everything else on the row has its width
   }
 
+  document.addEventListener('input', function (e) {   // v3.69.0: the map list's find box
+    var q = e.target; if (!q.classList || !q.classList.contains('pick-q')) return;
+    var menu = q.closest('.pick-panel'), v = q.value.trim().toLowerCase(), any = false; if (!menu) return;
+    Array.prototype.forEach.call(menu.querySelectorAll('.pick-gr[data-subj]'), function (r) {
+      var subjHit = !v || r.getAttribute('data-subj').indexOf(v) >= 0, rowAny = false;
+      Array.prototype.forEach.call(r.querySelectorAll('.pick-opt'), function (b) { var hit = subjHit || b.textContent.toLowerCase().indexOf(v) >= 0; b.hidden = !hit; rowAny = rowAny || hit; });
+      r.hidden = !rowAny; any = any || rowAny;
+    });
+    var em = menu.querySelector('.pick-empty'); if (em) em.classList.toggle('hidden', any);
+  });
   function navSync() {   // of the two sidebar entries for this tab, light the one for the side that is showing
     var on = typeof _currentSection !== 'undefined' && _currentSection === 'regional', mode = modeOf(st.layer);
     Array.prototype.forEach.call(document.querySelectorAll('.nav-item[data-rmode]'), function (b) {
@@ -16632,7 +16653,7 @@ var HOME = (function () {
     var loc = lsGet('nws_last', '') || (typeof getFavorites === 'function' && getFavorites()[0]) || '';
     if (loc) { document.getElementById('locationInput').value = loc; doFetch({ section: name }); return false; }   // the load takes the screen and lands on that section
     if (note) { note.classList.remove('hidden'); try { note.scrollIntoView({ block: 'nearest' }); } catch (e) { /* older browsers */ } }
-    var inp = document.getElementById('locationInput'); if (inp) { try { inp.focus(); } catch (e) { /* no focus, the note still shows */ } }
+    if (typeof PLACESW !== 'undefined') PLACESW.open();
     return false;
   }
   return { open: open, off: off, on: function () { return isOn; }, leaveFor: leaveFor };
@@ -16688,22 +16709,71 @@ var PICK = (function () {
   return { close: close, isOpen: function (id) { return id ? openId === id : !!openId; }, place: place };
 })();
 
+/* PLACESW (v3.69.0): the place switcher. The place name in the top bar opens it; the search box, Go, My location, the US map,
+   places by state, favorites and recent places all live inside, in place of the old row of search bar, four buttons and chips. */
+var PLACESW = (function () {
+  function el(id) { return document.getElementById(id); }
+  function isOpen() { var s = el('placeSheet'); return !!s && !s.classList.contains('hidden'); }
+  function renderRecent() {
+    var ul = el('psRecent'), h = el('psRecentH'); if (!ul) return;
+    var favs = (typeof getFavorites === 'function' ? getFavorites() : []).map(function (f) { return String(f).toLowerCase(); });
+    var r = (typeof getRecents === 'function' ? getRecents() : []).filter(function (x) { return favs.indexOf(String(x.q).toLowerCase()) < 0; }).slice(0, 5);
+    ul.textContent = '';
+    r.forEach(function (x) {
+      var li = document.createElement('li'), b = document.createElement('button'); b.type = 'button'; b.className = 'ps-row'; b.textContent = x.name || x.q;
+      b.addEventListener('click', function () { el('locationInput').value = x.q; doFetch(); });
+      li.appendChild(b); ul.appendChild(li);
+    });
+    ul.hidden = h.hidden = !r.length;
+  }
+  function open() {
+    var s = el('placeSheet'); if (!s) return;
+    renderRecent(); s.classList.remove('hidden'); el('placeBtn').setAttribute('aria-expanded', 'true');
+    var i = el('locationInput'); if (i) setTimeout(function () { try { i.focus(); i.select(); } catch (e) { /* focus is a nicety */ } }, 30);
+  }
+  function close(focus) {
+    var s = el('placeSheet'); if (!s || s.classList.contains('hidden')) return;
+    s.classList.add('hidden'); el('placeBtn').setAttribute('aria-expanded', 'false');
+    if (focus) { try { el('placeBtn').focus(); } catch (e) { /* focus is a nicety */ } }
+  }
+  function setName(n) { var p = el('placeName'); if (p) p.textContent = n || 'Choose a place'; }
+  function init() {
+    var b = el('placeBtn'), s = el('placeSheet'); if (!b || !s) return;
+    b.addEventListener('click', function () { if (isOpen()) close(true); else open(); });
+    el('placeClose').addEventListener('click', function () { close(true); });
+    s.addEventListener('click', function (e) { if (e.target === s) close(true); });
+    ['navHome', 'placesBtn'].forEach(function (id) { var x = el(id); if (x) x.addEventListener('click', function () { close(false); }); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && isOpen()) { e.preventDefault(); close(true); } });
+    var la = document.querySelector('.loc-actions'), acts = document.querySelector('.topbar-actions');   // freshness and refresh go up beside the place
+    if (la && acts) acts.insertBefore(la, acts.firstChild);
+    var f = el('chatFab'), slot = el('askSlot');   // the assistant: a labelled button in the top bar, not a floating circle over the content
+    if (f && slot) { slot.appendChild(f); f.classList.add('ask-btn'); f.insertAdjacentHTML('beforeend', '<span>Ask</span>'); }
+    if (typeof _lastLoc !== 'undefined' && _lastLoc) setName(_lastLoc);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+  return { open: open, close: close, setName: setName, isOpen: isOpen };
+})();
+
 /* SECTABS (v3.44.0): screens that share one sidebar entry.
    The sidebar had 18 entries and scrolled. Related screens now sit behind one entry and are told apart by a short row of tabs at
    the top of each: Outlooks (severe storms, rain and snow, long range) and Climate and sun. The sidebar entry carries
    data-group="a b c"; it lights for any of them and reopens the one last used. */
 var SECTABS = (function () {
+  /* v3.69.0: five destinations. Forecast and More hold their screens as tabs; Maps adds the US map, which is not a section
+     ('home' opens it). Kalshi's tab shows only when the app has turned Kalshi on for the loaded place. */
   var GROUPS = [
-    [['spc', 'Severe storms (SPC)'], ['wpc', 'Rain and snow (WPC)'], ['cpc', 'Long range (CPC)']],
-    [['climate', 'Daily climate'], ['astro', 'Sun and moon']],
-    [['regional', 'Weather maps'], ['maps', 'Windy map']]   // v3.65.0: the Windy map sits behind the Maps entry
+    [['hourly', 'Hourly'], ['afd', 'Discussion'], ['models', 'Models'], ['spc', 'Severe storms'], ['wpc', 'Rain and snow'], ['cpc', 'Long range']],
+    [['aqi', 'Air quality'], ['climate', 'Daily climate'], ['astro', 'Sun and moon'], ['cams', 'Webcams'], ['kalshi', 'Kalshi']],
+    [['regional', 'Weather maps'], ['maps', 'Windy map'], ['home', 'US map']]
   ], last = {};
+  function kalshiOn() { var g = document.getElementById('kalshiNavGroup'); return !!g && !g.classList.contains('hidden'); }
   function groupOf(name) { for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].some(function (t) { return t[0] === name; })) return GROUPS[i]; return null; }
   function keyOf(g) { return g.map(function (t) { return t[0]; }).join(' '); }
   function note(name) {   // called on every switch: remembers the member and lights its tab
     var g = groupOf(name); if (!g) return; last[keyOf(g)] = name;
     g.forEach(function (t) { var bar = document.querySelector('#section-' + t[0] + ' > .sec-tabs'); if (!bar) return;
-      Array.prototype.forEach.call(bar.querySelectorAll('button'), function (b) { var on = b.getAttribute('data-go') === name; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); }); });
+      Array.prototype.forEach.call(bar.querySelectorAll('button'), function (b) { var on = b.getAttribute('data-go') === name; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+        if (b.getAttribute('data-go') === 'kalshi') b.hidden = !kalshiOn(); }); });
   }
   function target(btn) { var g = btn.getAttribute('data-group'); return (g && last[g]) || btn.getAttribute('data-section'); }
   function init() {
@@ -16711,7 +16781,7 @@ var SECTABS = (function () {
       var panel = document.getElementById('section-' + t[0]); if (!panel || panel.querySelector(':scope > .sec-tabs')) return;
       var bar = document.createElement('div'); bar.className = 'sec-tabs cpc-nav'; bar.setAttribute('role', 'tablist'); bar.setAttribute('aria-label', 'Screens in this group');
       bar.innerHTML = g.map(function (x) { return '<button type="button" class="cpc-nav-btn' + (x[0] === t[0] ? ' active' : '') + '" role="tab" aria-selected="' + (x[0] === t[0] ? 'true' : 'false') + '" data-go="' + x[0] + '">' + x[1] + '</button>'; }).join('');
-      bar.addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('[data-go]') : null; if (b) switchSection(b.getAttribute('data-go')); });
+      bar.addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('[data-go]') : null; if (!b) return; if (b.getAttribute('data-go') === 'home') { if (typeof HOME !== 'undefined') HOME.open(); return; } switchSection(b.getAttribute('data-go')); });
       panel.insertBefore(bar, panel.firstChild);
     }); });
     var nm = document.getElementById('locName'), head = document.querySelector('.loc-head');   // the office, grid and coordinates sit behind a tap on the place name
