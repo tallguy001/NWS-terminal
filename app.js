@@ -7336,7 +7336,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.71.2';
+var APP_VERSION = '3.71.3';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -16726,11 +16726,23 @@ var MAPPOP = (function () {
     stage.appendChild(pop);
     if (sndRow && stage.id === 'regMapStage' && typeof REGMAP !== 'undefined' && REGMAP.sndMini) REGMAP.sndMini(pop);   // v3.70.0
     if (sndRow && grid) pop.querySelector('.map-pop-body').style.maxHeight = Math.max(110, Math.min(440, R.height - 44 - sndRow.offsetHeight - 8)) + 'px';   // v3.61.0
-    var w = pop.offsetWidth, h = pop.offsetHeight, x = cx - R.left, y = cy - R.top, gap = 14;
-    var left = Math.max(8, Math.min(R.width - w - 8, x - w / 2)), above = y - h - gap >= 8, top = above ? y - h - gap : Math.min(R.height - h - 8, y + gap);
-    if (!above && top < 8) top = 8;
-    pop.style.left = left + 'px'; pop.style.top = top + 'px'; pop.classList.add(above ? 'above' : 'below');
-    var tip = pop.querySelector('.map-pop-tip'); tip.style.left = Math.max(12, Math.min(w - 12, x - left)) + 'px';
+    pop._x = cx - R.left; pop._y = cy - R.top;
+    place(stage, pop);
+    /* v3.71.3: the small sounding arrives after the pop-up is placed and makes it taller, which pushed its foot (and the
+       button to the full sounding) past the bottom of the map. Place it again whenever its size changes. */
+    if (typeof ResizeObserver === 'function') { var ro = new ResizeObserver(function () { if (!pop.isConnected) { ro.disconnect(); return; } place(stage, pop); }); ro.observe(pop); }
+  }
+  function place(stage, pop) {   // above the spot if it fits, else below, else wherever it fits whole; never past the map's edges
+    var R = stage.getBoundingClientRect(), gap = 14, x = pop._x, y = pop._y;
+    pop.style.maxHeight = ''; pop.style.overflowY = '';
+    if (pop.offsetHeight > R.height - 16) { pop.style.maxHeight = (R.height - 16) + 'px'; pop.style.overflowY = 'auto'; }
+    var w = pop.offsetWidth, h = pop.offsetHeight, left = Math.max(8, Math.min(R.width - w - 8, x - w / 2)), side, top;
+    if (y - h - gap >= 8) { side = 'above'; top = y - h - gap; }
+    else if (y + gap + h <= R.height - 8) { side = 'below'; top = y + gap; }
+    else { side = 'free'; top = Math.max(8, Math.min(R.height - h - 8, y - h / 2)); }
+    pop.style.left = left + 'px'; pop.style.top = top + 'px';
+    pop.classList.remove('above', 'below', 'free'); pop.classList.add(side);
+    var tip = pop.querySelector('.map-pop-tip'); if (tip) tip.style.left = Math.max(12, Math.min(w - 12, x - left)) + 'px';
   }
   function from(e, keyed) {
     var t = e.target, g = t.closest ? t.closest('.regmap-stn') : null, stage = t.closest ? t.closest('.regmap-stage') : null;
