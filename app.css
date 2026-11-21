@@ -2947,3 +2947,9 @@ pre, code, .afd-text, .afd-pre, .afd-sig, .spc-discuss-text, .chat-msg code { fo
 .hr-fut-banner { top: auto; bottom: 46px; }
 @media (max-width: 720px) { .hr-fut-banner { top: auto; bottom: 40px; } .regmap-onmap { left: auto; right: 10px; } }
 :root[data-theme="light"] .topbar .btn-ghost, :root[data-theme="light"] .loc-actions .btn-ghost { color: var(--text-1); }
+
+/* v3.70.1 — Ask from the sounding window: its own button (the window covers the top bar), and the assistant opens above it. */
+#sndModal .snd-ask { flex: none; height: 36px; padding: 0 12px 0 10px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--r-sm); background: transparent; border: 1px solid var(--border-default); color: var(--text-1); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
+#sndModal .snd-ask[hidden] { display: none; }
+#sndModal .snd-ask:hover { background: var(--bg-raised); }
+body.snd-open #chatPanel { z-index: 9600; }

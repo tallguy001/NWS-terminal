@@ -7335,7 +7335,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.70.0';
+var APP_VERSION = '3.70.1';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -13129,12 +13129,13 @@ var REGMAP = (function () {
     var init = Date.parse(r.forecasted_at), valid = Date.parse(r.forecasted_time), fh = isFinite(init) && isFinite(valid) ? Math.round((valid - init) / HOUR) : null;
     run.textContent = (fh != null ? M.label + ' ' + String(new Date(init).getUTCHours()).padStart(2, '0') + 'z run, hour ' + fh + ' · ' : '') + (isFinite(valid) ? 'valid ' + hrDay(valid) + ' · ' : '') + (+o.lat).toFixed(2) + ', ' + (+o.lon).toFixed(2);
     body.innerHTML = '<div class="snd-stage">' + x.stage.replace(/sndClip/g, 'sndClipPop') + '</div><div class="snd-poptables">' + x.tables + '</div>';
+    SQ.shownP = x.P;   // v3.70.1: for Ask
     if (SND.extras) { try { SND.extras(x.P, x.A, body.querySelector('.snd-poptables'), function () { return my === SQ.seq && sndIsOpen(); }); } catch (e) {} }
   }
   function sndLoad() {
     var body = sndEl('sndModalBody'), run = sndEl('sndModalRun'); if (!body || !run || !SQ.o) return;
     var my = ++SQ.seq, m = SQ.m, t = SQ.t0 + SQ.i * HOUR, M = SPM[m], have = sndHave(m, t, SQ.o);
-    sndTitle();
+    SQ.shownP = null; sndTitle();
     if (have) { sndShow(have); return; }
     if (body.querySelector('.snd-stage')) body.classList.add('is-loading'); else { run.textContent = ''; body.innerHTML = '<div class="state-load">Loading the ' + M.label + ' sounding…</div>'; }
     sndFetch(m, t, SQ.o).then(function (r) { if (my === SQ.seq) sndShow(r); }).catch(function (e) {
@@ -13149,14 +13150,16 @@ var REGMAP = (function () {
     var m = sndEl('sndModal'); if (!m || !o || !isFinite(+o.lat) || !isFinite(+o.lon) || !gsAvailable()) return;
     var s = sndStart(); SQ.o = o; SQ.m = s.m; SQ.i = s.i; SQ.t0 = s.t0; SQ.opener = from || document.activeElement;
     sndEl('sndModalBody').innerHTML = ''; sndEl('sndModalBody').classList.remove('is-loading'); sndEl('sndModalRun').textContent = '';
-    sndBar(); m.classList.add('open');
+    sndBar(); m.classList.add('open'); document.body.classList.add('snd-open');
+    var ab = sndEl('sndModalAsk'); if (ab) ab.hidden = !(typeof chatAvailable === 'function' && chatAvailable());
     var c = m.querySelector('.snd-modal-content'); if (c) c.scrollTop = 0;
     var x = sndEl('sndModalClose'); if (x) x.focus();
     sndLoad();
   }
   function sndClose() {
     var m = sndEl('sndModal'); if (!m || !m.classList.contains('open')) return;
-    m.classList.remove('open'); SQ.seq++; sndEl('sndModalBody').innerHTML = '';
+    m.classList.remove('open'); SQ.seq++; sndEl('sndModalBody').innerHTML = ''; SQ.shownP = null; document.body.classList.remove('snd-open');
+    var ci = document.getElementById('chatInput'); if (ci) ci.placeholder = 'Ask about this location\u2019s weather\u2026';
     var op = SQ.opener; SQ.opener = null; SQ.o = null;
     if (op && op.isConnected && op.focus) op.focus();
   }
@@ -13166,6 +13169,7 @@ var REGMAP = (function () {
       if (e.target === sm) { sndClose(); return; }
       var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
       if (b.id === 'sndModalClose') sndClose();
+      else if (b.id === 'sndModalAsk') sndAsk();
       else if (b.hasAttribute('data-sm')) { var k = b.getAttribute('data-sm'); if (SPM[k] && k !== SQ.m) { SQ.m = k; sndSync(); sndLoad(); } }
       else if (b.hasAttribute('data-sby')) { var v = Math.max(0, Math.min(SQ_MAX, SQ.i + (+b.getAttribute('data-sby')))); if (v !== SQ.i) { SQ.i = v; sndSync(); sndLoad(); } }
       else if (b.hasAttribute('data-sretry')) sndLoad();
@@ -13176,7 +13180,29 @@ var REGMAP = (function () {
       if (v !== SQ.i && SQ.o && sndHave(SQ.m, SQ.t0 + v * HOUR, SQ.o)) { SQ.i = v; sndLoad(); }
     });
     sm.addEventListener('change', function (e) { if (e.target && e.target.id === 'sndModalHour') { var v = +e.target.value; if (v !== SQ.i) { SQ.i = v; sndLoad(); } } });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && sndIsOpen()) { e.stopPropagation(); sndClose(); } }, true);
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || !sndIsOpen()) return;
+      if (e.target && e.target.closest && e.target.closest('#chatPanel')) return;   // Escape in the assistant is the assistant's
+      e.stopPropagation(); sndClose();
+    }, true);
+  }
+  /* v3.70.1: Ask from a sounding. The window covers the top bar, so it carries its own Ask; the assistant opens above it and
+     is handed the sounding on screen (sndDescribe, read by SCREEN) with a picture of it. */
+  function sndAsk() {
+    if (typeof toggleChat !== 'function') return;
+    var i = document.getElementById('chatInput'); if (i) i.placeholder = 'Ask about this sounding\u2026';
+    if (!chatOpen) toggleChat(); else if (i) i.focus();
+  }
+  function sndDescribe() {
+    var title = sndEl('sndModalTitle'), run = sndEl('sndModalRun');
+    if (sndIsOpen()) {
+      var head = 'A MODEL SOUNDING IS OPEN ON SCREEN, in a window over the map: ' + (title ? title.textContent : '') + (run && run.textContent ? '\n' + run.textContent : '') + '\n';
+      if (!SQ.shownP) return head + 'It is still loading, or it failed to load.\n';
+      return head + SND.profileText(SQ.shownP, document.querySelector('#sndModalBody .snd-poptables'));
+    }
+    var box = document.querySelector('#regMapStage .map-pop .pop-snd');
+    if (box && box._sndP) return 'The map pop-up shows a small model sounding: ' + (box._sndLabel || '') + '\n' + SND.profileText(box._sndP, null);
+    return '';
   }
 
   function init() {
@@ -13253,6 +13279,7 @@ var REGMAP = (function () {
     var b = pop.querySelector('[data-snd]'), row = pop.querySelector('.regmap-sndrow'); if (!b || !row || !gsAvailable() || modeOf(st.layer) !== 'fc') return;
     var o = { id: b.getAttribute('data-snd'), home: b.getAttribute('data-snd') === 'home', lat: +b.getAttribute('data-lat'), lon: +b.getAttribute('data-lon'), alt: b.getAttribute('data-nm') };
     if (!isFinite(o.lat) || !isFinite(o.lon)) return;
+    var stg = pop.closest('.regmap-stage'); if (stg && stg.getBoundingClientRect().height < 480) return;   // v3.70.1: a phone's short map would cut the skew-T and hide the button; the button alone opens it
     var sm = sndStart(), box = document.createElement('div'); box.className = 'pop-snd';
     box.innerHTML = '<div class="state-load">Loading the ' + esc(SPM[sm.m].label) + ' sounding\u2026</div>';
     row.parentNode.insertBefore(box, row); b.textContent = 'Open the full sounding';
@@ -13260,9 +13287,11 @@ var REGMAP = (function () {
       var x = null; try { x = SND.parts(r); } catch (e) { x = null; }
       if (!box.isConnected) return; if (!x) { box.remove(); return; }
       box.innerHTML = x.stage.replace(/sndClip/g, 'sndClipMini');
+      var init = Date.parse(r.forecasted_at), valid = Date.parse(r.forecasted_time);   // v3.70.1: kept for Ask
+      box._sndP = x.P; box._sndLabel = SPM[sm.m].label + ' sounding for ' + (o.alt || o.id || '') + (isFinite(init) ? ', ' + String(new Date(init).getUTCHours()).padStart(2, '0') + 'z run' : '') + (isFinite(valid) ? ', valid ' + hrDay(valid) : '');
     }).catch(function () { if (box.isConnected) box.remove(); });
   }
-  return { futureGrid: futureGrid, sndMini: sndMini, init: init, load: load, ensure: ensure, again: again, geo: loadGeo, _parse: parseMetar, _obs: function () { return D.stn; }, _shown: function () { return shown; }, _D: function () { return D; },
+  return { futureGrid: futureGrid, sndMini: sndMini, sndDescribe: sndDescribe, sndIsOpen: sndIsOpen, init: init, load: load, ensure: ensure, again: again, geo: loadGeo, _parse: parseMetar, _obs: function () { return D.stn; }, _shown: function () { return shown; }, _D: function () { return D; },
            _view: function () { return view; }, _st: st, _layers: function () { return allLayers(); }, _modes: function () { return MODES; }, _snd: function () { return { SQ: SQ, SQC: SQC, start: sndStart, close: sndClose }; }, setMode: setMode, mode: function () { return modeOf(st.layer); } };
 })();
 document.addEventListener('DOMContentLoaded', function () { REGMAP.init(); });
@@ -15584,13 +15613,16 @@ SND.describe = function () {
   var st = SND._state, P = st.prof, host = document.getElementById('sndHrrr'), tb = document.getElementById('sndTables'), run = document.getElementById('sndRun');
   if (!host || host.classList.contains('hidden')) return '';
   if (!P || !tb || !tb.innerText.trim()) return 'HRRR sounding: still loading, or it failed to load.\n';
-  var out = 'HRRR sounding shown on screen: ' + (run ? run.textContent : '') + '\n';
-  out += 'Profile (pressure mb, height ft above ground, temperature F, dew point F, wind direction/speed kt):\n';
+  return 'HRRR sounding shown on screen: ' + (run ? run.textContent : '') + '\n' + SND.profileText(P, tb);
+};
+/* v3.70.1: the profile and the tables as text, for any sounding on screen (the Models tab, the map's sounding window, the map pop-up). */
+SND.profileText = function (P, tb) {
+  var out = 'Profile (pressure mb, height ft above ground, temperature F, dew point F, wind direction/speed kt):\n';
   for (var i = 0; i < P.n; i++) {
     var d = (Math.round(Math.atan2(-P.u[i], -P.v[i]) * 180 / Math.PI) + 360) % 360, s = Math.round(Math.sqrt(P.u[i] * P.u[i] + P.v[i] * P.v[i]));
     out += Math.round(P.p[i]) + ', ' + Math.round((P.z[i] - P.sfcZ) * 3.28084) + ', ' + Math.round(P.t[i] * 9 / 5 + 32) + ', ' + Math.round(P.td[i] * 9 / 5 + 32) + ', ' + d + '/' + s + (i === 0 ? ' (surface)' : '') + '\n';
   }
-  out += '\nParameter tables as displayed:\n' + tb.innerText.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim().substring(0, 9000) + '\n';
+  if (tb && tb.innerText.trim()) out += '\nParameter tables as displayed:\n' + tb.innerText.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim().substring(0, 9000) + '\n';
   return out;
 };
 
@@ -15719,6 +15751,9 @@ var SCREEN = (function () {
     var R = root(), ctx = 'Current location: ' + (document.getElementById('locName') ? document.getElementById('locName').textContent : 'Unknown') + '\n';
     var off = document.getElementById('locOffice'); if (off && off.textContent) ctx += 'NWS Office: ' + off.textContent + '\n';
     ctx += 'Open tab: ' + R.name.toUpperCase() + '\nCurrent time at the location: ' + fmtIssued(new Date()) + '\n\n';
+    var sd = '', sOpen = false;
+    try { if (typeof REGMAP !== 'undefined' && REGMAP.sndDescribe) { sd = REGMAP.sndDescribe(); sOpen = REGMAP.sndIsOpen(); } } catch (e) { sd = ''; }
+    if (sd && sOpen) ctx += sd + '\nThe open tab behind the sounding window, for context:\n';
     try {
       if (R.el) {
         var body = clean(R.el.innerText); ctx += 'EVERYTHING WRITTEN ON THE OPEN TAB:\n' + (body.length > 30000 ? body.slice(0, 30000) + '\n[The tab continues past this point and was cut off here.]' : body) + '\n';
@@ -15728,10 +15763,13 @@ var SCREEN = (function () {
         if (R.name === 'cams' && window.CAMS && CAMS.describe) ctx += '\n' + CAMS.describe() + '\n';
       }
     } catch (e) { ctx += '(Error reading the tab: ' + e.message + ')'; }
+    if (sd && !sOpen) ctx += '\n' + sd;
     return ctx;
   }
   async function capture(withPics) {
     var t = text(), R = root(), pics = [], missed = [];
+    var sw = document.getElementById('sndModal');   // v3.70.1: with the sounding window open, its skew-T is the picture that matters
+    if (sw && sw.classList.contains('open')) R = { name: R.name, el: sw.querySelector('.snd-modal-content') || R.el };
     if (R.el) { try { var p = await pictures(R.el); missed = p.missed; pics = withPics ? p.pics : []; if (!withPics && p.pics.length) missed = missed.concat(p.pics.map(function (x) { return x.label + ' (pictures are switched off under the chat)'; })); } catch (e) { /* text only */ } }
     if (pics.length) t += '\nPICTURES ATTACHED, top of the screen first:\n' + pics.map(function (x, i) { return (i + 1) + '. ' + x.label; }).join('\n') + '\n';
     if (missed.length) t += '\nVISUALS ON THE TAB THAT YOU CANNOT SEE:\n' + missed.slice(0, 8).map(function (m) { return '- ' + m; }).join('\n') + '\n';
@@ -16175,7 +16213,9 @@ var MAPPOP = (function () {
     if (t.closest && t.closest('.map-pop')) { if (t.closest('.map-pop-x')) close(stage); return; }
     if (!stage) return;
     if (!g) { close(stage); return; }
-    var det = stage.parentNode ? stage.parentNode.querySelector('.regmap-detail') : null, cx = e.clientX, cy = e.clientY;
+    /* v3.70.1: the report card is found from the map's card, not the stage's parent. v3.70.0 wrapped the stage in .regmap-wrap,
+       so the parent no longer held the report and no tap opened a pop-up (and so no sounding). */
+    var card = stage.closest('.regmap-card') || stage.parentNode, det = card ? card.querySelector('.regmap-detail') : null, cx = e.clientX, cy = e.clientY;
     if (keyed || (!cx && !cy)) { var b = g.getBoundingClientRect(); cx = b.left + b.width / 2; cy = b.top + b.height / 2; }
     setTimeout(function () { if (stage.isConnected) open(stage, det, cx, cy); }, 0);   // after the map's own handler has written the report
   }
