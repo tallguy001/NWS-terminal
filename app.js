@@ -7336,7 +7336,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.71.1';
+var APP_VERSION = '3.71.2';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -11472,7 +11472,7 @@ var REGMAP = (function () {
     R0.segs.slice().sort(function (x, y) { return rank(roadCat(y.c)) - rank(roadCat(x.c)); }).forEach(function (sg) {   // the worst drawn last, on top
       var cat = roadCat(sg.c); used[cat[2]] = cat; if (sg.t > newest) newest = sg.t;
       var det = '<div class="rg-head"><b>' + esc(sg.road || 'Road') + '</b>' + (sg.area ? ' <span class="regmap-id">' + esc(sg.area) + '</span>' : '') + '</div>' +
-                (sg.loc ? '<div class="rg-cap">' + esc(sg.loc) + '</div>' : '') + kv([['Condition', '<b>' + esc(sg.c || 'No report') + '</b>'], sg.t ? ['Reported', esc(hrDay(sg.t * 1000))] : null]) +
+                (sg.loc ? '<div class="rg-cap">' + esc(sg.loc) + '</div>' : '') + kv([['Condition', '<b>' + esc(sg.c || 'No report') + '</b>'], sg.sf ? ['Surface', esc(sg.sf)] : null, sg.t ? ['Reported', esc(hrDay(sg.t * 1000))] : null]) +
                 '<div class="rg-note">From WisDOT on 511wi.gov. Conditions can change faster than they are reported.</div>';
       sg.lines.forEach(function (ln) { lines.push({ pts: ln, color: cat[1], detail: det, aria: (sg.road || 'Road') + ': ' + (sg.c || 'no report') }); });
     });

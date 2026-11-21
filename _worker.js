@@ -1,4 +1,4 @@
-/* NWS Terminal edge worker (v3.71.1)
+/* NWS Terminal edge worker (v3.71.2)
    - serves the app shell from static assets with security + cache headers
    - /p/<kind>/...   same-origin read-only proxy for NOAA hosts without CORS
    - /p/gs/...       GribStream POST proxy (keeps the token off third parties)
@@ -9,7 +9,7 @@
    - /api/config     what the server can do for the client
    - /api/health     liveness for uptime checks */
 
-const VERSION = '3.71.1';
+const VERSION = '3.71.2';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -449,7 +449,7 @@ function wrTrim(raw) {
   const list = Array.isArray(raw) ? raw : raw && Array.isArray(raw.WinterRoads) ? raw.WinterRoads : raw && typeof raw === 'object' ? [raw] : [], out = [];
   for (const c of list) {
     if (!c || typeof c !== 'object') continue;
-    let cond = String(c.Condition || c['Primary Condition'] || c.PrimaryCondition || c['Primary-Condition'] || c['Overall Status'] || c.OverallStatus || c.RoadCondition || c.SurfaceCondition || '').trim();
+    let cond = String(c['Overall Condition'] || c.Condition || c['Primary Condition'] || c.PrimaryCondition || c['Primary-Condition'] || c['Overall Status'] || c.OverallStatus || c.RoadCondition || c.SurfaceCondition || '').trim();
     if (!cond) for (const k of Object.keys(c)) if (/condition|status/i.test(k) && typeof c[k] === 'string' && c[k].trim()) { cond = c[k].trim(); break; }   // whatever this feed calls it
     cond = cond.slice(0, 40);
     const enc = [].concat(c.Polyline || c.EncodedPolyline || []).filter((x) => typeof x === 'string' && x.length > 3);
@@ -465,7 +465,7 @@ function wrTrim(raw) {
     }
     if (!lines.length) continue;
     out.push({ c: cond, road: String(c.RoadwayName || c.Roadway || '').trim().slice(0, 60), loc: String(c.LocationDescription || c.Location || '').trim().slice(0, 140),
-               area: String(c.AreaName || '').trim().slice(0, 40), t: Number(c.LastUpdated) || 0, lines, b });
+               area: String(c.AreaName || '').trim().slice(0, 40), sf: typeof c.RoadSurface === 'string' ? c.RoadSurface.trim().slice(0, 60) : '', t: Number(c.LastUpdated) || 0, lines, b });
   }
   return out;
 }
