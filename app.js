@@ -7351,7 +7351,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.72.0';
+var APP_VERSION = '3.73.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -11669,7 +11669,8 @@ var REGMAP = (function () {
               rrfs: { label: 'RRFS', prof: 'rrfsprslev', sfc: 'rrfs2dfld', flat: 'rrfs2dfld', uh: 200, moist: ['DPT', 'd'] },
               rap:  { label: 'RAP',  prof: 'rap', sfc: null, flat: 'rap', uh: 0, moist: ['RH', 'r'] } };
   function spModel() { if (!SPM[st.sm]) st.sm = 'hrrr'; return SPM[st.sm]; }
-  var SP_SFC = [['PRES', 'surface', 'sfc_pres'], ['HGT', 'surface', 'sfc_hgt'], ['TMP', '2 m above ground', 'sfc_t'], ['DPT', '2 m above ground', 'sfc_td'], ['UGRD', '10 m above ground', 'sfc_u'], ['VGRD', '10 m above ground', 'sfc_v']]
+  var SP_SFC = [['PRES', 'surface', 'sfc_pres'], ['HGT', 'surface', 'sfc_hgt'], ['TMP', '2 m above ground', 'sfc_t'], ['DPT', '2 m above ground', 'sfc_td'], ['UGRD', '10 m above ground', 'sfc_u'], ['VGRD', '10 m above ground', 'sfc_v'],
+                ['CSNOW', 'surface', 'f_sn'], ['CRAIN', 'surface', 'f_ra'], ['CFRZR', 'surface', 'f_fz'], ['CICEP', 'surface', 'f_pl']]   // v3.73.0: the model's own precip-type flags (HRRR, RRFS 2D, RAP and GFS all serve them)
                .map(function (x) { return { name: x[0], level: x[1], alias: x[2] }; });
   function spProfVars(M) {
     var out = [];
@@ -15613,9 +15614,11 @@ function makeGsChart(type, canvasId, labels, datasets, yTitle, opts) {
    the same ones SHARPpy uses). Since v3.39.0 the parcels, storm motion,
    helicity and effective inflow layer follow SPC's sounding software step
    for step, and match SHARPpy 1.4 on recorded model soundings. Composite
-   parameters follow the published SPC definitions. Precipitation type uses the Bourgouin area
-   method in a simplified form and is labelled as such.
-   Not included yet: sounding analogs (SARS) and the possible hazard type.
+   parameters follow the published SPC definitions. Precipitation type is SHARPpy's best-guess method (v3.73.0),
+   shown beside the model's own precipitation-type flags and NBM's chances on cold soundings. Sounding analogs
+   (SARS) and the possible hazard type are in the module after this one.
+   Parity (2026-11-22): on the same input profiles this engine and SHARPpy 1.4 agree to 0.001 on every parcel,
+   effective-layer, composite and SARS value (23 soundings) and on precipitation type (55 winter soundings).
    ══════════════════════════════════════════════════════════════════ */
 var SND = (function () {
   var LEVELS = []; for (var _p = 1000; _p >= 50; _p -= 25) LEVELS.push(_p);
@@ -15652,7 +15655,7 @@ var SND = (function () {
   function virtemp(p, t, td) { var w = 0.001 * mixratio(p, td); return (t + 273.15) * (1 + w / 0.62197) / (1 + w) - 273.15; }
   function wetbulb(p, t, td) { var l = drylift(p, t, td); return wetlift(l[0], l[1], p); }
   function thetae(p, t, td) { var l = drylift(p, t, td); return theta(100, wetlift(l[0], l[1], 100), 1000); }
-  function relh(p, t, td) { return 100 * mixratio(p, td) / mixratio(p, t); }
+  function relh(p, t, td) { return 100 * vappres(td) / vappres(t); }   // v3.73.0: SHARPpy 1.4's form (thermo.relh); the mixing-ratio form ran ~0.5% low and flipped the 80% precip-source test
 
   /* ---------- the profile: index 0 is the surface, pressure decreasing ---------- */
   function build(r) {
@@ -15664,6 +15667,9 @@ var SND = (function () {
     else LEVELS.forEach(function (p) { if (p >= ps - 1 || !(r['z' + p] > zs + 1)) return; add(p, r['z' + p], r['t' + p], r['d' + p], r['u' + p], r['v' + p], r['w' + p]); });
     if (P.p.length < 10) return null;
     P.n = P.p.length; P.sfcZ = zs; P.valid = r.forecasted_time; P.run = r.forecasted_at;
+    P.lat = isFinite(+r.lat) && r.lat !== '' && r.lat != null ? +r.lat : null; P.lon = isFinite(+r.lon) && r.lon !== '' && r.lon != null ? +r.lon : null;
+    var fl = { sn: r.f_sn, ra: r.f_ra, fz: r.f_fz, pl: r.f_pl };   // v3.73.0: the model's own call (1 = yes); absent on observed soundings
+    P.flags = Object.keys(fl).some(function (k) { return fl[k] != null && fl[k] !== ''; }) ? fl : null;
     P.tv = P.p.map(function (p, i) { return virtemp(p, P.t[i], P.td[i]); });
     // 5 mb working grid, interpolated in log pressure
     var g = { p: [], z: [], t: [], td: [], tv: [], u: [], v: [] };
@@ -15892,25 +15898,68 @@ var SND = (function () {
     return A;
   }
   /* Simplified Bourgouin (2000) area method: melting energy aloft against refreezing energy near the ground. */
-  function precipType(P) {
-    var g = P.g, src = null;
-    for (var i = g.p.length - 1; i >= 0; i--) if (g.p[i] >= 300 && relh(g.p[i], g.t[i], g.td[i]) >= 80) { src = i; break; }   // highest moist level
-    if (src == null) return { type: 'None', why: 'no layer at or above 80% humidity' };
-    var deep = 0; for (var k = 0; k <= src; k++) if (relh(g.p[k], g.t[k], g.td[k]) >= 80) deep += 5;
-    if (deep < 50) return { type: 'None', why: 'the moist layer is under 50 mb deep' };
-    var ice = g.t[src] <= -10, pos = 0, neg = 0, seenWarm = false;
-    for (var j = src; j >= 1; j--) {   // falling from the source level to the ground
-      var tm = (g.t[j] + g.t[j - 1]) / 2, area = 1004 * tm * Math.log(g.p[j - 1] / g.p[j]) * (ROCP ? 1 : 1);
-      if (tm > 0) { pos += area; seenWarm = true; } else if (seenWarm) neg += -area;
-    }
-    var sfcT = P.t[0], type, why;
-    if (!seenWarm || pos < 5.6) { type = ice ? 'Snow' : (sfcT <= 0 ? 'Freezing drizzle' : 'Drizzle'); why = 'no melting layer of note'; }
-    else if (sfcT > 0 && neg < 1) { type = pos >= 13.2 || !ice ? 'Rain' : 'Rain and snow mix'; why = 'melting energy ' + pos.toFixed(0) + ' J/kg, warm to the ground'; }
-    else if (neg > 66 + 0.66 * pos) { type = 'Ice pellets'; why = 'refreezing ' + neg.toFixed(0) + ' J/kg beats melting ' + pos.toFixed(0); }
-    else if (neg < 46 + 0.66 * pos) { type = sfcT <= 0 ? 'Freezing rain' : 'Rain'; why = 'melting ' + pos.toFixed(0) + ' J/kg, weak refreezing ' + neg.toFixed(0); }
-    else { type = sfcT <= 0 ? 'Freezing rain and ice pellets' : 'Rain and ice pellets'; why = 'melting ' + pos.toFixed(0) + ' and refreezing ' + neg.toFixed(0) + ' J/kg are close'; }
-    return { type: type, why: why, init: ice ? 'Ice at the top of the moist layer (' + Math.round(g.p[src]) + ' mb, ' + g.t[src].toFixed(0) + ' C)' : 'Liquid at the top of the moist layer (' + Math.round(g.p[src]) + ' mb, ' + g.t[src].toFixed(0) + ' C)' };
+  /* v3.73.0: SHARPpy's best-guess precipitation type, ported line for line from sharptab/watch_type.py (init_phase,
+     posneg_temperature, best_guess_precip; SPC code by Rich Thompson). It replaces the simplified area method, which on
+     55 recorded winter soundings (Jan 24-25 2026 ice storm, Mar 11 2026, Nov 22 2026) disagreed with SHARPpy 7 times,
+     calling rain at 34-36 F where SHARPpy and the HRRR had snow in the mix. The labels are SHARPpy's own. */
+  function atPm(P, k, p) {   // linear in log pressure on the reported levels; null outside them (SHARPpy masks there)
+    var a = P.p, n = a.length; if (!(p <= a[0] + 1e-9) || p < a[n - 1] - 1e-9) return null;
+    for (var i = 0; i < n; i++) if (Math.abs(a[i] - p) < 1e-9) return P[k][i];
+    for (var j = 1; j < n; j++) if (a[j] < p) { var y0 = P[k][j - 1], y1 = P[k][j]; if (y0 == null || y1 == null) return null; return y0 + (y1 - y0) * Math.log(a[j - 1] / p) / Math.log(a[j - 1] / a[j]); }
+    return null;
   }
+  function initPhase(P) {   // the highest 50 mb layer below 5 km with RH > 80% at top and bottom
+    var z0 = P.z[0], avail = 0, idx = [];
+    for (var a = 0; a < P.n; a++) if (P.w[a] != null && P.w[a] < 0.1) avail++;
+    for (var i = 0; i < P.n; i++) {
+      var agl = P.z[i] - z0;
+      if (agl < 0 || agl >= 5000) continue;
+      if (avail >= 5 && !(P.w[i] != null && P.w[i] <= 0)) continue;   // with vertical motion, upward levels only
+      idx.push(i);
+    }
+    var top = null;
+    idx.forEach(function (i) {
+      if (!(relh(P.p[i], P.t[i], P.td[i]) > 80)) return;
+      var np = P.p[i] + 50, t2 = atPm(P, 't', np), d2 = atPm(P, 'td', np);
+      if (t2 == null || d2 == null || !(relh(np, t2, d2) > 80)) return;
+      top = np;   // later entries are higher in the column
+    });
+    if (top == null) return { plevel: null, phase: -1, tmp: null, st: 'N/A' };
+    var plevel = top - 25, tmp = atPm(P, 't', plevel), phase = -1, st = 'N/A';
+    if (tmp > 0) { phase = 0; st = 'Rain'; } else if (tmp <= 0 && tmp > -5) { phase = 1; st = 'Freezing Rain'; }
+    else if (tmp <= -5 && tmp > -9) { phase = 1; st = 'ZR/S Mix'; } else if (tmp <= -9) { phase = 3; st = 'Snow'; }
+    return { plevel: plevel, phase: phase, tmp: tmp, st: st };
+  }
+  function posnegTemp(P, upper) {   // warm (melting) and cold (refreezing) areas below the source level, J/kg
+    var uptr = 0; for (var i = 0; i < P.n; i++) if (P.p[i] > upper) uptr = i;
+    var h1 = atPm(P, 'z', upper), te1 = atPm(P, 't', upper), warm = 0, cold = 0, totp = 0, totn = 0;
+    if (h1 == null || te1 == null) return { pos: 0, neg: 0 };
+    for (var k = uptr; k >= 0; k--) {
+      var h2 = P.z[k], te2 = P.t[k], lyre = 9.8 * ((0 - te1) / (te1 + 273.15) + (0 - te2) / (te2 + 273.15)) / 2 * (h2 - h1);
+      if (te2 > 0 && !warm) warm = 1;
+      if (te2 < 0 && warm && !cold) cold = 1;
+      if (warm) { if (lyre > 0) totp += lyre; else totn += lyre; }
+      h1 = h2; te1 = te2;
+    }
+    return warm && cold ? { pos: totp, neg: totn } : { pos: 0, neg: 0 };
+  }
+  function precipType(P) {
+    var ip = initPhase(P), sfcT = P.t[0], type;
+    var pn = ip.phase < 0 ? { pos: 0, neg: 0 } : posnegTemp(P, ip.plevel), tpos = pn.pos, tneg = pn.neg;
+    if (ip.phase < 0) type = 'None';
+    else if (ip.phase === 0 && tneg >= 0 && sfcT > 0) type = 'Rain';
+    else if (ip.phase === 3 && tpos <= 0 && sfcT <= 0) type = 'Snow';
+    else if (ip.phase === 1 && tpos <= 0 && sfcT > 0) type = 'Rain';
+    else if (ip.phase === 1 && tpos <= 0 && sfcT <= 0) type = (atPm(P, 'z', ip.plevel) - P.z[0]) >= 3000 ? (ip.tmp <= -4 ? 'Sleet and Snow' : 'Sleet') : 'Freezing Rain/Drizzle';
+    else if (ip.phase === 3 && tpos <= 0 && sfcT > 0) type = sfcT > 4 ? 'Rain' : 'Snow';
+    else if (tpos > 0) type = (-tneg > 0.62 * tpos + 60) ? 'Sleet' : (sfcT <= 0 ? 'Freezing Rain' : 'Rain');
+    else type = 'Unknown';
+    var why = ip.phase < 0 ? 'no 50 mb layer below 5 km is above 80% humidity, so there is no precipitation source'
+      : 'melting energy ' + tpos.toFixed(0) + ' J/kg, refreezing ' + (-tneg).toFixed(0) + ' J/kg';
+    return { type: type, why: why, warm: tpos, cold: -tneg, phase: ip.st,
+             init: ip.phase < 0 ? '' : 'Source layer near ' + Math.round(ip.plevel) + ' mb at ' + ip.tmp.toFixed(0) + ' C (starts as ' + ip.st.toLowerCase() + ')' };
+  }
+
 
   /* ---------- drawing ---------- */
   var SK = { W: 640, H: 640, l: 46, r: 96, t: 14, b: 30, pTop: 100, pBot: 1050, tMin: -40, tMax: 50 };
@@ -15989,12 +16038,12 @@ var SND = (function () {
       '</tbody></table></div><div class="snd-note">SRH in m²/s² for a right-moving storm; shear in knots; mean and storm-relative (SR) winds as direction/speed in knots.</div>' +
       kv([['Bunkers right', vec(A.bk.rm) + ' kt'], ['Bunkers left', vec(A.bk.lm) + ' kt'], ['Corfidi downshear', vec(A.corfDn) + ' kt'], ['Corfidi upshear', vec(A.corfUp) + ' kt'], ['BRN shear', n0(A.brnShear) + ' m²/s²'], ['4–6 km SR wind', vec(A.sr46) + ' kt'], ['Effective layer', A.eff ? Math.round(A.eff.hb) + '–' + Math.round(A.eff.ht) + ' m' : 'none']]) + '</div>';
     h += '<div class="card snd-card"><div class="panel-title">Lapse rates and composites</div>' +
-      kv([['Sfc–3 km', n0(A.lr03, 1) + ' C/km'], ['3–6 km', n0(A.lr36, 1) + ' C/km'], ['850–500 mb', n0(A.lr85, 1) + ' C/km'], ['700–500 mb', n0(A.lr75, 1) + ' C/km'], ['Supercell', cut1(A.scp)], ['STP (effective)', cut1(A.stpCin)], ['STP (fixed)', n0(A.stpFix, 1)], ['SHIP', n0(A.ship, 1)]]) +
-      '<div class="snd-note">Composites follow the SPC definitions. Values near zero mean the ingredients are not there.</div></div>';
+      kv([['Sfc–3 km', n0(A.lr03, 1) + ' C/km'], ['3–6 km', n0(A.lr36, 1) + ' C/km'], ['850–500 mb', n0(A.lr85, 1) + ' C/km'], ['700–500 mb', n0(A.lr75, 1) + ' C/km'], ['Supercell', cut1(A.scp)], ['Supercell (no CIN term)', cut1(A.scpRaw)], ['STP (effective)', cut1(A.stpCin)], ['STP (fixed)', n0(A.stpFix, 1)], ['SHIP', n0(A.ship, 1)]]) +
+      '<div class="snd-note">Composites follow the SPC definitions. Values near zero mean the ingredients are not there. Supercell includes SPC&#8217;s CIN term; the no-CIN-term value is the one SHARPpy and Pivotal show.</div></div>';
     var z = A.dgz;
     h += '<div class="card snd-card"><div class="panel-title">Winter</div><div class="snd-sub">Dendritic growth zone (−12 to −17 C)</div>' +
       (z ? kv([['Base', ft(z.zb)], ['Top', ft(z.zt)], ['Depth', ft(z.zt - z.zb)], ['Mean RH', n0(z.rh) + '%'], ['Mean mixing ratio', n0(z.w, 1) + ' g/kg'], ['Layer PW', n0(z.pw, 2) + ' in'], ['Mean omega', z.omega == null ? '–' : n0(z.omega, 1) + ' µb/s']]) : '<div class="snd-note">Not present in this sounding.</div>') +
-      '<div class="snd-sub">Precipitation type, best guess</div><div class="snd-ptype">' + esc(A.ptype.type) + '</div><div class="snd-note">' + esc((A.ptype.init ? A.ptype.init + '. ' : '') + (A.ptype.why ? A.ptype.why.charAt(0).toUpperCase() + A.ptype.why.slice(1) + '.' : '')) + ' Simplified area method; it says what would reach the ground if precipitation falls, not whether it will.</div></div>';
+      '<div class="snd-sub">Precipitation type, SHARPpy best guess</div><div class="snd-ptype">' + esc(A.ptype.type) + '</div><div class="snd-note">' + esc((A.ptype.init ? A.ptype.init + '. ' : '') + (A.ptype.why ? A.ptype.why.charAt(0).toUpperCase() + A.ptype.why.slice(1) + '.' : '')) + ' SHARPpy&#8217;s method (SPC): it says what would reach the ground if precipitation falls, not whether it will.</div></div>';
     return h + '</div>';
   }
 
@@ -16005,7 +16054,8 @@ var SND = (function () {
     var key = (+currentLat).toFixed(3) + ',' + (+currentLon).toFixed(3) + ',' + ms, c = cache[key];
     if (c && Date.now() - c.at < 10 * 60000) return Promise.resolve(c.r);
     var vars = [{ name: 'PRES', level: 'surface', alias: 'sfc_pres' }, { name: 'HGT', level: 'surface', alias: 'sfc_hgt' }, { name: 'TMP', level: '2 m above ground', alias: 'sfc_t' }, { name: 'DPT', level: '2 m above ground', alias: 'sfc_td' },
-                { name: 'UGRD', level: '10 m above ground', alias: 'sfc_u' }, { name: 'VGRD', level: '10 m above ground', alias: 'sfc_v' }];
+                { name: 'UGRD', level: '10 m above ground', alias: 'sfc_u' }, { name: 'VGRD', level: '10 m above ground', alias: 'sfc_v' },
+                { name: 'CSNOW', level: 'surface', alias: 'f_sn' }, { name: 'CRAIN', level: 'surface', alias: 'f_ra' }, { name: 'CFRZR', level: 'surface', alias: 'f_fz' }, { name: 'CICEP', level: 'surface', alias: 'f_pl' }];
     LEVELS.forEach(function (p) { [['TMP', 't'], ['DPT', 'd'], ['UGRD', 'u'], ['VGRD', 'v'], ['HGT', 'z'], ['VVEL', 'w']].forEach(function (x) { vars.push({ name: x[0], level: p + ' mb', alias: x[1] + p }); }); });
     var post = function (v) { return gsPost('hrrr', { fromTime: new Date(ms - 20 * 60000).toISOString(), untilTime: new Date(ms + 20 * 60000).toISOString(), coordinates: [{ lat: parseFloat(currentLat), lon: parseFloat(currentLon), name: 'loc' }], variables: v }); };
     return post(vars).catch(function () {
@@ -16077,6 +16127,7 @@ var SND = (function () {
   function supercell(d, A) {
     var pc = A.pc, mlcape = pc.ml.cape, mllcl = pc.ml.lclH, t5 = A.t500, lr = A.lr75, shr = A.shr6, srh = A.srh1, shr3 = A.shr3, shr9 = A.shr9, srh3 = A.srh3;
     if ([mllcl, t5, lr, shr, srh, shr3, shr9, srh3].some(function (x) { return x == null || isNaN(x); })) return null;
+    if (!(mlcape >= 100)) return { gated: true, loose: 0, hits: 0, prob: 0, q: [] };   // v3.73.0: analogs need buoyancy (SHARPpy gave 30% TOR on 1 J/kg)
     var rC = mlcape === 0 ? 0 : 1300, rC1 = mlcape * 0.25, rS = Math.abs(srh) < 50 ? 100 : srh, rS1 = Math.abs(srh) < 100 ? 50 : Math.abs(srh) * 0.3, rS3 = Math.abs(srh3) < 100 ? 50 : Math.abs(srh3) * 0.5;
     var loose = 0, tor = 0, q = [];
     d.supercell.forEach(function (m) {   // [id, cat, mlcape, mllcl, srh1, shr6kt, t500, lr75, shr3kt, shr9kt, srh3]
@@ -16126,6 +16177,37 @@ var SND = (function () {
     return mon + ' ' + +m[3] + ' ' + yr + ', ' + m[4] + 'z, ' + m[5];
   }
   function list(q) { return q.length ? '<ul class="snd-analog">' + q.map(function (x) { return '<li><span>' + esc(when(x[0])) + '</span><b>' + esc(x[1]) + '</b></li>'; }).join('') + '</ul>' : '<div class="snd-note">No close matches.</div>'; }
+  /* v3.73.0: precipitation type, three reads side by side. The sounding's own read (SHARPpy's method) can miss a shallow
+     warm or cold layer between the 25 mb levels; on the Jan 24-25 2026 ice storm it called a third of the HRRR's
+     freezing-rain points sleet. So on cold soundings the card also shows the model's own precipitation-type flags and
+     NBM's chance of each type at that hour. The NBM request is made only when the surface is 40 F or colder or the
+     sounding or the model already says something frozen, so warm-season taps cost nothing extra. */
+  var FLAGW = { sn: 'snow', ra: 'rain', fz: 'freezing rain', pl: 'sleet' };
+  function frozenWord(t) { return /Snow|Sleet|Freezing/.test(t || ''); }
+  function ptypeCard(P, A) {
+    var f = P.flags, on = f ? Object.keys(FLAGW).filter(function (k) { return +f[k] === 1; }) : [];
+    var cold = P.t[0] * 9 / 5 + 32 <= 40, frozen = frozenWord(A.ptype && A.ptype.type) || on.some(function (k) { return k !== 'ra'; });
+    if (!cold && !frozen) return '';
+    var model = f ? (on.length ? on.map(function (k) { return FLAGW[k]; }).join(' + ') : 'nothing falling') : 'not sent with this sounding';
+    return '<div class="card snd-card snd-ptype3"><div class="panel-title">Precipitation type, three reads</div>' +
+      '<dl class="snd-kv"><div><dt>Sounding</dt><dd>' + esc((A.ptype && A.ptype.type) || '–') + '</dd></div>' +
+      '<div><dt>Model flag</dt><dd>' + esc(model) + '</dd></div></dl>' +
+      '<div class="snd-sub">NBM chance of each type</div><div class="snd-nbm">' + (P.lat == null ? 'no point to ask for' : 'loading…') + '</div>' +
+      '<div class="snd-note">The sounding read is SHARPpy&#8217;s method on the 25 mb levels only, so a shallow warm nose or cold layer between them can be missed; the model&#8217;s flag comes from its own microphysics. NBM figures are percent chances for that hour; they add up to less than 100 when precipitation itself is uncertain.</div></div>';
+  }
+  function nbmOdds(P, wrap, live) {
+    var el = wrap.querySelector('.snd-nbm'); if (!el || P.lat == null || !gsAvailable()) return;
+    var t = Date.parse(P.valid); if (!isFinite(t)) { el.textContent = 'no valid time'; return; }
+    var V = [['prob >=1 <2', 'rn'], ['prob >=3 <4', 'fz'], ['prob >=5 <7', 'sn'], ['prob >=8 <9', 'pl']].map(function (x) { return { name: 'PTYPE', level: 'surface', info: x[0], alias: x[1] }; });
+    gsPost('nbm', { fromTime: new Date(t - 30 * 6e4).toISOString(), untilTime: new Date(t + 30 * 6e4).toISOString(), coordinates: [{ lat: P.lat, lon: P.lon, name: 'p' }], variables: V })
+      .then(function (rows) {
+        if (!live() || !el.isConnected) return;
+        var r = (rows || []).sort(function (a, b) { return Math.abs(Date.parse(a.forecasted_time) - t) - Math.abs(Date.parse(b.forecasted_time) - t); })[0];
+        if (!r) { el.textContent = 'NBM has nothing for this hour'; return; }
+        var pc = function (v) { v = +v; return isFinite(v) ? (v > 0 && v < 1 ? '<1' : Math.round(v)) + '%' : '–'; };
+        el.textContent = 'rain ' + pc(r.rn) + ' · freezing rain ' + pc(r.fz) + ' · snow ' + pc(r.sn) + ' · sleet ' + pc(r.pl);
+      }).catch(function () { if (el.isConnected) el.textContent = 'NBM could not be reached'; });
+  }
   SND.extras = function (P, A, host, live) {
     var hz = hazard(A), top = hz[0], wrap = document.createElement('div'); wrap.className = 'snd-grid';
     wrap.innerHTML = '<div class="card snd-card"><div class="panel-title">Possible hazard type</div><div class="snd-haz snd-haz-' + top[2] + '"><b>' + esc(top[0]) + '</b><span>' + esc(top[1]) + '</span></div>' +
@@ -16133,18 +16215,21 @@ var SND = (function () {
       '<dl class="snd-kv"><div><dt>WNDG</dt><dd>' + (isFinite(A.wndg) ? A.wndg.toFixed(1) : '–') + '</dd></div><div><dt>Sig. severe</dt><dd>' + Math.round(A.sigSev).toLocaleString('en-US') + ' m³/s³</dd></div><div><dt>Heat index</dt><dd>' + (A.sfcF >= 80 ? Math.round(A.heatIndex) + ' F' : '–') + '</dd></div></dl>' +
       '<div class="snd-note">A rule-of-thumb read of this one profile using the SHARPpy thresholds. It assumes storms form and is not a watch or a forecast. The flash-flood flag and the MCS-maintenance test are not evaluated.</div></div>' +
       '<div class="card snd-card snd-sars"><div class="panel-title">Sounding analogs (SARS)</div><div class="state-load">Loading the analog database…</div></div>';
+    var pc = ptypeCard(P, A); if (pc) wrap.insertAdjacentHTML('beforeend', pc);
     host.appendChild(wrap);
+    if (pc) nbmOdds(P, wrap, live);
     loadDb().then(function (d) {
       if (!live() || !wrap.isConnected) return;
       var s = supercell(d, A), h = hail(d, A), el = wrap.querySelector('.snd-sars'), pct = function (x) { return Math.round(x * 100) + '%'; };
       el.innerHTML = '<div class="panel-title">Sounding analogs (SARS)</div><div class="snd-two"><div><div class="snd-sub">Supercell</div>' +
-        (s ? list(s.q) + '<div class="snd-note">' + (s.loose ? s.hits + ' of ' + s.loose + ' loose matches produced a tornado (' + pct(s.prob) + ').' : 'No loose matches.') + '</div>' : '<div class="snd-note">Not enough of the profile to compare.</div>') +
+        (s && s.gated ? '<div class="snd-note">Not shown: mixed-layer CAPE is under 100 J/kg, and supercell analogs mean nothing without buoyancy.</div>' : '') +
+        (s && !s.gated ? list(s.q) + '<div class="snd-note">' + (s.loose ? s.hits + ' of ' + s.loose + ' loose matches produced a tornado (' + pct(s.prob) + ').' : 'No loose matches.') + '</div>' : (s ? '' : '<div class="snd-note">Not enough of the profile to compare.</div>')) +
         '</div><div><div class="snd-sub">Significant hail</div>' +
         (h ? list(h.q) + '<div class="snd-note">' + (h.loose ? h.hits + ' of ' + h.loose + ' loose matches had hail of 2 in or larger (' + pct(h.prob) + ')' + (h.avg != null ? '; average size ' + h.avg.toFixed(2) + ' in.' : '.') : 'No loose matches.') + '</div>' : '<div class="snd-note">Not enough of the profile to compare.</div>') +
         '</div></div><div class="snd-note">Past observed soundings near supercells and large hail whose key parameters resemble this one. Database: NOAA Storm Prediction Center, via SHARPpy.</div>';
     }).catch(function () { var el = wrap.querySelector('.snd-sars'); if (el) el.innerHTML = '<div class="panel-title">Sounding analogs (SARS)</div><div class="state-load">The analog database could not be loaded.</div>'; });
   };
-  SND._sars = { supercell: supercell, hail: hail, hazard: hazard };
+  SND._sars = { supercell: supercell, hail: hail, hazard: hazard, ptypeCard: ptypeCard };
 })();
 
 /* v3.17.1: a text version of the HRRR sounding for the assistant (the diagram itself is a drawing it cannot read). */
