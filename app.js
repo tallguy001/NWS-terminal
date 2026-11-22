@@ -7358,7 +7358,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.79.0';
+var APP_VERSION = '3.80.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -14266,12 +14266,189 @@ var UAMAP = (function () {
    Projection: Albers equal-area conic on the GRS80 ellipsoid (EPSG:5070),
    computed here so the boundary lines register with the imagery.
    ══════════════════════════════════════════════════════════════════ */
+/* NX3 (v3.80.0): NEXRAD Level III products straight from the radar, decoded in the browser.
+   Files come from the public Unidata/AWS archive (unidata-nexrad-level3, CORS open, a new scan every 4 to 6 minutes).
+   Handles the two radial packets the app uses: 16 (digital radial, 256 levels: 159 ZDR, 161 CC, 163 KDP) and AF1F
+   (run-length radial, 16 levels: 56 storm-relative velocity). Products 159/161/163 carry their symbology bzip2-compressed;
+   BZ2 below is a plain bzip2 decoder (Burrows-Wheeler, move-to-front, Huffman, run-length), checked byte for byte against
+   Python's bz2 on real files. Values follow the ICD as MetPy reads them: digital products (code - offset) / scale from
+   the two float32 thresholds, codes 0 below threshold and 1 range folded; legacy products from the 16 threshold words.
+   Gate size by product: 0.25 km for 159/161/163 (1200 gates to 300 km), 1 km for 56 (230 gates). */
+var BZ2 = (function () {
+  var CRC = (function () { var t = new Uint32Array(256); for (var i = 0; i < 256; i++) { var c = i << 24; for (var j = 0; j < 8; j++) c = c & 0x80000000 ? (c << 1) ^ 0x04c11db7 : c << 1; t[i] = c >>> 0; } return t; })();
+  function Bits(u8) { this.b = u8; this.p = 0; this.bit = 0; }
+  Bits.prototype.get = function (n) {   // n <= 24
+    var v = 0;
+    while (n > 0) {
+      if (this.p >= this.b.length) throw new Error('bzip2: unexpected end of data');
+      var avail = 8 - this.bit, take = Math.min(avail, n), cur = this.b[this.p];
+      v = (v << take) | ((cur >> (avail - take)) & ((1 << take) - 1));
+      this.bit += take; n -= take;
+      if (this.bit === 8) { this.bit = 0; this.p++; }
+    }
+    return v >>> 0;
+  };
+  function decode(u8) {
+    var br = new Bits(u8);
+    if (br.get(8) !== 0x42 || br.get(8) !== 0x5a || br.get(8) !== 0x68) throw new Error('bzip2: bad header');
+    var level = br.get(8) - 0x30; if (level < 1 || level > 9) throw new Error('bzip2: bad block size');
+    var max = level * 100000, out = [], total = 0, tt = new Uint32Array(max);
+    for (;;) {
+      var h1 = br.get(24), h2 = br.get(24);
+      if (h1 === 0x177245 && h2 === 0x385090) break;   // end of stream
+      if (h1 !== 0x314159 || h2 !== 0x265359) throw new Error('bzip2: bad block header');
+      br.get(16); br.get(16);   // block CRC
+      if (br.get(1)) throw new Error('bzip2: randomised blocks are not supported');
+      var orig = br.get(24);
+      // symbol map
+      var used = br.get(16), seqToUnseq = [];
+      for (var i = 0; i < 16; i++) if (used & (0x8000 >> i)) { var w = br.get(16); for (var j = 0; j < 16; j++) if (w & (0x8000 >> j)) seqToUnseq.push(i * 16 + j); }
+      var nInUse = seqToUnseq.length; if (!nInUse) throw new Error('bzip2: no symbols');
+      var alphaSize = nInUse + 2, nGroups = br.get(3), nSel = br.get(15);
+      if (nGroups < 2 || nGroups > 6) throw new Error('bzip2: bad group count');
+      var mtfG = []; for (i = 0; i < nGroups; i++) mtfG.push(i);
+      var sel = new Uint8Array(nSel);
+      for (i = 0; i < nSel; i++) { var k = 0; while (br.get(1)) { k++; if (k >= nGroups) throw new Error('bzip2: bad selector'); } var v = mtfG[k]; mtfG.splice(k, 1); mtfG.unshift(v); sel[i] = v; }
+      // Huffman tables
+      var tables = [];
+      for (var g = 0; g < nGroups; g++) {
+        var len = new Uint8Array(alphaSize), cur = br.get(5);
+        for (i = 0; i < alphaSize; i++) {
+          for (;;) { if (cur < 1 || cur > 20) throw new Error('bzip2: bad code length'); if (!br.get(1)) break; cur += br.get(1) ? -1 : 1; }
+          len[i] = cur;
+        }
+        var minL = 32, maxL = 0; for (i = 0; i < alphaSize; i++) { if (len[i] > maxL) maxL = len[i]; if (len[i] < minL) minL = len[i]; }
+        // canonical decode tables: limit, base, perm (as in the reference implementation)
+        var perm = [], pp = 0; for (var l = minL; l <= maxL; l++) for (i = 0; i < alphaSize; i++) if (len[i] === l) perm[pp++] = i;
+        var base = new Int32Array(23), limit = new Int32Array(23);
+        for (i = 0; i < alphaSize; i++) base[len[i] + 1]++;
+        for (i = 1; i < 23; i++) base[i] += base[i - 1];
+        var vec = 0;
+        for (i = minL; i <= maxL; i++) { vec += base[i + 1] - base[i]; limit[i] = vec - 1; vec <<= 1; }
+        for (i = minL + 1; i <= maxL; i++) base[i] = ((limit[i - 1] + 1) << 1) - base[i];
+        tables.push({ minL: minL, maxL: maxL, perm: perm, base: base, limit: limit });
+      }
+      // MTF + RLE2 decode into tt
+      var mtf = []; for (i = 0; i < 256; i++) mtf.push(i);
+      var unzftab = new Int32Array(256), EOB = nInUse + 1, gIdx = -1, gLeft = 0, T = null, nblock = 0, runPos = 0, runAcc = 0;
+      for (;;) {
+        if (!gLeft) { gIdx++; if (gIdx >= nSel) throw new Error('bzip2: ran out of selectors'); T = tables[sel[gIdx]]; gLeft = 50; }
+        gLeft--;
+        var zn = T.minL, zvec = br.get(zn);
+        while (zn <= 20 && zvec > T.limit[zn]) { zn++; zvec = (zvec << 1) | br.get(1); }
+        if (zn > 20) throw new Error('bzip2: bad Huffman code');
+        var sym = T.perm[zvec - T.base[zn]];
+        if (sym === 0 || sym === 1) {   // RUNA / RUNB
+          if (!runPos) { runPos = 1; runAcc = 0; }
+          runAcc += (sym + 1) * runPos; runPos <<= 1;
+          continue;
+        }
+        if (runPos) {
+          var ch = seqToUnseq[mtf[0]]; unzftab[ch] += runAcc;
+          if (nblock + runAcc > max) throw new Error('bzip2: block overflow');
+          while (runAcc--) tt[nblock++] = ch;
+          runPos = 0; runAcc = 0;
+        }
+        if (sym === EOB) break;
+        var idx = sym - 1, val = mtf[idx]; mtf.splice(idx, 1); mtf.unshift(val);
+        var c2 = seqToUnseq[val]; unzftab[c2]++;
+        if (nblock >= max) throw new Error('bzip2: block overflow'); tt[nblock++] = c2;
+      }
+      if (orig >= nblock) throw new Error('bzip2: bad origin pointer');
+      // inverse BWT
+      var cftab = new Int32Array(257); for (i = 0; i < 256; i++) cftab[i + 1] = cftab[i] + unzftab[i];
+      for (i = 0; i < nblock; i++) { var b = tt[i] & 0xff; tt[cftab[b]] |= i << 8; cftab[b]++; }
+      var pos = tt[orig] >>> 8, block = new Uint8Array(nblock), bi = 0;
+      for (i = 0; i < nblock; i++) { var e = tt[pos]; block[bi++] = e & 0xff; pos = e >>> 8; }
+      // undo the initial run-length step (4 equal bytes followed by a count)
+      var dec = new Uint8Array(nblock * 2 + 16), di = 0, last = -1, rl = 0;
+      for (i = 0; i < nblock; i++) {
+        var x = block[i];
+        if (rl === 4) { if (di + x > dec.length) { var nd = new Uint8Array((di + x) * 2); nd.set(dec); dec = nd; } for (var r = 0; r < x; r++) dec[di++] = last; rl = 0; last = -1; continue; }
+        if (x === last) rl++; else { rl = 1; last = x; }
+        if (di >= dec.length) { var nd2 = new Uint8Array(dec.length * 2); nd2.set(dec); dec = nd2; }
+        dec[di++] = x;
+      }
+      out.push(dec.subarray(0, di)); total += di;
+      for (i = 0; i < nblock; i++) tt[i] = 0;
+    }
+    var res = new Uint8Array(total), o = 0; out.forEach(function (a) { res.set(a, o); o += a.length; });
+    return res;
+  }
+  return { decode: decode };
+})();
+
+var NX3 = (function () {
+  var GATE_KM = { 56: 1, 159: 0.25, 161: 0.25, 163: 0.25 };
+  function f32(hi, lo) { var b = new DataView(new ArrayBuffer(4)); b.setUint16(0, hi & 0xffff); b.setUint16(2, lo & 0xffff); return b.getFloat32(0); }
+  function legacyLut(th) {   // 16 threshold words -> value per level (NaN for no data, Infinity for range folded)
+    var names = ['Blank', 'TH', 'ND', 'RF', 'BI', 'GC', 'IC', 'GR', 'WS', 'DS', 'RA', 'HR', 'BD', 'HA', 'UK'], lut = [];
+    for (var i = 0; i < 16; i++) {
+      var t = th[i] & 0xffff, codes = t >> 8, val = t & 0xff, lab = '';
+      if (codes >> 7) { lab = names[val] || ''; val = lab === 'RF' ? Infinity : NaN; }
+      else if (codes >> 6) val *= 0.01; else if (codes >> 5) val *= 0.05; else if (codes >> 4) val *= 0.1;
+      if (!(codes >> 7) && (codes & 1)) val = -val;
+      lut.push(val);
+    }
+    return lut;
+  }
+  function parse(buf) {
+    var u8 = new Uint8Array(buf), off = 0;
+    // WMO heading and AWIPS id: two lines ending \r\r\n
+    for (var n = 0, i = 0; i < Math.min(u8.length - 2, 80); i++) if (u8[i] === 13 && u8[i + 1] === 13 && u8[i + 2] === 10) { n++; if (n === 2) { off = i + 3; break; } }
+    var dv = new DataView(buf, off), code = dv.getInt16(0), msgDate = dv.getUint16(2), msgTime = dv.getUint32(4);
+    var P = 18;   // product description block
+    if (dv.getInt16(P) !== -1) throw new Error('Level III: bad product block');
+    var lat = dv.getInt32(P + 2) / 1000, lon = dv.getInt32(P + 6) / 1000, pcode = dv.getInt16(P + 12);
+    // The ICD numbers halfwords from the start of the message header (1-9); the product block is 10-60.
+    var H = function (k) { return dv.getInt16(2 * (k - 1)); };
+    var volDate = dv.getUint16(2 * (21 - 1)), volTime = dv.getUint32(2 * (22 - 1));
+    var p3 = H(30), th = []; for (i = 0; i < 16; i++) th.push(H(31 + i));
+    var p8 = H(51), symOff = dv.getUint32(2 * (55 - 1)) * 2;   // p8: compression method; halfwords 55-56: offset to symbology, in halfwords
+    var data = new DataView(buf, off), base = 0;
+    if ((pcode === 159 || pcode === 161 || pcode === 163) && p8 === 1) {   // bzip2 after the product block
+      var raw = BZ2.decode(new Uint8Array(buf, off + 120));
+      data = new DataView(raw.buffer, raw.byteOffset, raw.byteLength); base = 0;
+    } else base = symOff || 120;
+    var S = base;
+    if (data.getInt16(S) !== -1 || data.getInt16(S + 2) !== 1) throw new Error('Level III: bad symbology block');
+    var q = S + 10;   // divider, id, length (4), layers
+    if (data.getInt16(q) !== -1) throw new Error('Level III: bad layer'); q += 6;
+    var pk = data.getUint16(q); q += 2;
+    var first = data.getUint16(q), nb = data.getUint16(q + 2), nr = data.getUint16(q + 10); q += 12;
+    var rads = [];
+    if (pk === 16) {
+      for (var r = 0; r < nr; r++) { var nbytes = data.getUint16(q), a0 = data.getInt16(q + 2) / 10, da = data.getInt16(q + 4) / 10; q += 6;
+        rads.push({ a0: a0, a1: a0 + da, v: new Uint8Array(data.buffer, data.byteOffset + q, Math.min(nbytes, nb)) }); q += nbytes; }
+    } else if (pk === 0xAF1F) {
+      for (r = 0; r < nr; r++) { var nh = data.getUint16(q), b0 = data.getInt16(q + 2) / 10, db = data.getInt16(q + 4) / 10; q += 6;
+        var vals = new Uint8Array(nb), vi = 0;
+        for (var j = 0; j < nh * 2; j++) { var run = data.getUint8(q + j), cnt = run >> 4, lv = run & 15; for (var c = 0; c < cnt && vi < nb; c++) vals[vi++] = lv; }
+        q += nh * 2; rads.push({ a0: b0, a1: b0 + db, v: vals }); }
+    } else throw new Error('Level III: packet ' + pk.toString(16) + ' is not handled');
+    var lut;
+    if (pcode === 56) lut = legacyLut(th);
+    else { var scale = f32(th[0], th[1]), offset = f32(th[2], th[3]), mx = th[5] & 0xffff, lead = th[6]; lut = new Float32Array(256), trail = th[7]; for (i = 0; i < 256; i++) lut[i] = i < lead ? (i === 1 && lead > 1 ? Infinity : NaN) : i > mx - trail ? NaN : (i - offset) / scale; }
+    var ms = (volDate - 1) * 864e5 + volTime * 1000;
+    return { code: pcode, lat: lat, lon: lon, el: p3 / 10, t: ms, first: first, nb: nb, gate: GATE_KM[pcode] || 1, rads: rads, lut: lut, msgT: (msgDate - 1) * 864e5 + msgTime * 1000 };
+  }
+  return { parse: parse, GATE_KM: GATE_KM };
+})();
+
 var HRMAP = (function () {
   var W = 1000, H = 640, MI = 1609.344, TTL = 2 * 60000;
   var RADAR = 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity_time/ImageServer';
   var SAT = 'https://nowcoast.noaa.gov/geoserver/satellite/wms';
   var SITE = 'https://opengeo.ncep.noaa.gov/geoserver/', SITES = [["kabr",45.456,-98.413,"Aberdeen"],["kabx",35.15,-106.824,"Albuquerque"],["kakq",36.984,-77.007,"Norfolk"],["kama",35.233,-101.709,"Amarillo"],["kamx",25.611,-80.413,"Miami"],["kapx",44.906,-84.72,"NCL Michigan"],["karx",43.823,-91.191,"La Crosse"],["katx",48.195,-122.496,"Seattle"],["kbbx",39.496,-121.632,"Beale AFB"],["kbgm",42.2,-75.985,"Binghamton"],["kbhx",40.498,-124.292,"Eureka (Bunker Hill)"],["kbis",46.771,-100.76,"Bismarck"],["kblx",45.854,-108.607,"Billings"],["kbmx",33.172,-86.77,"Birmingham"],["kbox",41.956,-71.137,"Boston"],["kbro",25.916,-97.419,"Brownsville"],["kbuf",42.949,-78.737,"Buffalo"],["kbyx",24.597,-81.703,"Key West"],["kcae",33.949,-81.119,"Columbia"],["kcbw",46.039,-67.806,"Caribou"],["kcbx",43.49,-116.236,"Boise"],["kccx",40.923,-78.004,"State College"],["kcle",41.413,-81.86,"Cleveland"],["kclx",32.656,-81.042,"Charleston,SC"],["kcrp",27.784,-97.511,"Corpus Christi"],["kcxx",44.511,-73.166,"Burlington"],["kcys",41.152,-104.806,"Cheyenne"],["kdax",38.501,-121.678,"Sacramento"],["kddc",37.761,-99.969,"Dodge City"],["kdfx",29.273,-100.28,"Laughlin AFB"],["kdgx",32.28,-89.984,"Jackson/Brandon,MS"],["kdix",39.947,-74.411,"Philadelphia"],["kdlh",46.837,-92.21,"Duluth"],["kdmx",41.731,-93.723,"Des Moines"],["kdox",38.826,-75.44,"Dover AFB"],["kdtx",42.7,-83.472,"Detroit"],["kdvn",41.612,-90.581,"Quad Cities"],["kdyx",32.538,-99.254,"Dyess AFB"],["keax",38.81,-94.264,"Pleasant Hill"],["kemx",31.894,-110.63,"Tucson"],["kenx",42.587,-74.064,"Albany"],["keox",31.461,-85.459,"Ft Rucker"],["kepz",31.873,-106.698,"El Paso"],["kesx",35.701,-114.891,"Las Vegas"],["kevx",30.565,-85.922,"Eglin Afb"],["kewx",29.704,-98.029,"Austin/San Antonio"],["keyx",35.098,-117.561,"Edwards AFB"],["kfcx",37.024,-80.274,"Roanoke"],["kfdr",34.362,-98.977,"Altus AFB"],["kfdx",34.634,-103.619,"Cannon AFB"],["kffc",33.363,-84.566,"Atlanta"],["kfsd",43.588,-96.729,"Sioux Falls"],["kfsx",34.574,-111.198,"Flagstaff"],["kftg",39.787,-104.546,"Denver"],["kfws",32.573,-97.303,"Dallas/Ft Worth"],["kggw",48.206,-106.625,"Glasgow"],["kgjx",39.062,-108.214,"Grand Junction"],["kgld",39.367,-101.7,"Goodland"],["kgrb",44.499,-88.111,"Green Bay"],["kgrk",30.722,-97.383,"Ft Hood"],["kgrr",42.894,-85.545,"Grand Rapids"],["kgsp",34.883,-82.22,"Greer"],["kgwx",33.897,-88.329,"Columbus AFB"],["kgyx",43.891,-70.256,"Portland,ME"],["khdc",30.52,-90.407,"Hammond"],["khdx",33.077,-106.12,"Holloman AFB"],["khgx",29.472,-95.079,"Houston"],["khnx",36.314,-119.632,"San Joaquin Valley"],["khpx",36.737,-87.285,"Ft Campbell"],["khtx",34.931,-86.084,"Northeast Alabama"],["kict",37.654,-97.443,"Wichita"],["kicx",37.591,-112.862,"Cedar City"],["kiln",39.42,-83.822,"Cincinnati"],["kilx",40.15,-89.337,"Lincoln"],["kind",39.707,-86.28,"Indianapolis"],["kinx",36.175,-95.564,"Tulsa"],["kiwa",33.289,-111.67,"Phoenix"],["kiwx",41.359,-85.7,"Northern Indiana"],["kjax",30.485,-81.702,"Jacksonville"],["kjgx",32.675,-83.351,"Robins AFB"],["kjkl",37.591,-83.313,"Jackson,KY"],["klbb",33.654,-101.814,"Lubbock"],["klch",30.125,-93.216,"Lake Charles"],["klgx",47.117,-124.107,"Langley Hill"],["klnx",41.958,-100.576,"North Platte"],["klot",41.604,-88.084,"Chicago"],["klrx",40.74,-116.803,"Elko"],["klsx",38.699,-90.683,"St Louis"],["kltx",33.989,-78.429,"Wilmington"],["klvx",37.975,-85.944,"Louisville"],["klwx",38.976,-77.487,"Sterling"],["klzk",34.836,-92.262,"Little Rock"],["kmaf",31.943,-102.189,"Midland/Odessa"],["kmax",42.081,-122.717,"Medford"],["kmbx",48.392,-100.864,"Minot AFB"],["kmhx",34.776,-76.876,"Morehead City"],["kmkx",42.968,-88.551,"Milwaukee"],["kmlb",28.113,-80.654,"Melbourne"],["kmob",30.679,-88.24,"Mobile"],["kmpx",44.849,-93.566,"Minneapolis"],["kmqt",46.531,-87.548,"Marquette"],["kmrx",36.168,-83.402,"Knoxville"],["kmsx",47.041,-113.986,"Missoula"],["kmtx",41.263,-112.448,"Salt Lake City"],["kmux",37.155,-121.898,"San Francisco"],["kmvx",47.528,-97.325,"Fargo/Grand Forks"],["kmxx",32.537,-85.79,"Maxwell AFB"],["knkx",32.919,-117.042,"San Diego"],["knqa",35.345,-89.873,"Memphis"],["koax",41.32,-96.367,"Omaha"],["kohx",36.247,-86.562,"Nashville"],["kokx",40.866,-72.864,"Brookhaven"],["kotx",47.681,-117.626,"Spokane"],["kpah",37.068,-88.772,"Paducah"],["kpbz",40.532,-80.218,"Pittsburgh"],["kpdt",45.691,-118.853,"Pendleton"],["kpoe",31.155,-92.976,"Ft Polk"],["kpux",38.459,-104.181,"Pueblo"],["krax",35.665,-78.49,"Raleigh/Durham"],["krgx",39.754,-119.462,"Reno"],["kriw",43.066,-108.477,"Riverton/Lander"],["krlx",38.311,-81.723,"Charleston,WV"],["krtx",45.715,-122.965,"Portland,OR"],["ksfx",43.106,-112.686,"Pocatello"],["ksgf",37.235,-93.4,"Springfield"],["kshv",32.451,-93.841,"Shreveport"],["ksjt",31.371,-100.492,"San Angelo"],["ksox",33.818,-117.636,"Santa Ana Mts"],["ksrx",35.29,-94.362,"Western Arkansas"],["ktbw",27.705,-82.402,"Tampa"],["ktfx",47.46,-111.385,"Great Falls"],["ktlh",30.397,-84.329,"Tallahassee"],["ktlx",35.333,-97.278,"Norman"],["ktwx",38.997,-96.232,"Topeka"],["ktyx",43.756,-75.68,"Ft Drum"],["kudx",44.125,-102.83,"Rapid City"],["kuex",40.321,-98.442,"Grand Island"],["kvax",30.89,-83.002,"Moody AFB"],["kvbx",34.839,-120.398,"Vandenberg AFB"],["kvnx",36.741,-98.127,"Vance AFB"],["kvtx",34.412,-119.179,"Los Angeles"],["kvwx",38.26,-87.725,"Evansville,IN"],["kyux",32.495,-114.657,"Yuma"],["pabc",60.792,-161.876,"Bethel"],["pacg",56.853,-135.529,"Sitka"],["paec",64.511,-165.295,"Nome"],["pahg",60.726,-151.351,"Kenai"],["paih",59.462,-146.301,"Middleton Island"],["pakc",58.679,-156.629,"King Salmon"],["papd",65.035,-147.501,"Fairbanks Faa"],["pgua",13.456,144.811,"Andersen AFB"],["phki",21.894,-159.552,"South Kauai"],["phkm",20.125,-155.778,"Kamuela/Kohala Apt"],["phmo",21.133,-157.18,"Molokai"],["phwa",19.095,-155.569,"South Shore"],["tjua",18.116,-66.078,"San Juan"]];
-  var BASES = [['radar', 'Radar', 'Radar, base reflectivity', null], ['site', 'Site radar', 'Radar, super-resolution reflectivity', null, 'sr_bref'], ['vel', 'Velocity', 'Radar, base velocity', null, 'sr_bvel'], ['ir', 'Infrared', 'Satellite, infrared', 'goes_longwave_imagery'],
+  /* v3.80.0: one radar's products under Site radar. [id, chip, description, satellite layer, NWS geoserver layer, Level III code, product chip]:
+     reflectivity, velocity and precipitation type from the NWS geoserver; storm-relative velocity, correlation coefficient
+     and differential reflectivity decoded from the radar's own Level III files (NX3). All at the lowest tilt, 0.5 degrees. */
+  var BASES = [['radar', 'Radar', 'Radar, base reflectivity', null], ['site', 'Site radar', 'Radar, super-resolution reflectivity', null, 'sr_bref', 0, 'Reflectivity'], ['vel', 'Velocity', 'Radar, base velocity', null, 'sr_bvel', 0, 'Velocity'],
+               ['srv', 'Storm-relative', 'Radar, storm-relative velocity', null, null, 56, 'Storm-relative', 'Wind toward (green) and away from (red) the radar with the storms\u2019 own motion taken out, so a rotating storm shows as a tight green-red couplet. Purple is range folded (no reliable reading). Knots, lowest tilt.'],
+               ['cc', 'CC', 'Radar, correlation coefficient', null, null, 161, 'CC', 'How alike the targets in each gate are. Near 1 (pink to white) is rain or snow alone; 0.90 to 0.97 is a mix, such as melting snow (the rain-snow line) or hail; under 0.8 in a strong rotation couplet can mean tornado debris. Birds, insects and ground clutter also read low.'],
+               ['zdr', 'ZDR', 'Radar, differential reflectivity', null, null, 159, 'ZDR', 'The shape of the targets, in decibels. Large flat raindrops read 2 to 5; hail and dry snow tumble and read near 0; a ring or column of high values marks melting or growing drops. Birds and insects read high and noisy.'],
+               ['hc', 'Precip type', 'Radar, hydrometeor classification', null, 'bdhc', 0, 'Precip type', 'The radar\u2019s own call for each gate (rain, heavy rain, dry snow, wet snow, ice crystals, graupel, hail, biological, ground clutter), worked out from all its dual-polarization readings. It describes what is at beam height, not necessarily what reaches the ground.'],
+               ['ir', 'Infrared', 'Satellite, infrared', 'goes_longwave_imagery'],
                ['vis', 'Visible', 'Satellite, visible', 'goes_visible_imagery'], ['wv', 'Water vapor', 'Satellite, water vapor', 'goes_water_vapor_imagery']];
   var VIEWS = [['us', 'National', 0], ['region', 'Region', 380], ['local', 'Local', 120], ['close', 'Close', 50]];
   var HALF = { region: 380, local: 120, close: 50 };
@@ -14286,7 +14463,8 @@ var HRMAP = (function () {
   function clampHalf(s, h) { return Math.max(zmin(s), Math.min(zmax(s), h)); }
   var inst = {}, meta = {};
   function state(k) { return inst[k] || (inst[k] = { base: k === 'radar' ? 'radar' : 'ir', overlay: false, view: 'us', half: 380, off: [0, 0], loc: '', seq: 0, frames: [], idx: 0, timer: null, shown: false, site: 0, weak: false, fast: lsGet('hr_fast', '1') === '1', ltg: lsGet('hr_ltg_' + k, k === 'radar' ? '1' : '0') === '1', ltgDown: false, curLtg: null, live: null, liveErr: '' }); }
-  function isSite(s) { return s.base === 'site' || s.base === 'vel'; }
+  function isSite(s) { var b = baseOf(s.base); return !!b[6]; }
+  function isL3(s) { return !!baseOf(s.base)[5]; }
   function sitesNear() { var la = +currentLat, lo = +currentLon, c = Math.cos(la * Math.PI / 180); return SITES.map(function (x) { var dy = (x[1] - la) * 69.05, dx = (x[2] - lo) * 69.05 * c; return { id: x[0], lat: x[1], lon: x[2], name: x[3], mi: Math.sqrt(dx * dx + dy * dy) }; }).sort(function (a, b) { return a.mi - b.mi; }).slice(0, 3); }
   function siteOf(s) { var n = sitesNear(); return n[Math.min(s.site, n.length - 1)]; }
   function baseOf(id) { for (var i = 0; i < BASES.length; i++) if (BASES[i][0] === id) return BASES[i]; return BASES[0]; }
@@ -14326,6 +14504,66 @@ var HRMAP = (function () {
   function satUrl(V, layer, ms, px2) { return px(SAT + '?service=WMS&version=1.1.1&request=GetMap&layers=' + layer + '&styles=&srs=EPSG:5070&bbox=' + V.bbox.join(',') + '&width=' + px2[0] + '&height=' + px2[1] + '&format=image/jpeg&time=' + encodeURIComponent(new Date(ms).toISOString())); }
 
   function siteUrl(V, id, lay, ms, px2) { return px(SITE + id + '/ows?service=WMS&version=1.1.1&request=GetMap&layers=' + id + '_' + lay + '&styles=&srs=EPSG:5070&bbox=' + V.bbox.join(',') + '&width=' + px2[0] + '&height=' + px2[1] + '&format=image/png&transparent=true&time=' + encodeURIComponent(new Date(ms).toISOString())); }
+  /* ---- Level III (v3.80.0) ---- */
+  var L3 = 'https://unidata-nexrad-level3.s3.amazonaws.com/', L3P = { 56: 'N0S', 159: 'N0X', 161: 'N0C' }, l3Cache = {}, l3Order = [];
+  function l3Id(id) { return id.slice(1).toUpperCase(); }   // kmkx -> MKX, as the archive names its files
+  function l3Times(id, code) {
+    var key = 'l3_' + id + '_' + code, m = meta[key]; if (m && Date.now() - m.at < TTL) return Promise.resolve(m.v);
+    var day = function (ms) { var d = new Date(ms); return d.getUTCFullYear() + '_' + String(d.getUTCMonth() + 1).padStart(2, '0') + '_' + String(d.getUTCDate()).padStart(2, '0'); };
+    var list = function (ms) { return netFetch(L3 + '?list-type=2&prefix=' + l3Id(id) + '_' + L3P[code] + '_' + day(ms)).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (x) { var out = [], re = /<Key>([A-Z0-9]{3}_[A-Z0-9]{3}_(\d{4})_(\d\d)_(\d\d)_(\d\d)_(\d\d)_(\d\d))<\/Key>/g, q; while ((q = re.exec(x))) out.push({ key: q[1], t: Date.UTC(+q[2], +q[3] - 1, +q[4], +q[5], +q[6], +q[7]) }); return out; }); };
+    var now = Date.now();
+    return list(now).then(function (a) { return a.length >= 12 || new Date(now).getUTCHours() > 2 ? a : list(now - 864e5).then(function (b) { return b.concat(a); }, function () { return a; }); })
+      .then(function (v) { v = v.filter(function (x) { return now - x.t < 3 * 36e5; }).sort(function (a, b) { return a.t - b.t; }); if (!v.length) throw new Error('no recent ' + L3P[code] + ' scans from ' + id.toUpperCase() + ' in the archive'); meta[key] = { at: Date.now(), v: v }; return v; });
+  }
+  function l3Get(key) {
+    if (l3Cache[key]) return l3Cache[key];
+    var p = l3Cache[key] = netFetch(L3 + key).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(function (b) { return NX3.parse(b); });
+    p.catch(function () { delete l3Cache[key]; });
+    l3Order.push(key); while (l3Order.length > 40) delete l3Cache[l3Order.shift()];
+    return p;
+  }
+  function stops(S) { var c = S.map(function (x) { return [x[0], parseInt(x[1].slice(1, 3), 16), parseInt(x[1].slice(3, 5), 16), parseInt(x[1].slice(5, 7), 16)]; });
+    return function (v) { if (!isFinite(v)) return null; if (v <= c[0][0]) return c[0].slice(1); for (var i = 1; i < c.length; i++) if (v <= c[i][0]) { var a = c[i - 1], b = c[i], f = (v - a[0]) / (b[0] - a[0]); return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f]; } return c[c.length - 1].slice(1); }; }
+  var PAL = {
+    161: { f: stops([[0.2, '#161616'], [0.45, '#1B2A6B'], [0.6, '#2F5FB3'], [0.7, '#4FA3D9'], [0.75, '#3FB37F'], [0.8, '#9CCB3C'], [0.85, '#F2E14B'], [0.9, '#F59E0B'], [0.93, '#E8590C'], [0.95, '#D7263D'], [0.97, '#9D174D'], [0.99, '#E879F9'], [1.05, '#FFFFFF']]), lo: 0.2, hi: 1.05, ticks: [0.2, 0.5, 0.7, 0.8, 0.9, 0.95, 1.0], unit: '', fmt: function (v) { return v.toFixed(v < 0.95 ? 1 : 2); } },
+    159: { f: stops([[-4, '#1A1A1A'], [-2, '#555555'], [-0.5, '#9A9A9A'], [0, '#C8C8C8'], [0.5, '#1D3A8A'], [1, '#2563EB'], [1.5, '#22D3EE'], [2, '#16A34A'], [2.5, '#A3E635'], [3, '#FACC15'], [4, '#F97316'], [5, '#DC2626'], [6, '#BE185D'], [8, '#F5D0FE']]), lo: -4, hi: 8, ticks: [-4, -2, 0, 1, 2, 3, 4, 6, 8], unit: ' dB', fmt: function (v) { return String(v); } },
+    56: { f: stops([[-64, '#C3FFC3'], [-50, '#39FF14'], [-36, '#00D000'], [-20, '#009000'], [-10, '#005A00'], [-1, '#2D4A2D'], [0, '#6E6E6E'], [1, '#4A2D2D'], [10, '#7A0000'], [20, '#B00000'], [36, '#F00000'], [50, '#FF7070'], [64, '#FFC8C8']]), lo: -64, hi: 64, ticks: [-50, -30, -10, 0, 10, 30, 50], unit: ' kt', fmt: function (v) { return (v > 0 ? '+' : '') + v; } } };
+  var RF_C = [123, 47, 190];   // range folded
+  function l3Layer(V, d, size) {   // one scan drawn into the frame's own projection; null when nothing shows
+    var cv = document.createElement('canvas'); cv.width = size[0]; cv.height = size[1]; cv.className = 'hr-rad';
+    var x = cv.getContext('2d'), bw = V.bbox[2] - V.bbox[0], bh = V.bbox[3] - V.bbox[1], kx = size[0] / bw, ky = size[1] / bh, P = PAL[d.code];
+    var col = []; for (var i = 0; i < d.lut.length; i++) { var v = d.lut[i]; col[i] = v === Infinity ? 'rgb(' + RF_C.join(',') + ')' : (function (c) { return c ? 'rgb(' + c.map(Math.round).join(',') + ')' : null; })(P.f(v)); }
+    var la0 = d.lat, lo0 = d.lon, cl = Math.cos(la0 * D2R), KM = 111.195;
+    var pt = function (r, az) { var a = az * D2R, m = albers(lo0 + r * Math.sin(a) / (KM * cl), la0 + r * Math.cos(a) / KM); return [(m[0] - V.bbox[0]) * kx, (V.bbox[3] - m[1]) * ky]; };
+    var paths = {}, drawn = 0, cxy = pt(0, 0), reach = (d.first + d.nb) * d.gate;
+    var edge = function (r) { var c = pt(r, 90); return Math.abs(c[0] - cxy[0]); };   // pixels per km near the radar, to skip off-frame radials cheaply
+    d.rads.forEach(function (R) {
+      var a0 = R.a0 - 0.06, a1 = R.a1 + 0.06, v = R.v, n = v.length, g = 0;   // a hair of overlap so radials do not show seams
+      while (g < n) {
+        var c = v[g], k = col[c], h = g + 1; while (h < n && col[v[h]] === k) h++;
+        if (k) { var r0 = (d.first + g) * d.gate, r1 = (d.first + h) * d.gate, p1 = pt(r0, a0), p2 = pt(r1, a0), p3 = pt(r1, a1), p4 = pt(r0, a1);
+          if (!(Math.max(p1[0], p2[0], p3[0], p4[0]) < 0 || Math.min(p1[0], p2[0], p3[0], p4[0]) > size[0] || Math.max(p1[1], p2[1], p3[1], p4[1]) < 0 || Math.min(p1[1], p2[1], p3[1], p4[1]) > size[1])) {
+            var pa = paths[k] || (paths[k] = new Path2D()); pa.moveTo(p1[0], p1[1]); pa.lineTo(p2[0], p2[1]); pa.lineTo(p3[0], p3[1]); pa.lineTo(p4[0], p4[1]); pa.closePath(); drawn++; } }
+        g = h;
+      }
+    });
+    if (!drawn) return null;
+    Object.keys(paths).forEach(function (k) { x.fillStyle = k; x.fill(paths[k]); });
+    return cv;
+  }
+  var l3LegendCache = {};
+  function l3Legend(code) {   // a colour key in the style of the service legends: bar and values
+    if (l3LegendCache[code]) return l3LegendCache[code];
+    var P = PAL[code], W2 = 500, H2 = code === 56 ? 48 : 34, cv = document.createElement('canvas'); cv.width = W2; cv.height = H2; var x = cv.getContext('2d');
+    x.fillStyle = 'rgba(11,14,20,0.88)'; x.fillRect(0, 0, W2, H2);
+    for (var i = 0; i < W2 - 20; i++) { var v = P.lo + (P.hi - P.lo) * i / (W2 - 21), c = P.f(v); x.fillStyle = 'rgb(' + c.map(Math.round).join(',') + ')'; x.fillRect(10 + i, 4, 1, 12); }
+    x.fillStyle = '#E6EAF2'; x.font = '600 12px Inter, system-ui, sans-serif'; x.textAlign = 'center';
+    P.ticks.forEach(function (t) { var px2 = 10 + (t - P.lo) / (P.hi - P.lo) * (W2 - 21); x.fillRect(px2, 15, 1, 3); x.fillText(P.fmt(t), Math.max(14, Math.min(W2 - 30, px2)), 30); });
+    if (P.unit) { x.textAlign = 'right'; x.fillText(P.unit.trim(), W2 - 6, 30); }
+    if (code === 56) { x.textAlign = 'left'; x.fillStyle = '#9AD99A'; x.fillText('\u2190 toward the radar', 10, 44); x.fillStyle = '#F29A9A'; x.textAlign = 'right'; x.fillText('away from the radar \u2192', W2 - 10, 44); }
+    return (l3LegendCache[code] = cv.toDataURL('image/png'));
+  }
   function legendUrl(id, lay) { return px(SITE + id + '/ows?service=WMS&version=1.3.0&request=GetLegendGraphic&format=image/png&width=500&height=30&layer=' + id + '_' + lay); }
   /* ---- newest available times ---- */
   function getJson(url) { return netFetch(px(url), { headers: { Accept: 'application/json' } }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); }
@@ -14350,6 +14588,7 @@ var HRMAP = (function () {
   }
   function frameTimes(s) {
     var b = baseOf(s.base);
+    if (isL3(s)) return l3Times(siteOf(s).id, b[5]).then(function (v) { return v.slice(s.fast ? -12 : -7).map(function (x) { return { sat: null, rad: null, site: x.t, key: x.key, at: x.t }; }); });
     if (isSite(s)) return siteTimes(siteOf(s).id, b[4]).then(function (v) { return v.slice(s.fast ? -12 : -7).map(function (t) { return { sat: null, rad: null, site: t, at: t }; }); });
     if (s.base === 'radar') return radarTimes().then(function (e) { var out = []; for (var k = s.fast ? 12 : 6; k >= 0; k--) { var t = e[1] - k * (s.fast ? 300000 : 600000); if (t >= e[0]) out.push({ sat: null, rad: t, at: t }); } return out; });
     return Promise.all([satTimes(), s.overlay ? radarTimes().catch(function () { return null; }) : null]).then(function (res) {
@@ -14469,7 +14708,8 @@ var HRMAP = (function () {
   }
   function bar(k) {
     var s = state(k), el = build(k), has = !!(currentLat && currentLon);
-    el.querySelector('.hr-bases').innerHTML = BASES.map(function (b) { return chip(b[1], b[0] === s.base, 'data-b="' + b[0] + '"'); }).join('') + chip('Radar on top', s.overlay && !!baseOf(s.base)[3], 'data-o="1"' + (baseOf(s.base)[3] ? '' : ' disabled')) + chip('Lightning', s.ltg, 'data-l="1" title="Lightning from the ground networks, 15 minutes at a time"') + (s.base === 'site' ? chip('Weak echoes', s.weak, 'data-w="1"') : '') +
+    el.querySelector('.hr-bases').innerHTML = BASES.filter(function (b) { return !b[6] || b[0] === 'site'; }).map(function (b) { return chip(b[1], b[0] === s.base || (b[0] === 'site' && isSite(s)), 'data-b="' + b[0] + '"'); }).join('') +
+      (isSite(s) ? BASES.filter(function (b) { return b[6]; }).map(function (b, i) { return chip(b[6], b[0] === s.base, 'data-b="' + b[0] + '"' + (i === 0 ? ' data-head="Product"' : '') + ' title="' + esc(b[7] || b[2]) + '"'); }).join('') : '') + chip('Radar on top', s.overlay && !!baseOf(s.base)[3], 'data-o="1"' + (baseOf(s.base)[3] ? '' : ' disabled')) + chip('Lightning', s.ltg, 'data-l="1" title="Lightning from the ground networks, 15 minutes at a time"') + (s.base === 'site' ? chip('Weak echoes', s.weak, 'data-w="1"') : '') +
       (isSite(s) ? sitesNear().map(function (x, i) { return chip(x.id.toUpperCase() + ', ' + Math.round(x.mi) + ' mi', i === Math.min(s.site, 2), 'data-s="' + i + '"' + (i === 0 ? ' data-head="Which radar"' : '') + ' title="' + esc(x.name) + '"'); }).join('') : '');
     el.querySelector('.hr-views').innerHTML = VIEWS.map(function (v) { return chip(v[1] + (v[2] ? ', ' + v[2] * 2 + ' mi' : ''), v[2] ? s.V.v !== 'us' && Math.abs(s.V.half - v[2]) < v[2] * 0.04 && !s.off[0] && !s.off[1] : s.V.v === 'us', 'data-v="' + v[0] + '"' + ((v[2] && !has) || (!v[2] && isSite(s)) ? ' disabled' : '')); }).join('') + chip('Every frame', s.fast, 'data-f="1" title="Loop every frame the source publishes, over about an hour"');
     el.querySelector('[data-play]').textContent = s.timer ? 'Pause' : s.loading ? (s.prog || 'Loading…') : 'Play loop';
@@ -14635,7 +14875,7 @@ var HRMAP = (function () {
       (moved ? zb('home', 'Centre on ' + esc((((document.getElementById('locName') || {}).textContent) || 'the loaded location').split(',')[0]), '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"></circle><circle cx="12" cy="12" r="1.6" style="fill:currentColor"></circle><path d="M12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22"></path></svg>', true) : '') + '</div>';
     stage.classList.toggle('can-move', V.v !== 'us');
     var carry = kept ? carryOf(k, stage, kept.V) : null; if (!carry) s.carryV = null;   // v3.64.0
-    stage.innerHTML = bg + '<div class="hr-layers"></div>' + o.join('') + zoom + (one ? '<img class="hr-legend" alt="Colour key' + (s.base === 'site' ? ', dBZ' : '') + '" src="' + esc(legendUrl(one.id, b[4])) + '">' : '');
+    stage.innerHTML = bg + '<div class="hr-layers"></div>' + o.join('') + zoom + (one ? '<img class="hr-legend" alt="Colour key' + (s.base === 'site' ? ', dBZ' : '') + '" src="' + esc(b[5] ? l3Legend(b[5]) : legendUrl(one.id, b[4])) + '">' : '');
     if (carry) stage.insertBefore(carry, stage.querySelector('.hr-layers'));
     stage.classList.remove('is-loading');
   }
@@ -14838,7 +15078,8 @@ var HRMAP = (function () {
     var place = function (el) { el.style.cssText = 'position:absolute;inset:auto;left:50%;top:50%;width:' + (V.fx * 100).toFixed(3) + '%;height:' + (V.fy * 100).toFixed(3) + '%;transform:translate(-50%,-50%) rotate(' + V.rot.toFixed(5) + 'rad)'; return el; };
     if (f.sat != null) jobs.push(one('hr-sat', satUrl(s.V, b[3], f.sat, size)));
     if (f.rad != null) jobs.push(one('hr-rad' + (f.sat != null ? ' hr-over' : ''), radarUrl(s.V, f.rad, size)));
-    if (f.site != null) { var id = siteOf(s).id; jobs.push((s.base === 'site' && !s.weak ? lut(id, b[4]) : Promise.resolve(null)).then(function (L) { return one('hr-rad', siteUrl(s.V, id, b[4], f.site, size), L ? function (im) { return clean(im, L); } : null); })); }
+    if (f.site != null && f.key) jobs.push(l3Get(f.key).then(function (d) { return l3Layer(V, d, size) || document.createElement('span'); }, function () { return null; }));   // a quiet scan is an empty layer, not a failure
+    else if (f.site != null) { var id = siteOf(s).id; jobs.push((s.base === 'site' && !s.weak ? lut(id, b[4]) : Promise.resolve(null)).then(function (L) { return one('hr-rad', siteUrl(s.V, id, b[4], f.site, size), L ? function (im) { return clean(im, L); } : null); })); }
     var live = s.ltg && f.live && s.live, want = live || (s.ltg && f.ltg != null);
     var clip = ltgClip(s), lj = live ? Promise.resolve(liveLayer(V, s.live, f.live, size, crisp, clip)) : want ? ltgLayer(V, f.ltg, size, crisp, clip).catch(function () { return null; }) : Promise.resolve(null);
     return Promise.all([Promise.all(jobs), lj]).then(function (res) {
@@ -14856,7 +15097,7 @@ var HRMAP = (function () {
     var det = el.querySelector('.regmap-detail'), dark = false;
     try { dark = s.base === 'vis' && currentLat && ASTRO.sunPosition(f.at, +currentLat, +currentLon).trueElev < -2; } catch (e) { dark = false; }
     det.textContent = dark ? 'The sun is down at ' + (((document.getElementById('locName') || {}).textContent || 'this location').split(',')[0]) + ', so the visible image is dark. Infrared works at night.' :
-      b[2] + ', frame ' + (s.idx + 1) + ' of ' + s.frames.length + (st1 ? ', one per radar scan.' + (s.base === 'site' && !s.weak ? ' Echoes under 10 dBZ are hidden; Weak echoes shows them.' : '') : s.base === 'radar' ? (s.fast ? ', 5 minutes apart.' : ', 10 minutes apart.') : (s.fast ? ', 5 minutes apart.' : ', 15 minutes apart.')) +
+      b[2] + ', frame ' + (s.idx + 1) + ' of ' + s.frames.length + (st1 ? ', one per radar scan.' + (s.base === 'site' && !s.weak ? ' Echoes under 10 dBZ are hidden; Weak echoes shows them.' : '') + (b[7] ? ' ' + b[7] + (b[5] ? ' Decoded on this device from the radar\u2019s own Level III file (NOAA archive on AWS).' : '') : '') : s.base === 'radar' ? (s.fast ? ', 5 minutes apart.' : ', 10 minutes apart.') : (s.fast ? ', 5 minutes apart.' : ', 15 minutes apart.')) +
       (!s.ltg || dark ? '' : f.live ? ' Each white bolt is a flash reported in the minutes named in the title box; read its place as good to a few miles. In a busy storm the newest 500 flashes fill the request, so the span is shorter. Lightning data: WarPulse Lightning API.' :
         ' Bolts mark lightning picked up by the ground networks during the 15 minutes named in the title box, a period that ends roughly 10 to 25 minutes before now. A bigger bolt means more strikes.' + (s.liveErr ? ' Live flashes did not load (' + s.liveErr + ').' : '')) +
       (s.ltg && !dark && st1 ? ' This is one radar’s picture, so lightning is drawn only within ' + SITE_REACH_MI + ' miles of it; the Radar view shows it everywhere.' : '');
