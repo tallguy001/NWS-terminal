@@ -1,4 +1,4 @@
-/* NWS Terminal edge worker (v3.71.2)
+/* NWS Terminal edge worker (v3.83.0)
    - serves the app shell from static assets with security + cache headers
    - /p/<kind>/...   same-origin read-only proxy for NOAA hosts without CORS
    - /p/gs/...       GribStream POST proxy (keeps the token off third parties)
@@ -7,9 +7,10 @@
    - /api/wicams     Wisconsin 511 road cameras near a point (key stays a worker secret)
    - /api/wiroads    Wisconsin 511 winter road conditions in a box (same key)
    - /api/config     what the server can do for the client
-   - /api/health     liveness for uptime checks */
+   - /api/health     liveness for uptime checks
+   - /push/...       push alerts: key, sub, unsub, test (the app) and tick (the cron Worker); needs KV bound as PUSH */
 
-const VERSION = '3.71.2';
+const VERSION = '3.83.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -705,6 +706,324 @@ function securityHeaders(res, url) {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
 }
 
+/* ---- push alerts (v3.83.0) ----
+   Web Push to the installed app for the places a device chooses (home plus saved places): NWS warnings, watches and advisories,
+   SPC Slight risk or higher at home on Day 1 or 2, and rain or snow starting within about 30 minutes (HRRR 15-minute steps,
+   checked against MRMS radar). Needs one KV namespace bound as PUSH, and a timer that POSTs /push/tick every two minutes
+   (a small cron Worker). Storage is kept to a few keys so the free KV allowance (1,000 writes a day) is never near:
+     vapid  the server's signing key pair, made on first use (never leaves the server; the public half is the app's key)
+     subs   every device: endpoint, its two keys, places, which alerts, time zone
+     sent   what each device has been sent (alert ids, SPC level per day, last rain notice per place), written only on a send
+     beat   when the timer last ran, written at most every 30 minutes
+   Pages Functions have no timer of their own, hence the cron Worker. */
+const PUSH_HOSTS = /^(([a-z0-9-]+\.)*(googleapis\.com|google\.com)|updates\.push\.services\.mozilla\.com|([a-z0-9-]+\.)*push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)$/;
+const PUSH_MAX_SUBS = 40, PUSH_MAX_PLACES = 16, PUSH_RAIN_COOL = 3 * 3600e3;
+const TE = new TextEncoder();
+const b64u = (buf) => { const a = new Uint8Array(buf); let s = ''; for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64u = (s) => { s = String(s).replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const b = atob(s); const o = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) o[i] = b.charCodeAt(i); return o; };
+const cat = (...a) => { const o = new Uint8Array(a.reduce((q, x) => q + x.length, 0)); let i = 0; for (const x of a) { o.set(x, i); i += x.length; } return o; };
+
+async function vapidKeys(env) {
+  let v = await env.PUSH.get('vapid', 'json');
+  if (v && v.pub && v.jwk) return v;
+  const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  v = { pub: b64u(await crypto.subtle.exportKey('raw', kp.publicKey)), jwk: await crypto.subtle.exportKey('jwk', kp.privateKey), at: new Date().toISOString() };
+  await env.PUSH.put('vapid', JSON.stringify(v));
+  return v;
+}
+async function vapidAuth(v, endpoint, origin) {   // RFC 8292: a signed token the push service checks against the app's public key
+  const enc = (o) => b64u(TE.encode(JSON.stringify(o)));
+  const unsigned = enc({ typ: 'JWT', alg: 'ES256' }) + '.' + enc({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: origin });
+  const key = await crypto.subtle.importKey('jwk', v.jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, TE.encode(unsigned));
+  return 'vapid t=' + unsigned + '.' + b64u(sig) + ', k=' + v.pub;
+}
+async function hkdf(salt, ikm, info, n) {
+  const k = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, k, n * 8));
+}
+async function pushEncrypt(keys, text) {   // RFC 8291, aes128gcm: only the device can read the message, not the push service
+  const ua = unb64u(keys.p256dh), auth = unb64u(keys.auth);
+  const eph = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const asPub = new Uint8Array(await crypto.subtle.exportKey('raw', eph.publicKey));
+  const uaKey = await crypto.subtle.importKey('raw', ua, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const secret = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, eph.privateKey, 256));
+  const ikm = await hkdf(auth, secret, cat(TE.encode('WebPush: info\u0000'), ua, asPub), 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(salt, ikm, TE.encode('Content-Encoding: aes128gcm\u0000'), 16);
+  const nonce = await hkdf(salt, ikm, TE.encode('Content-Encoding: nonce\u0000'), 12);
+  const key = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, key, cat(TE.encode(text), new Uint8Array([2]))));
+  const head = new Uint8Array(21); head.set(salt, 0); new DataView(head.buffer).setUint32(16, 4096); head[20] = 65;
+  return cat(head, asPub, ct);
+}
+async function pushSend(v, sub, msg, origin) {   // -> HTTP status from the push service
+  const body = await pushEncrypt(sub.k, JSON.stringify(msg));
+  const r = await fetch(sub.ep, { method: 'POST', body, signal: AbortSignal.timeout(10000),
+    headers: { Authorization: await vapidAuth(v, sub.ep, origin), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: String(msg.ttl || 3600), Urgency: msg.urgent ? 'high' : 'normal' } });
+  return r.status;
+}
+const pushId = async (ep) => (await sha256hex('push:' + ep)).slice(0, 20);
+function pushClock(ms, tz, withDay) {
+  const o = { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' };
+  try { if (tz) o.timeZone = tz; if (withDay) o.weekday = 'short'; return new Date(ms).toLocaleString('en-US', o); }
+  catch (e) { delete o.timeZone; return new Date(ms).toLocaleString('en-US', o); }
+}
+function sameDay(a, b, tz) { const f = (ms) => { try { return new Date(ms).toLocaleDateString('en-US', tz ? { timeZone: tz } : {}); } catch (e) { return new Date(ms).toDateString(); } }; return f(a) === f(b); }
+async function cacheLock(name, seconds) {   // true when this call holds the lock (one run per window at this edge location)
+  const cache = typeof caches !== 'undefined' && caches.default ? caches.default : null; if (!cache) return true;
+  const key = new Request('https://cache.nws-terminal/push-lock/' + name);
+  if (await cache.match(key)) return false;
+  await cache.put(key, new Response('1', { headers: { 'Cache-Control': 'public, max-age=' + seconds } }));
+  return true;
+}
+const placeKey = (p) => (+p.la).toFixed(2) + ',' + (+p.lo).toFixed(2);
+const placeUrl = (origin, p, s) => origin + '/#loc=' + encodeURIComponent(p.n) + (s ? '&s=' + s : '');
+
+/* ---- NWS alerts ---- */
+function alertGroup(ev) { return /(Warning|Emergency)$/i.test(ev) ? 'warn' : /(Watch|Advisory)$/i.test(ev) ? 'watch' : null; }
+function alertTag(p) {   // what an update must add to be sent again: tornado seen, a higher damage threat
+  const q = (k) => String((p && p[k] && p[k][0]) || '').toUpperCase();
+  return [q('tornadoDetection'), q('tornadoDamageThreat'), q('thunderstormDamageThreat'), q('flashFloodDamageThreat')].join('|');
+}
+const TAG_RANK = { '': 0, POSSIBLE: 1, 'RADAR INDICATED': 1, OBSERVED: 2, BASE: 1, CONSIDERABLE: 2, DESTRUCTIVE: 2, CATASTROPHIC: 3 };
+function escalated(was, now) { const a = String(was || '').split('|'), b = now.split('|'); return b.some((x, i) => (TAG_RANK[x] || 0) > (TAG_RANK[a[i] || ''] || 0)); }
+function alertText(a, tz, now) {
+  const p = a.properties || {}, end = Date.parse(p.ends || p.expires || ''), t = alertTag(p).split('|');
+  const lead = t[0] === 'OBSERVED' ? 'Tornado observed. ' : t[1] === 'CATASTROPHIC' ? 'Tornado emergency. ' : t[1] === 'CONSIDERABLE' ? 'Particularly dangerous situation. ' : t[2] === 'DESTRUCTIVE' ? 'Destructive winds or hail. ' : '';
+  const until = isFinite(end) ? 'Until ' + pushClock(end, tz, !sameDay(end, now, tz)) + '. ' : '';
+  const d = String(p.description || '');
+  const m = d.match(/\*\s*(At \d{1,4} [AP]M [A-Z]{3,4},[\s\S]*?)(?:\n\s*\n|$)/) || d.match(/\*\s*WHAT\.\.\.([\s\S]*?)(?:\n\s*\n|\n\s*\*|$)/);
+  let say = m ? m[1] : String((p.parameters && p.parameters.NWSheadline && p.parameters.NWSheadline[0]) || '');
+  say = say.replace(/\s+/g, ' ').trim();
+  if (say && say === say.toUpperCase()) say = say.charAt(0) + say.slice(1).toLowerCase();   // the all-capitals headline, as a sentence
+  if (!say) say = String(p.areaDesc || '').slice(0, 160);
+  if (say && !/[.!]$/.test(say)) say += '.';
+  const all = lead + until + say; return all.length <= 300 ? all : all.slice(0, 297).replace(/\s+\S*$/, '') + '…';
+}
+
+/* ---- SPC Day 1 and 2 at a point (the categorical layers' own point query: a few hundred bytes) ---- */
+const SPC_SVC = 'https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer/';
+const SPC_WORD = { 2: 'thunderstorms', 3: 'Marginal risk', 4: 'Slight risk', 5: 'Enhanced risk', 6: 'Moderate risk', 8: 'High risk' }, SPC_LEVEL = { 3: 1, 4: 2, 5: 3, 6: 4, 8: 5 };
+async function spcAt(p, layer) {
+  const u = SPC_SVC + layer + '/query?geometry=' + (+p.lo).toFixed(4) + ',' + (+p.la).toFixed(4) + '&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=dn,valid,expire,issue&returnGeometry=false&f=json';
+  const r = await fetch(u, { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+  const j = await r.json(); if (!r.ok || j.error) throw new Error('SPC point query failed');
+  let best = null; for (const f of j.features || []) { const a = f.attributes || {}; if (!best || +a.dn > +best.dn) best = a; }
+  return best;   // null: outside every area
+}
+const spcDay = (a) => { const e = String(a.expire || ''); const d = new Date(Date.UTC(+e.slice(0, 4), +e.slice(4, 6) - 1, +e.slice(6, 8)) - 864e5); return d.toISOString().slice(0, 10); };   // the convective day the outlook covers
+const spcMs = (s) => { s = String(s || ''); return Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8), +s.slice(8, 10), +s.slice(10, 12)); };
+
+/* ---- rain or snow starting: HRRR 15-minute steps, with MRMS radar as the check that it has not already started ---- */
+const PX_V = [['PRATE', 'surface', 'pr'], ['REFD', '1000 m above ground', 'd'], ['CSNOW', 'surface', 'sn'], ['CRAIN', 'surface', 'ra'], ['CFRZR', 'surface', 'fz'], ['CICEP', 'surface', 'pl']].map((x) => ({ name: x[0], level: x[1], alias: x[2] }));
+async function gsRows(env, model, body) {
+  const r = await fetch(GS_ORIGIN + '/api/v2/' + model + '/timeseries', { method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(25000),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: 'Bearer ' + env.GS_TOKEN, 'User-Agent': UA } });
+  if (!r.ok) throw new Error(model + ' HTTP ' + r.status);
+  const j = await r.json(); if (!Array.isArray(j)) throw new Error(model + ' answered no rows'); return j;
+}
+function pxKind(f) { return f.fz ? 'freezing rain' : f.pl ? 'sleet' : f.sn && f.ra ? 'rain and snow' : f.sn ? 'snow' : f.ra ? 'rain' : 'rain or snow'; }
+function pxStart(rows, now) {   // -> { t, kind, peak, run } when the model starts it within about 30 minutes, else null
+  const by = {};
+  for (const r of rows) { const t = Date.parse(r.forecasted_time); if (!isFinite(t)) continue; const x = by[t] || (by[t] = { t, run: 0 }); for (const v of PX_V) if (r[v.alias] != null && isFinite(+r[v.alias])) x[v.alias] = +r[v.alias]; const ra = Date.parse(r.forecasted_at); if (ra > x.run) x.run = ra; }
+  const F = Object.values(by).sort((a, b) => a.t - b.t).filter((x) => x.t >= now - 450e3).map((x) => {
+    const r = x.pr != null ? x.pr * 3600 / 25.4 : 0, flag = x.sn || x.ra || x.fz || x.pl;
+    return { t: x.t, run: x.run, r, k: pxKind(x), wet: r >= 0.01 || (!!flag && x.d != null && x.d >= 15) };
+  });
+  if (F.length < 3 || now - Math.max(...F.map((f) => f.run)) > 3 * 3600e3) return null;
+  if (F[0].wet && F[0].t <= now) return null;   // the model has it already falling: nothing is starting
+  for (let i = 0; i < F.length; i++) {
+    const f = F[i]; if (!f.wet) continue;
+    if (f.t > now + 2250e3) return null;   // first rain is more than about 37 minutes out
+    if (f.r < 0.03 && !(F[i + 1] && F[i + 1].wet)) continue;   // a lone light blip
+    const ahead = F.slice(i, i + 4).filter((g) => g.wet), peak = Math.max(...ahead.map((g) => g.r));
+    return { t: Math.max(f.t, now), kind: f.k, peak, run: f.run };
+  }
+  return null;
+}
+const pxRate = (r) => (r >= 0.3 ? 'heavy' : r >= 0.1 ? 'moderate' : 'light');
+
+async function pushTick(env, origin, force) {
+  if (!env.PUSH) return { ok: false, error: 'No PUSH storage bound.' };
+  if (!force && !(await cacheLock('tick', 80))) return { ok: true, skipped: 'ran less than 80 seconds ago' };
+  const now = Date.now(), out = { ok: true, at: new Date(now).toISOString(), subs: 0, places: 0, sent: 0, gone: 0, checks: [] };
+  const beat = await env.PUSH.get('beat', 'json');
+  if (!beat || now - Date.parse(beat.at) > 30 * 60e3) await env.PUSH.put('beat', JSON.stringify({ at: out.at }));
+  const subs = (await env.PUSH.get('subs', 'json')) || {}, ids = Object.keys(subs); out.subs = ids.length;
+  if (!ids.length) return out;
+  const sent = (await env.PUSH.get('sent', 'json')) || {}, v = await vapidKeys(env);
+  let dirtySent = false, dirtySubs = false;
+  const P = {};   // every distinct place across devices
+  for (const id of ids) for (const p of subs[id].places || []) { const k = placeKey(p); (P[k] || (P[k] = { la: +p.la, lo: +p.lo })); }
+  out.places = Object.keys(P).length;
+  const queue = [];   // [id, message]
+  const st = (id) => sent[id] || (sent[id] = { a: {}, s: {}, r: {} });
+
+  // 1. NWS alerts, every run
+  const wantA = ids.some((id) => subs[id].on && (subs[id].on.warn || subs[id].on.watch));
+  if (wantA) {
+    await Promise.all(Object.keys(P).map(async (k) => {
+      try {
+        const r = await fetch('https://api.weather.gov/alerts/active?point=' + P[k].la.toFixed(4) + ',' + P[k].lo.toFixed(4), { headers: { 'User-Agent': UA, Accept: 'application/geo+json' }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        P[k].alerts = ((await r.json()).features || []).filter((f) => f && f.properties && f.properties.status === 'Actual');
+      } catch (e) { P[k].alertErr = String(e.message || e).slice(0, 60); }
+    }));
+    out.checks.push('alerts');
+    for (const id of ids) {
+      const s = subs[id], on = s.on || {}, me = st(id);
+      for (const p of s.places || []) {
+        const list = P[placeKey(p)].alerts; if (!list) continue;
+        for (const a of list) {
+          const pr = a.properties, aid = pr.id || a.id, g = alertGroup(pr.event || ''); if (!aid || !g || !on[g] || me.a[aid + '@' + placeKey(p)]) continue;
+          const end = Date.parse(pr.ends || pr.expires || ''), tag = alertTag(pr), key = aid + '@' + placeKey(p);
+          me.a[key] = { x: isFinite(end) ? end : now + 6 * 3600e3, g: tag }; dirtySent = true;
+          const hl = String((pr.parameters && pr.parameters.NWSheadline && pr.parameters.NWSheadline[0]) || '');
+          if (pr.messageType === 'Cancel' || (isFinite(end) && end < now) || /CANCELL?ED|HAS EXPIRED|WILL EXPIRE/i.test(hl)) continue;
+          const refs = (pr.references || []).map((x) => (x.identifier || x['@id'] || '') + '@' + placeKey(p)), prior = refs.map((x) => me.a[x]).filter(Boolean);
+          if (prior.length && !prior.some((x) => escalated(x.g, tag))) continue;   // an update with nothing new
+          queue.push([id, { title: pr.event + ' · ' + p.n, body: alertText(a, s.tz, now), tag: 'a:' + pr.event + ':' + placeKey(p), renotify: true, urgent: g === 'warn', sticky: /Tornado|Extreme Wind|Flash Flood Emergency/.test(pr.event) && g === 'warn',
+                               url: placeUrl(origin, p, 'alerts'), ttl: Math.max(600, Math.min(86400, Math.round(((isFinite(end) ? end : now + 3600e3) - now) / 1000))) }]);
+        }
+      }
+    }
+  }
+
+  // 2. SPC Slight or higher at home, Day 1 and 2, every 15 minutes
+  const homes = ids.filter((id) => subs[id].on && subs[id].on.spc).map((id) => [id, (subs[id].places || []).find((p) => p.home)]).filter((x) => x[1]);
+  if (homes.length && (force || await cacheLock('spc', 900))) {
+    out.checks.push('spc');
+    const H = {};
+    await Promise.all(homes.map(async ([, p]) => { const k = placeKey(p); if (H[k]) return; H[k] = {}; try { const r = await Promise.all([spcAt(p, 1), spcAt(p, 9)]); H[k] = { d1: r[0], d2: r[1] }; } catch (e) { H[k] = { err: true }; } }));
+    for (const [id, p] of homes) {
+      const h = H[placeKey(p)], me = st(id), tz = subs[id].tz;
+      for (const [dd, a] of [[1, h.d1], [2, h.d2]]) {
+        if (!a || +a.dn < 4 || !SPC_LEVEL[+a.dn]) continue;
+        const day = spcDay(a), sk = day + '@' + placeKey(p); if ((me.s[sk] || 0) >= +a.dn) continue;
+        me.s[sk] = +a.dn; dirtySent = true;
+        const start = spcMs(a.valid), when = sameDay(Math.max(start, now), now, tz) ? 'today' : sameDay(Math.max(start, now), now + 864e5, tz) ? 'tomorrow' : 'Day ' + dd;
+        queue.push([id, { title: SPC_WORD[+a.dn] + ' of severe storms ' + when + ' · ' + p.n, body: 'SPC Day ' + dd + ' outlook, level ' + SPC_LEVEL[+a.dn] + ' of 5, issued ' + pushClock(spcMs(a.issue), tz) + '.',
+                             tag: 'spc:' + day, renotify: true, urgent: +a.dn >= 5, url: placeUrl(origin, p, 'spc'), ttl: 12 * 3600 }]);
+      }
+    }
+  }
+
+  // 3. rain or snow starting within about 30 minutes, every 10 minutes
+  const rainers = ids.filter((id) => subs[id].on && subs[id].on.rain);
+  if (rainers.length && env.GS_TOKEN && (force || await cacheLock('rain', 540))) {
+    out.checks.push('rain');
+    const R = {}; for (const id of rainers) for (const p of subs[id].places || []) { const k = placeKey(p); if (!R[k] && p.la >= 21 && p.la <= 50 && p.lo >= -125 && p.lo <= -66) R[k] = { la: +p.la, lo: +p.lo }; }
+    const keys = Object.keys(R).slice(0, 40), coords = keys.map((k) => ({ lat: +R[k].la.toFixed(4), lon: +R[k].lo.toFixed(4), name: k }));
+    if (coords.length) {
+      try {
+        const [hr, mr] = await Promise.all([
+          gsRows(env, 'hrrrsubh', { fromTime: new Date(now - 900e3).toISOString(), untilTime: new Date(now + 3600e3).toISOString(), coordinates: coords, variables: PX_V }),
+          gsRows(env, 'mrms', { fromTime: new Date(now - 1500e3).toISOString(), untilTime: new Date(now + 300e3).toISOString(), coordinates: coords, variables: [{ name: 'PrecipRate', level: '0 m above mean sea level', alias: 'r' }] }) ]);
+        for (const k of keys) {
+          const m = mr.filter((x) => x.name === k);
+          if (!m.length) continue;   // no radar to check against: say nothing (start stays undefined)
+          if (m.some((x) => +x.r >= 0.2)) { R[k].wet = true; continue; }   // already falling there
+          R[k].start = pxStart(hr.filter((x) => x.name === k), now);
+        }
+        out.rain = keys.map((k) => k + ' ' + (R[k].wet ? 'falling' : R[k].start ? 'starting' : R[k].start === null ? 'dry' : 'no radar'));
+      } catch (e) { out.rainErr = String(e.message || e).slice(0, 80); }
+    }
+    for (const id of rainers) {
+      const me = st(id), tz = subs[id].tz;
+      for (const p of subs[id].places || []) {
+        const k = placeKey(p), x = R[k] && R[k].start; if (!x) continue;
+        if (now - (me.r[k] || 0) < PUSH_RAIN_COOL) continue;
+        me.r[k] = now; dirtySent = true;
+        const k2 = x.kind.charAt(0).toUpperCase() + x.kind.slice(1);
+        queue.push([id, { title: k2 + ' starting about ' + pushClock(x.t, tz).replace(/ [A-Z]{2,5}$/, '') + ' · ' + p.n,
+                          body: pxRate(x.peak).charAt(0).toUpperCase() + pxRate(x.peak).slice(1) + ' at first, by the HRRR ' + pushClock(x.run, tz).replace(/:00/, '') + ' run. Radar shows none there yet.',
+                          tag: 'rain:' + k, renotify: true, url: placeUrl(origin, p, 'forecast'), ttl: 1800 }]);
+      }
+    }
+  }
+
+  // send, a few per device per run; endpoints the push service has dropped are forgotten
+  const per = {};
+  for (const [id, msg] of queue) {
+    if ((per[id] = (per[id] || 0) + 1) > 6 || !subs[id]) continue;
+    try {
+      msg.ts = now; const code = await pushSend(v, subs[id], msg, origin);
+      if (code === 404 || code === 410) { delete subs[id]; delete sent[id]; dirtySubs = dirtySent = true; out.gone++; }
+      else if (code >= 200 && code < 300) out.sent++;
+    } catch (e) { /* the next run tries again only for new items; a missed send is not retried */ }
+  }
+  // forget expired alert ids and old SPC days
+  for (const id of Object.keys(sent)) {
+    if (!subs[id]) { delete sent[id]; dirtySent = true; continue; }
+    const me = sent[id];
+    for (const k of Object.keys(me.a || {})) if (me.a[k].x < now - 3600e3) { delete me.a[k]; dirtySent = true; }
+    for (const k of Object.keys(me.s || {})) if (Date.parse(k.slice(0, 10)) < now - 3 * 864e5) { delete me.s[k]; dirtySent = true; }
+  }
+  if (dirtySubs) await env.PUSH.put('subs', JSON.stringify(subs));
+  if (dirtySent) await env.PUSH.put('sent', JSON.stringify(sent));
+  return out;
+}
+
+function cleanPlaces(list) {
+  const out = [], seen = {};
+  for (const p of Array.isArray(list) ? list : []) {
+    const la = +p.la, lo = +p.lo, n = String(p.n || '').replace(/[\u0000-\u001f<>]/g, '').slice(0, 60).trim();
+    if (!n || !isFinite(la) || !isFinite(lo) || la < 10 || la > 72 || lo < -180 || lo > -60) continue;
+    const k = placeKey({ la, lo }); if (seen[k]) { if (p.home) out.find((q) => placeKey(q) === k).home = true; continue; }
+    seen[k] = 1; out.push({ n, la: +la.toFixed(4), lo: +lo.toFixed(4), home: !!p.home });
+    if (out.length >= PUSH_MAX_PLACES) break;
+  }
+  if (out.filter((p) => p.home).length > 1) { let f = false; for (const p of out) { if (p.home && f) p.home = false; if (p.home) f = true; } }
+  return out;
+}
+async function pushRoute(path, request, env) {
+  const NS = { 'Cache-Control': 'no-store' }, origin = new URL(request.url).origin;
+  if (path === '/push/tick') {
+    if (request.method !== 'POST') return json({ error: 'POST only' }, 405, NS);
+    if (!env.PUSH) return json({ ok: false, error: 'No PUSH storage bound to this site yet.' }, 503, NS);
+    return json(await pushTick(env, origin, false), 200, NS);
+  }
+  if (path === '/push/key') {
+    if (!isSameOriginRead(request)) return json({ error: 'This route only answers the app itself.' }, 401, NS);
+    if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
+    if (!env.PUSH) return json({ ready: false, why: 'storage' }, 200, NS);
+    const [v, beat] = await Promise.all([vapidKeys(env), env.PUSH.get('beat', 'json')]);
+    return json({ ready: true, key: v.pub, beat: beat && beat.at || null, rain: !!env.GS_TOKEN }, 200, NS);
+  }
+  const bad = await keyGuard(request, env); if (bad) return bad;
+  if (request.method !== 'POST') return json({ error: 'POST only' }, 405, NS);
+  if (!env.PUSH) return json({ ok: false, error: 'No PUSH storage bound to this site yet.' }, 503, NS);
+  const raw = await request.text(); if (raw.length > 16384) return json({ error: 'Too large' }, 413, NS);
+  let b; try { b = JSON.parse(raw); } catch (e) { return json({ error: 'Bad JSON' }, 400, NS); }
+  const ep = String(b && (b.endpoint || (b.sub && b.sub.endpoint)) || '');
+  let host = ''; try { const u = new URL(ep); host = u.protocol === 'https:' ? u.hostname : ''; } catch (e) { host = ''; }
+  if (!PUSH_HOSTS.test(host)) return json({ error: 'Not a push service address.' }, 400, NS);
+  const id = await pushId(ep), subs = (await env.PUSH.get('subs', 'json')) || {};
+  if (path === '/push/sub') {
+    const k = b.sub && b.sub.keys || {};
+    if (!/^[A-Za-z0-9_-]{80,100}$/.test(k.p256dh || '') || !/^[A-Za-z0-9_-]{16,32}$/.test(k.auth || '')) return json({ error: 'Missing subscription keys.' }, 400, NS);
+    if (!subs[id] && Object.keys(subs).length >= PUSH_MAX_SUBS) return json({ error: 'Too many devices.' }, 429, NS);
+    const on = b.on || {}, tz = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(b.tz || '') ? b.tz : 'America/Chicago';
+    subs[id] = { ep, k: { p256dh: k.p256dh, auth: k.auth }, places: cleanPlaces(b.places), on: { warn: !!on.warn, watch: !!on.watch, spc: !!on.spc, rain: !!on.rain }, tz, at: new Date().toISOString() };
+    await env.PUSH.put('subs', JSON.stringify(subs));
+    return json({ ok: true, id, places: subs[id].places.length }, 200, NS);
+  }
+  if (path === '/push/unsub') {
+    if (subs[id]) { delete subs[id]; await env.PUSH.put('subs', JSON.stringify(subs)); }
+    return json({ ok: true }, 200, NS);
+  }
+  if (path === '/push/test') {
+    const s = subs[id]; if (!s) return json({ error: 'This device is not signed up yet.' }, 404, NS);
+    if (!(await cacheLock('test-' + id, 20))) return json({ error: 'One test every 20 seconds.' }, 429, NS);
+    const home = s.places.find((p) => p.home) || s.places[0];
+    const code = await pushSend(await vapidKeys(env), s, { title: 'NWS Terminal test', body: 'Alerts are on for ' + s.places.length + ' place' + (s.places.length === 1 ? '' : 's') + (home ? ', home ' + home.n : '') + '. Sent ' + pushClock(Date.now(), s.tz) + '.', tag: 'test', url: origin + '/', ttl: 600, ts: Date.now() }, origin);
+    if (code === 404 || code === 410) { delete subs[id]; await env.PUSH.put('subs', JSON.stringify(subs)); return json({ error: 'The push service dropped this device. Turn alerts off and on again.' }, 410, NS); }
+    return json({ ok: code >= 200 && code < 300, status: code }, code >= 200 && code < 300 ? 200 : 502, NS);
+  }
+  return json({ error: 'Unknown push route' }, 404, NS);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -767,9 +1086,13 @@ export default {
       try { return await lightning(request, env, ctx); }
       catch (err) { return json({ error: 'Lightning request failed: ' + err.message }, err.name === 'TimeoutError' ? 504 : 502, { 'Cache-Control': 'no-store' }); }
     }
+    if (path.startsWith('/push/')) {   // v3.83.0
+      try { return await pushRoute(path, request, env); }
+      catch (err) { return json({ error: 'Push request failed: ' + String(err && err.message || err).slice(0, 120) }, 502, { 'Cache-Control': 'no-store' }); }
+    }
     if (path === '/api/unlock') return unlock(request, env);
     if (path === '/api/config') {
-      return json({ gsServerToken: !!env.GS_TOKEN, lightningServerKey: !!env.LIGHTNING_KEY, radarServerKey: !!env.RADAR_TILES_KEY, camsServerKey: !!env.WINDY_WEBCAMS_KEY, wi511ServerKey: !!env.WI511_KEY, claudeServerKey: !!env.ANTHROPIC_API_KEY, wethrServerKey: !!env.WETHR_API_KEY,
+      return json({ gsServerToken: !!env.GS_TOKEN, lightningServerKey: !!env.LIGHTNING_KEY, radarServerKey: !!env.RADAR_TILES_KEY, camsServerKey: !!env.WINDY_WEBCAMS_KEY, wi511ServerKey: !!env.WI511_KEY, claudeServerKey: !!env.ANTHROPIC_API_KEY, wethrServerKey: !!env.WETHR_API_KEY, pushStore: !!env.PUSH,
                     passcode: !!env.APP_PASSCODE, locked: !(await unlocked(request, env)), version: VERSION }, 200, { 'Cache-Control': 'no-store' });
     }
     if (path === '/api/health') {

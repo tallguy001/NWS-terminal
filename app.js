@@ -378,7 +378,7 @@ function getFavorites() {
   try { return JSON.parse(localStorage.getItem('nws_favorites') || '[]'); }
   catch(e) { return []; }
 }
-function saveFavorites(favs) { localStorage.setItem('nws_favorites', JSON.stringify(favs)); if (typeof USNOW !== 'undefined') USNOW.touch(); }
+function saveFavorites(favs) { localStorage.setItem('nws_favorites', JSON.stringify(favs)); if (typeof USNOW !== 'undefined') USNOW.touch(); if (typeof PUSHUI !== 'undefined') PUSHUI.touch(); }
 function renderFavorites() {
   // Built with the DOM API: the saved name used to go into innerHTML and an
   // inline onclick string (a quote or backslash broke it), and "remove" was
@@ -6110,6 +6110,7 @@ function openDrawer() {
   d.inert = false; d.removeAttribute('inert'); d.setAttribute('aria-modal', 'true');
   d.classList.add('open');
   $('drawerScrim').classList.add('open');
+  if (typeof PUSHUI !== 'undefined') PUSHUI.open();
   var f = $('gsTokenInput'); if (f) setTimeout(function () { f.focus(); }, 50);
 }
 function closeDrawer() {
@@ -6250,7 +6251,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // picked up on the next load.
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('/sw.js').catch(function () {});
+      navigator.serviceWorker.register('/sw.js').then(function () { if (typeof PUSHUI !== 'undefined') PUSHUI.boot(); }).catch(function () {});
     });
   }
 });
@@ -7360,7 +7361,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.82.0';
+var APP_VERSION = '3.83.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -18226,6 +18227,163 @@ var RADAROV = (function () {
    0.03 in/h is dropped, so on-and-off light showers read as one spell. Times are the model's 15-minute frames, shown as
    "about". One GribStream point request (72 times x 6 fields); asked when a place loads and on coming back to Current
    after ten minutes, never on a timer. */
+/* ---- push alerts (v3.83.0) ----
+   Settings, Push alerts: this device signs up with the server for home plus saved places. The server checks every two minutes
+   (NWS warnings, watches and advisories; SPC Slight or higher at home on Day 1 or 2; rain or snow starting within about 30
+   minutes) and sends what is new. Choices stay in 'push_cfg'; the server keeps only what it needs to send. */
+var PUSHUI = (function () {
+  var S = { srv: null, srvAt: 0, sub: null, busy: false, msg: '', bad: false };
+  var TYPES = [['warn', 'Warnings', 'Tornado, severe thunderstorm, flash flood, winter storm and every other warning'],
+               ['watch', 'Watches and advisories', 'Tornado and severe thunderstorm watches, winter weather and wind advisories, and the rest'],
+               ['spc', 'Storm risk at home', 'SPC Slight risk or higher on Day 1 or 2, and each upgrade'],
+               ['rain', 'Rain or snow starting', 'About 30 minutes ahead, from the HRRR, when radar shows none yet. At most once in 3 hours per place']];
+  function cfg() { var c = {}; try { c = JSON.parse(lsGet('push_cfg', '{}')) || {}; } catch (e) { c = {}; } if (!c.on) c.on = { warn: true, watch: true, spc: true, rain: true }; return c; }
+  function save(c) { lsSet('push_cfg', JSON.stringify(c)); }
+  function can() { return location.protocol === 'https:' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+  function apple() { return /iP(ad|hone|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+  function installed() { return navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches); }
+  function u8(s) { s = String(s).replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; var b = atob(s), o = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) o[i] = b.charCodeAt(i); return o; }
+  function b64u(buf) { if (!buf) return ''; var a = new Uint8Array(buf), s = ''; for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  function keyOf(sub) { try { return b64u(sub.options && sub.options.applicationServerKey); } catch (e) { return ''; } }
+  function favs() { return typeof favSorted === 'function' ? favSorted() : getFavorites(); }
+  function home(c) {
+    var f = favs(), lc = function (x) { return String(x).toLowerCase(); };
+    if (c.home && f.some(function (x) { return lc(x) === lc(c.home); })) return c.home;
+    return f.filter(function (x) { return /oconomowoc/i.test(x); })[0] || f[0] || lsGet('nws_last', '') || '';
+  }
+  function names(c) {
+    var h = home(c), out = h ? [h] : [], seen = {}; if (h) seen[h.toLowerCase()] = 1;
+    favs().forEach(function (f) { if (!seen[String(f).toLowerCase()] && out.length < 16) { seen[String(f).toLowerCase()] = 1; out.push(f); } });
+    return out;
+  }
+  function resolve(c) {   // -> [{ n, la, lo, home }] from the map's place cache, else a lookup
+    var list = names(c), h = home(c), xy = {}, out = [];
+    try { xy = JSON.parse(lsGet('usnow_xy', '{}')) || {}; } catch (e) { xy = {}; }
+    var chain = Promise.resolve();
+    list.forEach(function (n) {
+      chain = chain.then(function () {
+        var hit = xy[String(n).toLowerCase()];
+        if (hit && isFinite(+hit[0])) return { lat: hit[0], lon: hit[1] };
+        if (typeof _lastLoc !== 'undefined' && _lastLoc && String(_lastLoc).toLowerCase() === String(n).toLowerCase() && currentLat != null) return { lat: currentLat, lon: currentLon };
+        return geocode(n).then(function (g) { if (g) { xy[String(n).toLowerCase()] = [+(+g.lat).toFixed(3), +(+g.lon).toFixed(3), n]; lsSet('usnow_xy', JSON.stringify(xy)); } return g; }, function () { return null; });
+      }).then(function (g) { if (g && isFinite(+g.lat) && isFinite(+g.lon)) out.push({ n: n, la: +(+g.lat).toFixed(4), lo: +(+g.lon).toFixed(4), home: n === h }); });
+    });
+    return chain.then(function () { return out; });
+  }
+  function sig(c, places) { return JSON.stringify([c.on, places.map(function (p) { return p.n + (p.home ? '*' : ''); })]); }
+  function srv(force) {
+    if (!force && S.srv && Date.now() - S.srvAt < 120000) return Promise.resolve(S.srv);
+    return fetch('/push/key', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status); return j; }); })
+      .then(function (j) { S.srv = j; S.srvAt = Date.now(); return j; });
+  }
+  function post(path, body) {
+    return fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'The server answered HTTP ' + r.status + '.'); return j; }); });
+  }
+  function current() { return can() ? navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }) : Promise.resolve(null); }
+  function subscribe(key) {
+    return navigator.serviceWorker.ready.then(function (reg) {
+      return reg.pushManager.getSubscription().then(function (old) {
+        if (old && keyOf(old) && keyOf(old) !== key) return old.unsubscribe().then(function () { return null; });   // signed up under an older server key
+        return old;
+      }).then(function (old) { return old || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(key) }); });
+    });
+  }
+  function sync(sub, why) {
+    var c = cfg();
+    return resolve(c).then(function (places) {
+      if (!places.length) throw new Error('Save a place first: alerts cover home and your saved places.');
+      var tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { tz = ''; }
+      return post('/push/sub', { sub: sub.toJSON(), places: places, on: c.on, tz: tz }).then(function (j) {
+        c = cfg(); c.enabled = true; c.sig = sig(c, places); c.at = Date.now(); c.n = j.places; save(c); S.sub = sub; return j;
+      });
+    });
+  }
+  function busy(on, msg, bad) { S.busy = on; if (msg != null) { S.msg = msg; S.bad = !!bad; } render(); }
+  function enable() {
+    if (!can() || S.busy) return;
+    // the permission prompt has to come straight from the tap (Safari ignores it after an await)
+    var perm = Notification.permission === 'granted' ? Promise.resolve('granted') : Promise.resolve(Notification.requestPermission());
+    busy(true, 'Turning alerts on…');
+    perm.then(function (p) {
+      if (p !== 'granted') throw new Error(p === 'denied' ? 'Notifications are blocked for this app. Allow them in the system settings, then try again.' : 'Notifications were not allowed.');
+      return srv(true);
+    }).then(function (s) {
+      if (!s.ready) throw new Error('The server is not set up for alerts yet.');
+      return subscribe(s.key);
+    }).then(function (sub) { return sync(sub, 'on'); })
+      .then(function (j) { busy(false, 'Alerts are on for ' + j.places + ' place' + (j.places === 1 ? '' : 's') + '. Send a test to check this device.'); },
+            function (e) { busy(false, String(e && e.message || e), true); });
+  }
+  function disable() {
+    if (S.busy) return; busy(true, 'Turning alerts off…');
+    current().then(function (sub) {
+      var c = cfg(); c.enabled = false; save(c); S.sub = null;
+      if (!sub) return;
+      return post('/push/unsub', { endpoint: sub.endpoint }).catch(function () { /* the server forgets it on the next failed send */ }).then(function () { return sub.unsubscribe(); });
+    }).then(function () { busy(false, 'Alerts are off on this device.'); }, function (e) { busy(false, String(e && e.message || e), true); });
+  }
+  function test() {
+    if (S.busy) return; busy(true, 'Sending a test…');
+    current().then(function (sub) { if (!sub) throw new Error('This device is not signed up. Turn alerts on first.'); return post('/push/test', { endpoint: sub.endpoint }); })
+      .then(function () { busy(false, 'Test sent. It should arrive within a few seconds.'); }, function (e) { busy(false, String(e && e.message || e), true); });
+  }
+  var tid = 0;
+  function touch() {   // saved places or choices changed: send the new list a moment later
+    clearTimeout(tid); tid = setTimeout(function () { var c = cfg(); if (!c.enabled) return; current().then(function (sub) { if (sub) return sync(sub, 'touch'); }).then(render, function () { /* retried at the next start */ }); }, 2500);
+  }
+  function boot() {   // at start: keep the server's copy current, and recover from a changed server key
+    var c = cfg(); if (!c.enabled || !can() || Notification.permission !== 'granted') return;
+    srv(true).then(function (s) {
+      if (!s.ready) return;
+      return current().then(function (sub) {
+        if (!sub || keyOf(sub) !== s.key) return subscribe(s.key).then(function (n) { return sync(n, 'renew'); });
+        return resolve(c).then(function (places) { if (sig(c, places) !== c.sig || Date.now() - (c.at || 0) > 3 * 864e5) return sync(sub, 'refresh'); S.sub = sub; });
+      });
+    }).then(render, function () { /* next start */ });
+  }
+  function ago(iso) { var m = Math.round((Date.now() - Date.parse(iso)) / 60000); return !isFinite(m) ? '' : m < 2 ? 'just now' : m < 90 ? m + ' minutes ago' : Math.round(m / 60) + ' hours ago'; }
+  function render() {
+    var el = document.getElementById('pushBox'); if (!el) return;
+    var c = cfg(), h = home(c), list = names(c), on = !!c.enabled && can() && Notification.permission === 'granted', s = S.srv, rows = [];
+    var chip = !can() ? '<span class="keyrow-st off">Not available here</span>' : on ? '<span class="keyrow-st on">On</span>' : s && !s.ready ? '<span class="keyrow-st warn">Server not set up</span>' : '<span class="keyrow-st off">Off</span>';
+    rows.push('<div class="push-head"><span>This device</span>' + chip + '</div>');
+    if (apple() && !installed()) rows.push('<div class="field-hint push-note">On iPhone and iPad, alerts come only to the home-screen app: tap Share, then Add to Home Screen, open NWS Terminal from there, and turn alerts on in its Settings.</div>');
+    else if (!can()) rows.push('<div class="field-hint push-note">This browser cannot receive push alerts.</div>');
+    if (s && !s.ready) rows.push('<div class="field-hint push-note">The server needs its alert storage (a KV namespace bound as PUSH) and the two-minute timer before alerts can go out.</div>');
+    rows.push('<div class="push-types">' + TYPES.map(function (t) {
+      var dis = t[0] === 'rain' && s && s.ready && s.rain === false;
+      return '<label class="push-type"><input type="checkbox" data-push-on="' + t[0] + '"' + (c.on[t[0]] && !dis ? ' checked' : '') + (dis ? ' disabled' : '') + '><span><b>' + esc(t[1]) + '</b><small>' + esc(dis ? 'Needs the GribStream key on the server' : t[2]) + '</small></span></label>';
+    }).join('') + '</div>');
+    var f = favs();
+    rows.push('<div class="push-home"><label for="pushHome">Home</label><select id="pushHome"' + (f.length ? '' : ' disabled') + '>' +
+      (f.length ? f.map(function (x) { return '<option' + (x === h ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') : '<option>' + esc(h || 'Save a place first') + '</option>') + '</select></div>');
+    rows.push('<div class="field-hint">Covers ' + (list.length ? esc(list.length === 1 ? list[0] : list[0] + ' and ' + (list.length - 1) + ' saved place' + (list.length === 2 ? '' : 's')) : 'no places yet') +
+      '. Storm risk is for home only. Saved places beyond 15 are left out.</div>');
+    rows.push('<div class="field-row">' + (on ? '<button class="btn" data-push="test" type="button">Send a test</button><button class="btn btn-ghost" data-push="off" type="button">Turn off</button>'
+                                               : '<button class="btn" data-push="on" type="button"' + (!can() || (apple() && !installed()) || (s && !s.ready) ? ' disabled' : '') + '>Turn on</button>') + '</div>');
+    if (S.msg) rows.push('<div class="field-hint push-msg' + (S.bad ? ' bad' : '') + '">' + esc(S.msg) + '</div>');
+    if (s && s.ready) rows.push('<div class="field-hint push-beat">' + (s.beat ? 'The server last checked ' + esc(ago(s.beat)) + ' (it notes this every 30 minutes).' : 'The two-minute timer has not run yet.') + '</div>');
+    el.innerHTML = rows.join('');
+    el.querySelectorAll('button[data-push]').forEach(function (b) { b.disabled = b.disabled || S.busy; });
+  }
+  function wire() {
+    var el = document.getElementById('pushBox'); if (!el || el._wired) return; el._wired = true;
+    el.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-push]'); if (!b) return;
+      var a = b.getAttribute('data-push'); if (a === 'on') enable(); else if (a === 'off') disable(); else if (a === 'test') test();
+    });
+    el.addEventListener('change', function (e) {
+      var t = e.target, c = cfg();
+      if (t.hasAttribute('data-push-on')) { c.on[t.getAttribute('data-push-on')] = t.checked; save(c); touch(); }
+      else if (t.id === 'pushHome') { c.home = t.value; save(c); render(); touch(); }
+    });
+  }
+  function open() { wire(); render(); if (can()) srv(false).then(render, function (e) { S.msg = 'Could not reach the server for alerts: ' + String(e && e.message || e); S.bad = true; render(); }); }
+  if (can()) navigator.serviceWorker.addEventListener('message', function (e) { var h = e.data && e.data.nwsOpen; if (typeof h === 'string' && /^#loc=/.test(h)) location.hash = h; });
+  return { open: open, render: render, touch: touch, boot: boot, _state: function () { return S; } };
+})();
+
 var NEXTPX = (function () {
   var cur = { key: '', at: 0, d: null, state: 'idle', err: '' }, seq = 0, Q = 15 * 60000;
   var V = [['PRATE', 'surface', 'pr'], ['REFD', '1000 m above ground', 'd'], ['CSNOW', 'surface', 'sn'], ['CRAIN', 'surface', 'ra'], ['CFRZR', 'surface', 'fz'], ['CICEP', 'surface', 'pl']]

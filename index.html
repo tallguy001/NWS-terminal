@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.82.0">
+<link rel="stylesheet" href="/app.css?v=3.83.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -1694,6 +1694,9 @@
     <h3>Appearance</h3>
     <div class="theme-seg" role="group" aria-label="Appearance"><button type="button" data-theme-set="dark" aria-pressed="true">Dark</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button></div>
 
+    <h3>Push alerts</h3>
+    <div class="push-box" id="pushBox"><div class="field-hint">Loading…</div></div>
+
     <div class="drawer-note">
       <b>API keys live in Cloudflare, not in this browser.</b> Each service is switched on by a secret in the
       Cloudflare dashboard for this site (Settings, then Variables and Secrets), followed by a new deployment.
@@ -1856,6 +1859,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.82.0" defer></script>
+<script src="/app.js?v=3.83.0" defer></script>
 </body>
 </html>
