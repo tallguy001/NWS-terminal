@@ -7351,7 +7351,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.73.0';
+var APP_VERSION = '3.74.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -11901,16 +11901,33 @@ var REGMAP = (function () {
     });
     return (c.p = Promise.all([pH, pG]).then(function (res) { c.frames = res[1]; c.p = null; }, function (e) { if (FR && FR.key === key) delete FR.blk[fb]; throw e; }));
   }
+  /* v3.74.0: where the model has a grid. The HRRR and the RRFS's CONUS output share one: Lambert conformal, tangent at 38.5°N,
+     centred on 97.5°W, 1799 x 1059 points 3 km apart from 21.138123°N 122.719528°W, on a sphere of 6,371,229 m (NCEP's 3 km
+     CONUS grid). It reaches well past the lower 48: the Great Lakes, southern Canada, northern Mexico and the coastal waters.
+     Inside it the model always has a value, so a blank there means no echo; outside it there is nothing to say. */
+  var HRRR_GRID = (function () {
+    var DG = Math.PI / 180, RE = 6371229, N = Math.sin(38.5 * DG), FF = Math.cos(38.5 * DG) * Math.pow(Math.tan(Math.PI / 4 + 38.5 * DG / 2), N) / N;
+    function xy(lat, lon) { var dl = ((lon + 97.5) % 360 + 540) % 360 - 180, r = RE * FF / Math.pow(Math.tan(Math.PI / 4 + lat * DG / 2), N), th = N * dl * DG; return [r * Math.sin(th), -r * Math.cos(th)]; }
+    var O = xy(21.138123, -122.719528);
+    function inside(lat, lon) { if (!(lat > -80 && lat < 89)) return false; var p = xy(lat, lon), i = (p[0] - O[0]) / 3000, j = (p[1] - O[1]) / 3000; return i >= 0 && i <= 1798 && j >= 0 && j <= 1058; }
+    function cover(b) {   // 'all', 'part' or 'none' of a [w, s, e, n] box
+      var hit = 0, k = 0;
+      for (var a = 0; a <= 12; a++) for (var c = 0; c <= 12; c++, k++) if (inside(b[1] + (b[3] - b[1]) * a / 12, b[0] + (b[2] - b[0]) * c / 12)) hit++;
+      return hit === k ? 'all' : hit ? 'part' : 'none';
+    }
+    return { inside: inside, cover: cover };
+  })();
   function fradarLayer() {
     var S = FRS[frSrc()], c = frBlock(), fi = frInfo(), who = S.short + ' simulated radar';
     if (!c || !c.frames) return { title: 'Future radar', pts: refNames(), subText: who, empty: 'The simulated radar did not load.' };
     if (!c.have[fi.t]) return { title: 'Future radar, ' + fi.label, pts: refNames(), subText: who + (c.run ? ', ' + clock(c.run) + ' run' : ''),
                                 empty: Object.keys(c.have).length ? 'The ' + S.label + ' fields do not reach ' + fi.label + ' yet. ' + S.reach : 'The ' + S.short + ' has no simulated radar for this area. It covers the lower 48 states.' };
-    var G = c.frames[fi.i];
+    var G = c.frames[fi.i], cov = frame && frame.bbox ? HRRR_GRID.cover(frame.bbox) : 'all';
     return { title: 'Future radar, ' + fi.label, pts: refNames(),
-             subText: who + (c.run ? ', ' + clock(c.run) + ' run' : '') + ' · ' + (G.max >= 5 ? 'strongest echo ' + R(G.max) + ' dBZ' : 'no echoes in view'),
-             sub2: 'what the ' + S.short + ' model expects radar to show at this time, in dBZ: a forecast, not an observation. ' + S.every + '; drag the slider, use the arrows or press Play',
-             field: { levels: FR_LV, colors: FR_C, grid: G, flat: true, unit: 'dBZ' } };
+             subText: who + (c.run ? ', ' + clock(c.run) + ' run' : '') + ' · ' + (G.max >= 5 ? 'strongest echo ' + R(G.max) + ' dBZ' : 'no echoes in view') + (cov === 'part' ? ' · hatched: past the model\u2019s edge' : ''),
+             sub2: 'what the ' + S.short + ' model expects radar to show at this time, in dBZ: a forecast, not an observation. Echoes are drawn over lakes, coastal waters and Canada as well as land' +
+                   (cov === 'part' ? ', out to the edge of the model\u2019s grid; the hatched area is beyond it' : '') + '. ' + S.every + '; drag the slider, use the arrows or press Play',
+             field: { levels: FR_LV, colors: FR_C, grid: G, flat: true, unit: 'dBZ', sea: cov === 'all' ? true : HRRR_GRID.inside } };
   }
 
   /* ════ winter impact maps from NOAA's map services (v3.40.0) ════
@@ -12843,16 +12860,18 @@ var REGMAP = (function () {
     ctx.fillStyle = bm ? bm.water : '#070B14'; ctx.fillRect(0, 0, W, H);
     if (bm) { try { ctx.fillStyle = BASEMAP.FOREIGN; ctx.fill(new Path2D(bm.foreign)); ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 0.7; ctx.stroke(new Path2D(bm.foreign)); ctx.fillStyle = bm.water; ctx.fill(new Path2D(bm.great)); } catch (e) { /* older browsers: plain background */ } }
     var land = null, lo = Infinity, hi = -Infinity, mid = 0, half = 1;
+    /* v3.74.0: a field marked `sea` (future radar) is not held to US land. It is laid over the lakes, the coastal waters and
+       Canada after the base map, with no-echo cells left clear so the land and water show through; `sea` is true, or a test
+       (lat, lon) for where the model has a grid, and beyond it the map is hatched rather than shown as empty. */
+    var sea = cfg && cfg.grid && cfg.sea && !view.raster ? cfg.sea : null, bx = proj.bbox;
     try { land = new Path2D(landD); } catch (e) { land = null; }
-    ctx.save(); if (land) ctx.clip(land);
-    ctx.fillStyle = '#16202F'; ctx.fillRect(0, 0, W, H);
-    if (view.raster && !view.rasterWater) { ctx.globalAlpha = 0.92; ctx.drawImage(view.raster, 0, 0, W, H); ctx.globalAlpha = 1; }
-    else if (src.length || (cfg && cfg.grid)) {
-      var FG = cfg.grid || null, LV = cfg.levels || null;
+    var paintField = function () {
+      var FG = cfg.grid || null, LV = cfg.levels || null, dom = typeof sea === 'function' ? sea : null, OUT = -1e9;
       var gw = FG ? 800 : 250, gh = R(gw * H / W), off = document.createElement('canvas'); off.width = gw; off.height = gh;
       var octx = off.getContext('2d'), img = octx.createImageData(gw, gh), vals = new Float32Array(gw * gh);
       for (var gy = 0; gy < gh; gy++) for (var gx = 0; gx < gw; gx++) {
         var x = (gx + 0.5) * W / gw, y = (gy + 0.5) * H / gh, num = 0, den = 0, v0;
+        if (dom && !dom(bx[3] - (bx[3] - bx[1]) * y / H, bx[0] + (bx[2] - bx[0]) * x / W)) { vals[gy * gw + gx] = OUT; continue; }   // the projection is linear in latitude and longitude
         if (FG) v0 = cfg.flat ? gridFlat(FG, x / W, y / H) : gridAt(FG, x / W, y / H);
         else { for (var k = 0; k < src.length; k++) { var dx = x - src[k].x, dy = y - src[k].y, w = 1 / (dx * dx + dy * dy + 60); w *= w; num += w * src[k].v; den += w; } v0 = num / den; }
         var v = LV ? lvIndex(cfg.cuts || LV, v0) : R(v0 / cfg.band) * cfg.band;   // stepped layers store the level number, 0 below the first
@@ -12860,27 +12879,61 @@ var REGMAP = (function () {
         vals[gy * gw + gx] = v;
       }
       if (cfg.fixed) { lo = -cfg.fixed; hi = cfg.fixed; }
+      if (!isFinite(lo)) { lo = 0; hi = 0; }
       mid = (lo + hi) / 2; half = LV ? 1 : Math.max(cfg.band * 2, (hi - lo) / 2);
       for (var n2 = 0; n2 < vals.length; n2++) {
+        var i4 = n2 * 4;
+        if (sea && vals[n2] === OUT) {   // past the model's edge: thin diagonal hatching, clear between
+          var hx = n2 % gw, hy = (n2 - hx) / gw;
+          if ((hx + hy) % 9 === 0) { img.data[i4] = 148; img.data[i4 + 1] = 163; img.data[i4 + 2] = 184; img.data[i4 + 3] = 90; }
+          continue;
+        }
+        if (sea && LV && !vals[n2]) continue;   // no echo: left clear
         // absolute colour says what the value is; a little light and dark shows where it sits within this map
         var c = LV ? (vals[n2] ? cfg.colors[vals[n2] - 1] : LAND) : cfg.cat ? cfg.cat[Math.max(0, Math.min(3, R(vals[n2])))] : ramp(cfg.stops, vals[n2]),
-            sh = LV || cfg.cat || cfg.fixed ? 1 : 1 + 0.22 * Math.max(-1, Math.min(1, (vals[n2] - mid) / half)), i4 = n2 * 4;
+            sh = LV || cfg.cat || cfg.fixed ? 1 : 1 + 0.22 * Math.max(-1, Math.min(1, (vals[n2] - mid) / half));
+        if (sea) {   // the land maps darken the whole frame by 30% so white numerals read; here only the colour is drawn, so it is darkened itself
+          img.data[i4] = R(Math.min(255, c[0] * sh) * 0.7 + 8 * 0.3); img.data[i4 + 1] = R(Math.min(255, c[1] * sh) * 0.7 + 12 * 0.3); img.data[i4 + 2] = R(Math.min(255, c[2] * sh) * 0.7 + 22 * 0.3); img.data[i4 + 3] = 255;
+          continue;
+        }
         img.data[i4] = Math.min(255, c[0] * sh); img.data[i4 + 1] = Math.min(255, c[1] * sh); img.data[i4 + 2] = Math.min(255, c[2] * sh); img.data[i4 + 3] = 255;
       }
       octx.putImageData(img, 0, 0);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(off, 0, 0, W, H);
-      ctx.fillStyle = cfg.cat ? 'rgba(8,12,22,0.45)' : 'rgba(8,12,22,0.30)'; ctx.fillRect(0, 0, W, H);   // keeps white numerals readable
-    }
+      if (!sea) { ctx.fillStyle = cfg.cat ? 'rgba(8,12,22,0.45)' : 'rgba(8,12,22,0.30)'; ctx.fillRect(0, 0, W, H); }   // keeps white numerals readable
+    };
+    ctx.save(); if (land) ctx.clip(land);
+    ctx.fillStyle = '#16202F'; ctx.fillRect(0, 0, W, H);
+    if (view.raster && !view.rasterWater) { ctx.globalAlpha = 0.92; ctx.drawImage(view.raster, 0, 0, W, H); ctx.globalAlpha = 1; }
+    else if (sea) { ctx.fillStyle = 'rgba(8,12,22,0.30)'; ctx.fillRect(0, 0, W, H); }   // bare land shades exactly as before; the field goes on after the lakes
+    else if (src.length || (cfg && cfg.grid)) paintField();
     if (view.counties) Object.keys(view.counties).forEach(function (f) {
       var c2 = geo.counties.filter(function (c3) { return c3.id === f; })[0]; if (!c2) return;
       try { ctx.fillStyle = view.counties[f].color; ctx.globalAlpha = 0.6; ctx.fill(new Path2D(pathFor([c2], proj))); ctx.globalAlpha = 1; } catch (e) {}
     });
     ctx.restore();
     if (view.raster && view.rasterWater) { ctx.globalAlpha = 0.92; ctx.drawImage(view.raster, 0, 0, W, H); ctx.globalAlpha = 1; }   // lake ice and lightning do not stop at the shore
-    if (bm) { try { ctx.fillStyle = bm.water; ctx.fill(new Path2D(bm.lakes)); } catch (e) {}
+    if (bm) { try { ctx.fillStyle = bm.water; ctx.fill(new Path2D(bm.lakes)); } catch (e) {} }
+    if (sea) {
+      paintField();
+      /* Shorelines back on top of the echoes. US coasts come with the state lines; the Great Lakes' Canadian shore is drawn at
+         about that weight so it reads the same. Natural Earth's countries run out into the lakes to the border,
+         so their outline is kept off the lakes (no border line across the water), and small lakes stay faint. */
+      if (bm) try {
+        ctx.lineJoin = 'round'; ctx.save();
+        var dry = new Path2D(); dry.rect(0, 0, W, H); if (bm.great) dry.addPath(new Path2D(bm.great)); ctx.clip(dry, 'evenodd');
+        ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 0.7; ctx.stroke(new Path2D(bm.foreign)); ctx.restore();
+        if (bm.great && bm.foreign) {   // the Canadian shore only: Natural Earth's lakes and the Census coast differ by a few pixels, so drawing both doubles the US shore
+          ctx.save(); ctx.clip(new Path2D(bm.foreign)); ctx.strokeStyle = 'rgba(255,255,255,0.72)'; ctx.lineWidth = 1.3; ctx.stroke(new Path2D(bm.great)); ctx.restore(); }
+        if (bm.lakes) { ctx.strokeStyle = 'rgba(150,190,235,0.5)'; ctx.lineWidth = 0.6; ctx.stroke(new Path2D(bm.lakes)); }
+      } catch (e) { ctx.restore(); }
+    }
+    if (bm) {
       ctx.textAlign = 'center';
-      bm.labels.forEach(function (l) { if (l.x < 60 || l.x > W - 60 || l.y < 90 || l.y > H - 50) return; ctx.font = (l.k === 'land' ? '600 ' : 'italic 500 ') + l.fs + 'px Inter, system-ui, sans-serif'; ctx.fillStyle = l.k === 'land' ? '#76829A' : '#7FA9D8'; ctx.fillText(l.t, l.x, l.y + l.fs * 0.35); });
+      bm.labels.forEach(function (l) { if (l.x < 60 || l.x > W - 60 || l.y < 90 || l.y > H - 50) return; ctx.font = (l.k === 'land' ? '600 ' : 'italic 500 ') + l.fs + 'px Inter, system-ui, sans-serif';
+        if (sea) { ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(7,11,20,0.85)'; ctx.strokeText(l.t, l.x, l.y + l.fs * 0.35); }   // names stay readable over echoes
+        ctx.fillStyle = l.k === 'land' ? (sea ? '#9AA6BC' : '#76829A') : (sea ? '#A9C8EC' : '#7FA9D8'); ctx.fillText(l.t, l.x, l.y + l.fs * 0.35); });
       ctx.textAlign = 'start'; }
     if (view.overlay) { try { ctx.globalAlpha = 0.88; ctx.drawImage(view.overlay, 0, 0, W, H); ctx.globalAlpha = 1; } catch (e) { ctx.globalAlpha = 1; } }   // radar on the surface map (v3.67.0)
 
