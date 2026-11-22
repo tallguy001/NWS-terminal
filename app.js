@@ -7351,7 +7351,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.74.0';
+var APP_VERSION = '3.74.1';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -15985,20 +15985,25 @@ var SND = (function () {
   }
   function posnegTemp(P, upper) {   // warm (melting) and cold (refreezing) areas below the source level, J/kg
     var uptr = 0; for (var i = 0; i < P.n; i++) if (P.p[i] > upper) uptr = i;
-    var h1 = atPm(P, 'z', upper), te1 = atPm(P, 't', upper), warm = 0, cold = 0, totp = 0, totn = 0;
-    if (h1 == null || te1 == null) return { pos: 0, neg: 0 };
+    var h1 = atPm(P, 'z', upper), te1 = atPm(P, 't', upper), warm = 0, cold = 0, totp = 0, totn = 0, warmTop = null;
+    if (h1 == null || te1 == null) return { pos: 0, neg: 0, rawPos: 0, warm: 0, cold: 0, warmTop: null };
+    if (te1 > 0) warmTop = h1;   // a source already above freezing melts from the start
     for (var k = uptr; k >= 0; k--) {
       var h2 = P.z[k], te2 = P.t[k], lyre = 9.8 * ((0 - te1) / (te1 + 273.15) + (0 - te2) / (te2 + 273.15)) / 2 * (h2 - h1);
-      if (te2 > 0 && !warm) warm = 1;
+      if (te2 > 0 && !warm) { warm = 1; if (warmTop == null) warmTop = te1 <= 0 && te2 !== te1 ? h1 + (h2 - h1) * (0 - te1) / (te2 - te1) : h1; }
       if (te2 < 0 && warm && !cold) cold = 1;
       if (warm) { if (lyre > 0) totp += lyre; else totn += lyre; }
       h1 = h2; te1 = te2;
     }
-    return warm && cold ? { pos: totp, neg: totn } : { pos: 0, neg: 0 };
+    /* SHARPpy reports the two areas only when a warm layer has cold air under it (the sleet and freezing-rain set-up);
+       otherwise both are 0 by its convention, and the decision below uses exactly that. rawPos and warmTop are for the
+       wording only (v3.74.1): a warm layer that reaches the ground still melts everything, it just is not weighed. */
+    return { pos: warm && cold ? totp : 0, neg: warm && cold ? totn : 0, rawPos: totp, warm: warm, cold: cold, warmTop: warmTop };
   }
+  var START_WORD = { 'Rain': 'liquid drops', 'Freezing Rain': 'supercooled drops; SHARPpy calls this a freezing-rain start', 'ZR/S Mix': 'supercooled drops and snow; SHARPpy calls this a freezing-rain and snow start', 'Snow': 'snow' };
   function precipType(P) {
     var ip = initPhase(P), sfcT = P.t[0], type;
-    var pn = ip.phase < 0 ? { pos: 0, neg: 0 } : posnegTemp(P, ip.plevel), tpos = pn.pos, tneg = pn.neg;
+    var pn = ip.phase < 0 ? { pos: 0, neg: 0, rawPos: 0, warm: 0, cold: 0, warmTop: null } : posnegTemp(P, ip.plevel), tpos = pn.pos, tneg = pn.neg;
     if (ip.phase < 0) type = 'None';
     else if (ip.phase === 0 && tneg >= 0 && sfcT > 0) type = 'Rain';
     else if (ip.phase === 3 && tpos <= 0 && sfcT <= 0) type = 'Snow';
@@ -16007,10 +16012,15 @@ var SND = (function () {
     else if (ip.phase === 3 && tpos <= 0 && sfcT > 0) type = sfcT > 4 ? 'Rain' : 'Snow';
     else if (tpos > 0) type = (-tneg > 0.62 * tpos + 60) ? 'Sleet' : (sfcT <= 0 ? 'Freezing Rain' : 'Rain');
     else type = 'Unknown';
-    var why = ip.phase < 0 ? 'no 50 mb layer below 5 km is above 80% humidity, so there is no precipitation source'
-      : 'melting energy ' + tpos.toFixed(0) + ' J/kg, refreezing ' + (-tneg).toFixed(0) + ' J/kg';
-    return { type: type, why: why, warm: tpos, cold: -tneg, phase: ip.st,
-             init: ip.phase < 0 ? '' : 'Source layer near ' + Math.round(ip.plevel) + ' mb at ' + ip.tmp.toFixed(0) + ' C (starts as ' + ip.st.toLowerCase() + ')' };
+    var ft = function (z) { return (Math.round((z - P.z[0]) * 3.28084 / 100) * 100).toLocaleString('en-US') + ' ft'; }, why;
+    if (ip.phase < 0) why = 'no 50 mb layer below 5 km is above 80% humidity, so there is no precipitation source';
+    else if (pn.warm && pn.cold) why = 'melting energy ' + tpos.toFixed(0) + ' J/kg in the warm layer, refreezing ' + (-tneg).toFixed(0) + ' J/kg in the cold air under it';
+    else if (pn.warm) why = (pn.warmTop != null && pn.warmTop - P.z[0] > 30 ? 'above freezing from about ' + ft(pn.warmTop) + ' to the ground' : 'above freezing all the way down') +
+                       ', so whatever falls melts (about ' + Math.round(pn.rawPos) + ' J/kg of melting energy) and there is no cold layer below to refreeze it';
+    else why = 'below freezing from the source to the ground, so nothing melts on the way down';
+    var tC = Math.round(ip.tmp) || 0;
+    return { type: type, why: why, warm: pn.rawPos, cold: -tneg, phase: ip.st,
+             init: ip.phase < 0 ? '' : 'Source layer near ' + Math.round(ip.plevel) + ' mb (about ' + ft(atPm(P, 'z', ip.plevel)) + ') at ' + (tC < 0 ? '−' + (-tC) : tC) + ' C, so it starts as ' + (START_WORD[ip.st] || ip.st.toLowerCase()) };
   }
 
 
