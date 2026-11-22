@@ -88,7 +88,8 @@ async function proxy(kind, rest, request) {
       !/^experimental\/rest\/services\/NWS_HeatRisk\/ImageServer\/(exportImage|legend)$/.test(rest) &&
       !/^raster\/rest\/services\/snow\/NOHRSC_Snow_Analysis\/MapServer\/(export|legend)$/.test(rest) &&
       !/^vector\/rest\/services\/obs\/usnic_greatlakes_ice_chart\/MapServer\/(export|legend)$/.test(rest) &&
-      !/^eventdriven\/rest\/services\/radar\/radar_base_reflectivity_time\/ImageServer(\/exportImage)?$/.test(rest)) return new Response('Unsupported path', { status: 404 });
+      !/^eventdriven\/rest\/services\/radar\/radar_base_reflectivity_time\/ImageServer(\/exportImage)?$/.test(rest) &&
+      !/^tropical\/rest\/services\/tropical\/NHC_tropical_weather\/MapServer(\/\d+\/query)?$/.test(rest)) return new Response('Unsupported path', { status: 404 });   // v3.79.0: the Tropical screen
   if (kind === 'nowcoast' && rest !== 'geoserver/satellite/wms' && rest !== 'geoserver/observations/lightning_detection/ows') return new Response('Unsupported path', { status: 404 });
   if (kind === 'opengeo' && !/^geoserver\/[a-z]{4}\/ows$/.test(rest)) return new Response('Unsupported path', { status: 404 });
   if (kind === 'cocorahs' && rest !== 'export/exportreports.aspx') return new Response('Unsupported path', { status: 404 });

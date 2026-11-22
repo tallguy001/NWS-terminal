@@ -2970,3 +2970,24 @@ body.snd-open #chatPanel { z-index: 9600; }
 /* v3.72.0 — New conversation in the assistant's header */
 #chatHeader .chat-new { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--border-default); background: transparent; color: var(--text-2); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
 #chatHeader .chat-new:hover { color: var(--text-1); background: var(--bg-raised); }
+
+/* ---- Tropical screen (v3.79.0) ---- */
+.trop-status { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-base); line-height: 1.4; }
+.trop-status .trop-ww { color: var(--warn-c); font-weight: 600; }
+.trop-map { height: clamp(360px, 55vh, 620px); margin-top: var(--s3); border-radius: var(--r-md); border: 1px solid var(--border-default); background: var(--bg-surface); z-index: 1; }
+.trop-key { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: var(--s2) 0 var(--s4); font-size: var(--fs-sm); color: var(--text-2); }
+.trop-chip { display: inline-flex; align-items: center; gap: 6px; }
+.trop-chip i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid rgba(0,0,0,.4); }
+.trop-card { margin-bottom: var(--s3); }
+.trop-card-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: var(--s2); font-size: var(--fs-lg, 17px); }
+.trop-basin { font-size: var(--fs-sm); color: var(--text-3); }
+.trop-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.trop-track { margin-top: var(--s3); }
+.trop-two { margin-bottom: var(--s3); }
+.trop-two summary { cursor: pointer; }
+.trop-pre { white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); margin: var(--s3) 0 0; }
+.trop-card .snd-kv { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.trop-card .snd-kv > div { flex-direction: column; justify-content: flex-start; gap: 2px; }
+.trop-card .snd-kv dd { text-align: left; white-space: normal; font-size: var(--fs-base); }
+.trop-track { max-width: 560px; }
+.trop-track td:nth-child(2) { width: auto; }

@@ -533,6 +533,7 @@ function switchSection(name) {
   if (name === 'regional') REGMAP.ensure();
   if (name === 'upper') UAMAP.show(); else if (typeof UAMAP !== 'undefined') UAMAP.stop();   // v3.71.0
   if (name === 'spc' || name === 'wpc' || name === 'cpc') OLMAP.show(name);
+  if (name === 'tropical' && typeof TROP !== 'undefined') TROP.show(false);   // v3.79.0
   if (name !== 'radar') HRMAP.leave('radar');
   if (name !== 'satellite') HRMAP.leave('satellite');
   if (name === 'radar' || name === 'satellite') HRMAP.show(name);
@@ -4041,6 +4042,10 @@ function gatherScreenContext() {
       var regEl = document.getElementById('section-regional');
       if (regEl) ctx += 'Nearby Observation Stations:\n' + regEl.innerText.substring(0, 12500);
 
+    } else if (section === 'tropical') {   // v3.79.0
+      var trEl = document.getElementById('section-tropical');
+      if (trEl) ctx += 'National Hurricane Center (active storms, watches/warnings, Tropical Weather Outlooks):\n' + trEl.innerText.substring(0, 12500);
+
     } else if (section === 'astro') {
       var astroEl = document.getElementById('section-astro');
       if (astroEl) ctx += 'Sun/Moon & Astronomical Data:\n' + astroEl.innerText.substring(0, 7500);
@@ -6933,7 +6938,7 @@ function toggleStationDetail(card) {
 // ---- APP STATE: last location, recents, deep links, geolocation ----
 var _lastLoc = null;                 // query string of the location on screen
 var _currentSection = 'forecast';
-var SECTIONS = ['forecast','hourly','afd','radar','satellite','maps','cams','regional','upper','alerts','cpc','spc','wpc','astro','aqi','models','climate','kalshi'];
+var SECTIONS = ['forecast','hourly','afd','radar','satellite','maps','cams','regional','upper','alerts','cpc','spc','wpc','tropical','astro','aqi','models','climate','kalshi'];
 
 function lsGet(k, dflt) { try { var v = localStorage.getItem(k); return v == null ? dflt : v; } catch (e) { return dflt; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode / quota */ } }
@@ -7353,7 +7358,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.78.0';
+var APP_VERSION = '3.79.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -17675,7 +17680,7 @@ var SECTABS = (function () {
   /* v3.69.0: five destinations. Forecast and More hold their screens as tabs; Maps adds the US map, which is not a section
      ('home' opens it). Kalshi's tab shows only when the app has turned Kalshi on for the loaded place. */
   var GROUPS = [
-    [['hourly', 'Hourly'], ['afd', 'Discussion'], ['models', 'Models'], ['spc', 'Severe storms'], ['wpc', 'Rain and snow'], ['cpc', 'Long range']],
+    [['hourly', 'Hourly'], ['afd', 'Discussion'], ['models', 'Models'], ['spc', 'Severe storms'], ['wpc', 'Rain and snow'], ['cpc', 'Long range'], ['tropical', 'Tropical']],
     [['aqi', 'Air quality'], ['climate', 'Daily climate'], ['astro', 'Sun and moon'], ['cams', 'Webcams'], ['kalshi', 'Kalshi']],
     [['regional', 'Weather maps'], ['upper', 'Upper air'], ['maps', 'Windy map'], ['home', 'US map']]
   ], last = {};
@@ -18038,6 +18043,182 @@ var NEXTPX = (function () {
     return { wet: true, text: t };
   }
   return { load: load, refresh: refresh, next6: next6, _say: say, _frames: frames, _state: function () { return cur; } };
+})();
+
+/* TROP (v3.79.0): the Tropical screen (Forecast → Tropical). The National Hurricane Center's live GIS through NOAA's map
+   service (this site's /p/nwsmap proxy, kept five minutes at the edge): for each storm slot in use (AT1-5, EP1-5, CP1-5)
+   the forecast cone, track and points, coastal watches and warnings and the past track; the Tropical Weather Outlook's
+   areas (2-day points, 7-day regions and motion arrows); and the outlook text for each basin from api.weather.gov.
+   Drawn on the same dark Esri basemap as the radar, with the loaded place marked, how far each storm is from it, and its
+   closest forecast approach. The slots are found from the service's own layer list, so a renamed or added slot is picked
+   up. Nothing is fetched until the screen is opened; kept ten minutes. */
+var TROP = (function () {
+  var SVC = 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer';
+  var S = { at: 0, p: null, d: null, ids: null, map: null, grp: null, err: '' };
+  var BASIN = { AT: 'Atlantic', EP: 'Eastern Pacific', CP: 'Central Pacific' };
+  var WW = { HWR: ['Hurricane warning', '#E5383B'], HWA: ['Hurricane watch', '#F28AB2'], TWR: ['Tropical storm warning', '#3B82F6'], TWA: ['Tropical storm watch', '#F2C94C'] };
+  var RISK = { low: '#F2C94C', medium: '#F59E0B', high: '#E5383B' };
+  var CAT = { D: ['Depression', '#60A5FA'], S: ['Storm', '#34D399'], H: ['Hurricane', '#F59E0B'], M: ['Major hurricane', '#D946EF'], P: ['Post-tropical', '#9AA6BC'] };   // major is magenta: red is the hurricane warning
+  function arc(u) { return netFetch(px(u)).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function (j) { if (!j || j.error) throw new Error('the NOAA map service is not answering'); return j; }); }
+  function q(id) { return arc(SVC + '/' + id + '/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=geojson'); }
+  function feats(j) { return (j && j.features) || []; }
+  function ids() {   // { 'AT1': { pts, track, cone, ww, past }, ..., two2, two7, two7a, two7m }
+    if (S.ids) return Promise.resolve(S.ids);
+    return arc(SVC + '?f=json').then(function (j) {
+      var out = { slots: {} };
+      (j.layers || []).forEach(function (l) {
+        var m = /^(AT|EP|CP)(\d) (Forecast Points|Forecast Track|Forecast Cone|Watch-Warning|Past Track)$/.exec(l.name || '');
+        if (m) { var s = out.slots[m[1] + m[2]] || (out.slots[m[1] + m[2]] = {}); s[{ 'Forecast Points': 'pts', 'Forecast Track': 'track', 'Forecast Cone': 'cone', 'Watch-Warning': 'ww', 'Past Track': 'past' }[m[3]]] = l.id; }
+        if (l.name === 'Two-Day: Current Location') out.two2 = l.id;
+        if (l.name === 'Seven-Day: Current Location') out.two7 = l.id;
+        if (l.name === 'Seven-Day: Potential Development Region') out.two7a = l.id;
+        if (l.name === 'Seven-Day: Development Motion') out.two7m = l.id;
+      });
+      if (!Object.keys(out.slots).length) throw new Error('the hurricane map service listed no storm layers');
+      return (S.ids = out);
+    });
+  }
+  function outlookText(b) {
+    return netFetch('https://api.weather.gov/products/types/TWO/locations/' + b).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) { var g = j['@graph'] || []; if (!g.length) return null; return netFetch(g[0]['@id']).then(function (r) { return r.json(); }); })
+      .then(function (p) { return p ? { t: Date.parse(p.issuanceTime), text: (p.productText || '').replace(/\r\n/g, '\n') } : null; }, function () { return null; });
+  }
+  function load(force) {
+    if (S.p) return S.p;
+    if (!force && S.d && Date.now() - S.at < 10 * 60000) return Promise.resolve(S.d);
+    S.p = ids().then(function (I) {
+      var slots = Object.keys(I.slots).sort();
+      return Promise.all(slots.map(function (k) { return I.slots[k].pts != null ? q(I.slots[k].pts).then(feats, function () { return null; }) : Promise.resolve([]); })).then(function (pts) {
+        var active = [], failed = 0;
+        slots.forEach(function (k, i) { if (pts[i] === null) failed++; else if (pts[i].length) active.push({ slot: k, pts: pts[i] }); });
+        return Promise.all(active.map(function (a) { var L = I.slots[a.slot];
+          return Promise.all(['track', 'cone', 'ww', 'past'].map(function (n) { return L[n] != null ? q(L[n]).then(feats, function () { return []; }) : Promise.resolve([]); }))
+            .then(function (r) { a.track = r[0]; a.cone = r[1]; a.ww = r[2]; a.past = r[3]; return a; }); }))
+          .then(function (storms) {
+            var tw = [I.two2, I.two7, I.two7a, I.two7m].map(function (id) { return id != null ? q(id).then(feats, function () { return null; }) : Promise.resolve([]); });
+            return Promise.all([Promise.all(tw), Promise.all(['AT', 'EP', 'CP'].map(outlookText))]).then(function (r) {
+              return { storms: storms, failed: failed, two: { p2: r[0][0], p7: r[0][1], a7: r[0][2], m7: r[0][3] }, text: { AT: r[1][0], EP: r[1][1], CP: r[1][2] } };
+            });
+          });
+      });
+    }).then(function (d) { S.d = d; S.at = Date.now(); S.err = ''; S.p = null; return d; }, function (e) { S.p = null; S.err = (e && e.message) || 'network error'; throw e; });
+    return S.p;
+  }
+  /* ---- reading a storm ---- */
+  function num(v) { return v == null || v === '' || !isFinite(+v) ? null : +v; }
+  function first(a) { var P = (a.pts || []).slice().sort(function (x, y) { return (num(x.properties.tau) || 0) - (num(y.properties.tau) || 0); }); return P; }
+  function ll(f) { var c = f.geometry && f.geometry.coordinates; return c ? { lat: +c[1], lon: +c[0] } : { lat: num(f.properties.lat), lon: num(f.properties.lon) }; }
+  function lbl(p) { var t = p.fldatelbl || p.datelbl || ('+' + p.tau + ' h'), z = p.timezone ? String(p.timezone).toUpperCase() : ''; return z && t.toUpperCase().indexOf(z) < 0 ? t + ' ' + z : t; }   // NHC's own label, in the storm's zone, so the zone is named
+  function mph(kt) { return kt == null ? null : Math.round(kt * 1.15078 / 5) * 5; }
+  function catOf(p) {
+    var kt = num(p.maxwind), d = String(p.dvlbl || p.ssnum || '').toUpperCase();
+    if (d === 'X' || /post.?tropical|extratropical/i.test(p.tcdvlp || '')) return { k: 'P', word: 'Post-tropical cyclone' };
+    if (d === 'L' || /remnant/i.test(p.tcdvlp || '')) return { k: 'P', word: 'Remnant low' };
+    if (kt != null && kt >= 64) { var c = kt >= 137 ? 5 : kt >= 113 ? 4 : kt >= 96 ? 3 : kt >= 83 ? 2 : 1; return { k: c >= 3 ? 'M' : 'H', word: 'Category ' + c + ' hurricane' }; }
+    if (kt != null && kt >= 34) return { k: 'S', word: /^(SS|S)$/.test(d) && /subtrop/i.test(p.tcdvlp || '') ? 'Subtropical storm' : 'Tropical storm' };
+    return { k: 'D', word: p.tcdvlp ? String(p.tcdvlp).replace(/\b\w/g, function (x) { return x.toUpperCase(); }) : 'Tropical depression' };
+  }
+  function here() { var la = +currentLat, lo = +currentLon; return isFinite(la) && isFinite(lo) && (la || lo) ? { lat: la, lon: lo } : null; }
+  function bearing(a, b) { var y = Math.sin((b.lon - a.lon) * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180), x = Math.cos(a.lat * Math.PI / 180) * Math.sin(b.lat * Math.PI / 180) - Math.sin(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.cos((b.lon - a.lon) * Math.PI / 180); return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360; }
+  function far(a, b) { var d = haversine(a.lat, a.lon, b.lat, b.lon); return (d < 95 ? Math.round(d / 5) * 5 : Math.round(d / 10) * 10).toLocaleString('en-US') + ' mi ' + compass16(bearing(a, b)); }
+  function when(ms) { return isFinite(ms) ? fmtIssued(ms) : ''; }
+  function storm(a) {
+    var P = first(a), p0 = P[0] ? P[0].properties : {}, at = P[0] ? ll(P[0]) : null, H = here(), c = catOf(p0);
+    var name = (p0.stormname || a.slot).replace(/^\s+|\s+$/g, ''), adv = p0.advisnum ? 'Advisory ' + p0.advisnum + (p0.advdate ? ', ' + p0.advdate : '') : (p0.advdate || '');
+    var move = num(p0.tcspd) != null ? (num(p0.tcspd) === 0 ? 'stationary' : compass16(num(p0.tcdir) || 0) + ' at ' + Math.round(num(p0.tcspd) * 1.15078) + ' mph') : null;
+    var near = null;
+    if (H) P.forEach(function (f) { var q2 = ll(f); if (q2.lat == null) return; var d = haversine(H.lat, H.lon, q2.lat, q2.lon); if (!near || d < near.d) near = { d: d, f: f, q: q2 }; });
+    var ww = {}; (a.ww || []).forEach(function (f) { var k = f.properties.tcww; if (WW[k]) ww[k] = 1; });
+    return { a: a, name: name, c: c, p0: p0, at: at, adv: adv, move: move, near: near, ww: Object.keys(ww), basin: BASIN[a.slot.slice(0, 2)] || a.slot,
+             link: 'https://www.nhc.noaa.gov/graphics_' + a.slot.toLowerCase() + '.shtml' };
+  }
+  /* ---- drawing ---- */
+  function season(b, now) { var d = new Date(now), m = d.getUTCMonth() + 1, day = d.getUTCDate(); return b === 'EP' ? (m > 5 || (m === 5 && day >= 15)) && m <= 11 : m >= 6 && m <= 11; }
+  function status(d) {
+    var el = document.getElementById('tropStatus'); if (!el) return;
+    if (!d) { el.innerHTML = S.err ? '<div class="state-load">The hurricane center’s map service did not answer (' + esc(S.err) + '). <button type="button" class="nw-link" onclick="TROP.show(true)">Try again</button></div>' : '<div class="state-load">Checking the National Hurricane Center…</div>'; return; }
+    var H = here(), list = d.storms.map(storm), now = Date.now(), lines = [];
+    if (!list.length) {
+      var inSeason = ['AT', 'EP'].filter(function (b) { return season(b, now); });
+      lines.push('<b>No active tropical cyclones</b> in the Atlantic, eastern or central Pacific.');
+      var areas = (d.two.p7 || []).length + (d.two.a7 || []).length;
+      lines.push(areas ? areas + ' area' + (areas > 1 ? 's' : '') + ' the hurricane center is watching (below).' : 'No areas the hurricane center is watching for development in the next 7 days.');
+      if (!inSeason.length) lines.push('The Atlantic and eastern Pacific hurricane seasons are over until ' + (new Date(now).getUTCMonth() >= 10 ? 'next year' : 'May 15 (eastern Pacific) and June 1 (Atlantic)') + '.');
+      else if (new Date(now).getUTCMonth() === 10) lines.push('The Atlantic and eastern Pacific seasons end November 30.');
+    } else {
+      list.sort(function (x, y) { return (x.near ? x.near.d : 1e9) - (y.near ? y.near.d : 1e9); });
+      list.forEach(function (s) { lines.push('<b>' + esc(s.c.word + ' ' + s.name) + '</b> · ' + (mph(num(s.p0.maxwind)) != null ? mph(num(s.p0.maxwind)) + ' mph' : '') + (H && s.at ? ' · ' + esc(far(H, s.at)) + ' of ' + esc((_lastLoc || 'here').split(',')[0]) : '') + (s.ww.length ? ' · <span class="trop-ww">' + esc(s.ww.map(function (k) { return WW[k][0].toLowerCase().replace(/watch$/, 'watches').replace(/warning$/, 'warnings'); }).join(', ')) + ' posted</span>' : '')); });
+      if (d.failed) lines.push('<span class="rov-old">' + d.failed + ' storm slot' + (d.failed > 1 ? 's' : '') + ' did not answer, so a storm could be missing.</span>');
+    }
+    el.innerHTML = lines.map(function (x) { return '<div class="trop-line">' + x + '</div>'; }).join('');
+  }
+  function storms(d) {
+    var el = document.getElementById('tropStorms'); if (!el) return;
+    var H = here(), list = (d ? d.storms : []).map(storm);
+    el.innerHTML = list.map(function (s) {
+      var p = s.p0, kv = [['Maximum wind', num(p.maxwind) != null ? mph(num(p.maxwind)) + ' mph (' + num(p.maxwind) + ' kt)' + (num(p.gust) ? ', gusts ' + mph(num(p.gust)) + ' mph' : '') : '–'],
+        ['Pressure', num(p.mslp) ? num(p.mslp) + ' mb' : '–'], ['Moving', s.move || '–'], ['Position', s.at ? s.at.lat.toFixed(1) + '°' + (s.at.lat >= 0 ? 'N' : 'S') + ' ' + Math.abs(s.at.lon).toFixed(1) + '°' + (s.at.lon < 0 ? 'W' : 'E') : '–']];
+      if (H && s.at) kv.push(['From ' + ((_lastLoc || 'here').split(',')[0]), far(H, s.at)]);
+      if (H && s.near && s.near.f !== first(s.a)[0]) kv.push(['Closest forecast approach', far(H, s.near.q) + ', ' + lbl(s.near.f.properties)]);
+      if (s.ww.length) kv.push(['Coastal alerts', s.ww.map(function (k) { return WW[k][0]; }).join(', ')]);
+      var track = first(s.a).map(function (f) { var q2 = f.properties, c = catOf(q2); return '<tr><th>' + esc(lbl(q2)) + '</th><td>' + esc(c.word) + '</td><td>' + (mph(num(q2.maxwind)) != null ? mph(num(q2.maxwind)) + ' mph' : '–') + '</td></tr>'; }).join('');
+      return '<div class="card trop-card"><div class="trop-card-h"><span class="trop-dot" style="background:' + CAT[s.c.k][1] + '"></span><b>' + esc(s.c.word + ' ' + s.name) + '</b><span class="trop-basin">' + esc(s.basin) + ' · ' + esc(s.adv) + '</span></div>' +
+        '<dl class="snd-kv">' + kv.map(function (x) { return '<div><dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd></div>'; }).join('') + '</dl>' +
+        (track ? '<table class="kv-table trop-track"><thead><tr><th>Forecast</th><th>Strength</th><th>Wind</th></tr></thead><tbody>' + track + '</tbody></table>' : '') +
+        '<div class="source-note"><a href="' + s.link + '" target="_blank" rel="noopener">The hurricane center’s page for ' + esc(s.name) + '</a> (advisory, discussion, wind and surge graphics).</div></div>';
+    }).join('');
+  }
+  function outlooks(d) {
+    var el = document.getElementById('tropTWO'); if (!el) return;
+    if (!d) { el.innerHTML = ''; return; }
+    el.innerHTML = ['AT', 'EP', 'CP'].map(function (b) {
+      var t = d.text[b]; if (!t) return '<div class="card"><b>' + BASIN[b] + '</b><div class="state-load">No outlook text came back.</div></div>';
+      var body = t.text.split('\n'), i = body.findIndex(function (x) { return /^Tropical Weather Outlook/i.test(x); }); body = (i >= 0 ? body.slice(i) : body).join('\n').replace(/\n\$\$[\s\S]*$/, '').trim();
+      var quiet = /not expected during the next 7 days|no tropical cyclones|Tropical cyclone formation is not expected/i.test(body) && body.length < 900;
+      return '<details class="card trop-two"' + (quiet ? '' : ' open') + '><summary><b>' + BASIN[b] + '</b> · issued ' + esc(fmtIssued(t.t)) + (quiet ? ' · nothing expected in the next 7 days' : '') + '</summary><pre class="trop-pre">' + esc(body) + '</pre></details>';
+    }).join('');
+  }
+  function key(d) {
+    var el = document.getElementById('tropKey'); if (!el) return;
+    var chip = function (c, t, hatch) { return '<span class="trop-chip"><i style="background:' + c + (hatch ? ';opacity:.55' : '') + '"></i>' + t + '</span>'; };
+    el.innerHTML = chip('rgba(255,255,255,.55)', 'Forecast cone (where the centre may go)') + chip(CAT.D[1], 'Depression') + chip(CAT.S[1], 'Tropical storm') + chip(CAT.H[1], 'Hurricane') + chip(CAT.M[1], 'Major hurricane') + chip(CAT.P[1], 'Post-tropical') +
+      Object.keys(WW).map(function (k) { return chip(WW[k][1], WW[k][0]); }).join('') + chip(RISK.low, 'Outlook: low chance', 1) + chip(RISK.medium, 'medium', 1) + chip(RISK.high, 'high', 1);
+  }
+  function draw(d) {
+    var box = document.getElementById('tropMap'); if (!box || typeof L === 'undefined') return;
+    if (!S.map) {
+      S.map = L.map(box, { zoomControl: true, attributionControl: true, worldCopyJump: true }); S.map.attributionControl.setPrefix(false);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 16, maxZoom: 12, attribution: 'Esri · NOAA NHC' }).addTo(S.map);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 16, maxZoom: 12, zIndex: 1000, pane: 'shadowPane' }).addTo(S.map);
+      S.map.setView([24, -80], 3);
+    }
+    if (S.grp) S.grp.remove(); S.grp = L.layerGroup().addTo(S.map);
+    var G = S.grp, bounds = [], H = here(), riskC = function (p, k) { return RISK[String(p['risk' + k] || '').toLowerCase()] || RISK.low; };
+    if (d) {
+      (d.two.a7 || []).forEach(function (f) { var g0 = L.geoJSON(f, { style: { color: riskC(f.properties, '7day'), weight: 1.5, fillColor: riskC(f.properties, '7day'), fillOpacity: 0.22, dashArray: '4 4' } }).bindPopup('<b>' + esc(f.properties.prob7day || '') + ' chance</b> of formation in 7 days (' + esc(f.properties.risk7day || '') + ')' + (f.properties.prob2day ? '<br>' + esc(f.properties.prob2day) + ' in 2 days' : '')).addTo(G); try { var b0 = g0.getBounds(); bounds.push(b0.getSouthWest(), b0.getNorthEast()); } catch (e) {} });
+      (d.two.m7 || []).forEach(function (f) { L.geoJSON(f, { style: { color: riskC(f.properties, '7day'), weight: 2.5 } }).addTo(G); });
+      (d.two.p7 || []).concat(d.two.p2 || []).forEach(function (f) { var c = f.geometry && f.geometry.coordinates; if (!c) return; L.circleMarker([c[1], c[0]], { radius: 8, color: '#111', weight: 1.5, fillColor: riskC(f.properties, f.properties.prob7day ? '7day' : '2day'), fillOpacity: 0.95 }).bindPopup('<b>Watched area</b><br>' + esc(f.properties.prob2day || '–') + ' chance in 2 days · ' + esc(f.properties.prob7day || '–') + ' in 7 days').addTo(G); bounds.push([c[1], c[0]]); });
+      d.storms.forEach(function (a) {
+        var s = storm(a);
+        a.cone.forEach(function (f) { var g = L.geoJSON(f, { style: { color: '#E6EAF2', weight: 1.2, fillColor: '#E6EAF2', fillOpacity: 0.18 } }).addTo(G); try { var b = g.getBounds(); bounds.push(b.getSouthWest(), b.getNorthEast()); } catch (e) {} });
+        a.past.forEach(function (f) { L.geoJSON(f, { style: { color: '#9AA6BC', weight: 2, dashArray: '2 5' } }).addTo(G); });
+        a.track.forEach(function (f) { L.geoJSON(f, { style: { color: '#E6EAF2', weight: 1.6 } }).addTo(G); });
+        a.ww.forEach(function (f) { var w = WW[f.properties.tcww]; if (w) L.geoJSON(f, { style: { color: w[1], weight: 6, opacity: 0.95 } }).bindPopup(esc(w[0]) + ' for ' + esc(s.name)).addTo(G); });
+        first(a).forEach(function (f, i) { var q2 = ll(f); if (q2.lat == null) return; var c = catOf(f.properties);
+          L.circleMarker([q2.lat, q2.lon], { radius: i ? 6 : 9, color: '#0B0E14', weight: 1.5, fillColor: CAT[c.k][1], fillOpacity: 1 })
+            .bindPopup('<b>' + esc(s.name) + '</b>, ' + esc(lbl(f.properties)) + '<br>' + esc(c.word) + (mph(num(f.properties.maxwind)) != null ? ', ' + mph(num(f.properties.maxwind)) + ' mph' : '')).addTo(G);
+          bounds.push([q2.lat, q2.lon]); });
+      });
+    }
+    if (H) { L.circleMarker([H.lat, H.lon], { radius: 6, color: '#7CC0EE', fillColor: '#7CC0EE', fillOpacity: 0.85, weight: 2 }).bindPopup(esc((_lastLoc || 'Loaded place').split(',')[0])).addTo(G); }
+    setTimeout(function () { S.map.invalidateSize(); if (bounds.length) { if (H && bounds.some(function (b) { var q2 = L.latLng(b); return haversine(H.lat, H.lon, q2.lat, q2.lng) < 1500; })) bounds.push([H.lat, H.lon]); S.map.fitBounds(L.latLngBounds(bounds).pad(0.15), { maxZoom: 6 }); } else S.map.setView([22, -85], 3); }, 60);
+  }
+  function show(force) {
+    status(S.d); storms(S.d); outlooks(S.d); key(S.d);
+    loadVendor('leaflet').then(function () { draw(S.d); }, function () {});
+    return load(!!force).then(function (d) { status(d); storms(d); outlooks(d); key(d); loadVendor('leaflet').then(function () { draw(d); }, function () {}); }, function () { status(null); });
+  }
+  return { show: show, load: load, _storm: storm, _state: function () { return S; } };
 })();
 
 /* KALV (v3.55.0): the Kalshi screen laid out the way wethr.net lays out its own market page. Three cards across the top
