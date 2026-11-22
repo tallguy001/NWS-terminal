@@ -16243,18 +16243,12 @@ var SND = (function () {
   /* v3.73.0: precipitation type, three reads side by side. The sounding's own read (SHARPpy's method) can miss a shallow
      warm or cold layer between the 25 mb levels; on the Jan 24-25 2026 ice storm it called a third of the HRRR's
      freezing-rain points sleet. So on cold soundings the card also shows the model's own precipitation-type flags and
-     NBM's chance of each type at that hour. The NBM request is made only when the card shows (see ptypeCard), so
-     warm-season taps cost nothing extra. */
+     NBM's chance of each type at that hour (one point, one hour per sounding shown). */
   var FLAGW = { sn: 'snow', ra: 'rain', fz: 'freezing rain', pl: 'sleet' };
-  function frozenWord(t) { return /Snow|Sleet|Freezing/.test(t || ''); }
   function ptypeCard(P, A) {
     var f = P.flags, on = f ? Object.keys(FLAGW).filter(function (k) { return +f[k] === 1; }) : [];
-    /* v3.74.1: shown whenever precipitation type is a live question, not only at 40 F or colder: a 45 F November sounding
-       with the freezing level at 7,000 ft is exactly when the model and NBM are worth seeing beside the sounding. Cool
-       surface (50 F or colder), a freezing level under 10,000 ft, or anything frozen in either read. Summer soundings
-       (freezing level 12,000 ft and up) still skip it, and with it the NBM request. */
-    var cold = P.t[0] * 9 / 5 + 32 <= 50 || (A.frzAgl != null && A.frzAgl < 3048), frozen = frozenWord(A.ptype && A.ptype.type) || on.some(function (k) { return k !== 'ra'; });
-    if (!cold && !frozen) return '';
+    /* v3.74.1: shown on every sounding. It used to wait for a surface of 40 F or colder (or something frozen), which hid
+       it on a 45 F November sounding with the freezing level at 7,500 ft. The NBM request it makes is one point, one hour. */
     var model = f ? (on.length ? on.map(function (k) { return FLAGW[k]; }).join(' + ') : 'nothing falling') : 'not sent with this sounding';
     return '<div class="card snd-card snd-ptype3"><div class="panel-title">Precipitation type, three reads</div>' +
       '<dl class="snd-kv"><div><dt>Sounding</dt><dd>' + esc((A.ptype && A.ptype.type) || '–') + '</dd></div>' +
