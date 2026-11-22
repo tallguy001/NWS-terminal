@@ -7351,7 +7351,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.75.0';
+var APP_VERSION = '3.76.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -11411,10 +11411,16 @@ var REGMAP = (function () {
      Forecast → Snow and ice → Snow range and odds. The ECMWF ensemble's 50 members, each with its own snowfall over the
      chosen window (24 hours to 5 days from the next 6-hourly mark), read at about 300 points over the frame and at the
      labelled stations: the middle of the 50 (median), the low end (10th percentile), the high end (90th) and the chance of
-     1, 4 and 8 inches or more. Snowfall comes as water; it is shown as snow at 10 to 1, which is light for a dry, cold
-     snow and heavy for a wet one. Windows stop at 5 days so both ends always come from the same run (the 06 and 18 UTC
-     runs reach 144 hours). One request: 2 times x 50 members x 1 parameter x 1 bundle; points where a member has no
-     snow are left out by the filter, so a dry map is a small answer. Kept for an hour. */
+     1, 4 and 8 inches or more. Windows stop at 5 days so both ends always come from the same run (the 06 and 18 UTC
+     runs reach 144 hours). Points where a member has no snow are left out by the filter, so a dry map is a small answer.
+     Kept for an hour.
+     v3.76.0: snow depth from the Kuchera ratio, not a flat 10 to 1. Snowfall comes as water; each 12-hour step's water is
+     multiplied by SLR = 12 + (271.16 - Tmax) when Tmax <= 271.16 K, else 12 + 2 x (271.16 - Tmax), floored at 0, where
+     Tmax is the warmest temperature from the ground (2 m) up to 500 mb in the ECMWF high-resolution run at that point
+     (levels below the surface skipped), averaged over the step's two ends. The ensemble members share that run's ratio;
+     their own column temperatures would cost 50 times as much. If the temperatures do not load, 10 to 1 is used and said.
+     Requests: ensemble snowfall at every 12-hour mark (3 to 11 times x 50 members x 1 bundle) and the high-resolution
+     column at the same times (8 fields x 1 bundle). */
   var ES_WIN = { '24': ['Next 24 h', 24], '48': ['48 h', 48], '72': ['72 h', 72], '120': ['5 days', 120] };
   var ES_SHOW = { p50: ['Likely', 'the middle of the 50 members'], p10: ['Low end', 'the 10th percentile: 9 in 10 members have more'], p90: ['High end', 'the 90th percentile: 1 in 10 members has more'],
                   x1: ['1 in+', 'chance of 1 inch or more'], x4: ['4 in+', 'chance of 4 inches or more'], x8: ['8 in+', 'chance of 8 inches or more'] };
@@ -11426,6 +11432,14 @@ var REGMAP = (function () {
         ge = function (x) { return 100 * a.filter(function (v) { return v >= x - 1e-9; }).length / a.length; };
     return { p10: q(0.1), p50: q(0.5), p90: q(0.9), x1: ge(1), x4: ge(4), x8: ge(8), mx: a[a.length - 1], n: a.length };
   }
+  var KU_LV = [1000, 925, 850, 700, 600, 500], KU_V = [{ name: 'sp', level: 'sfc', alias: 'sp' }, { name: '2t', level: 'sfc', alias: 't2' }].concat(KU_LV.map(function (p) { return { name: 't', level: 'pl ' + p, alias: 't' + p }; }));
+  function kuchera(r) {   // one ECMWF column -> snow-to-liquid ratio, or null when the temperatures are missing
+    if (!r) return null;
+    var ps = isFinite(+r.sp) && +r.sp > 0 ? +r.sp / 100 : 1100, tx = isFinite(+r.t2) && r.t2 != null ? +r.t2 : -Infinity;
+    KU_LV.forEach(function (p) { var v = r['t' + p]; if (p <= ps && v != null && isFinite(+v) && +v > tx) tx = +v; });
+    if (!isFinite(tx)) return null;
+    return Math.max(0, tx > 271.16 ? 12 + 2 * (271.16 - tx) : 12 + (271.16 - tx));
+  }
   function loadEs(W, H) {
     if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
     var pk = esPick(), A = Math.ceil(Date.now() / (6 * HOUR)) * 6 * HOUR, B = A + pk.h * HOUR, key = D.key + ':' + W + ':' + pk.h + ':' + A;
@@ -11433,15 +11447,28 @@ var REGMAP = (function () {
     var L = lattice(W, H, 300), stn = [{ lat: +(+currentLat).toFixed(4), lon: +(+currentLon).toFixed(4), name: 'home' }].concat(framePts(24).map(function (o) { return { lat: +o.lat.toFixed(4), lon: +o.lon.toFixed(4), name: o.id }; })), list = stn.slice();
     for (var j = 0; j < L.ny; j++) for (var i = 0; i < L.nx; i++) if (list.length < 500) list.push({ lat: +(L.lat0 + j * L.step).toFixed(4), lon: +(L.lon0 + i * L.step).toFixed(4), name: '#' + i + '_' + j });
     var me = ES = { key: key, at: Date.now(), d: null, p: null, A: A, B: B, h: pk.h };
-    me.p = gsOwn('ifsenfo', { timesList: [A, B].map(function (t) { return new Date(t).toISOString().replace('.000Z', 'Z'); }), coordinates: list, variables: [{ name: 'sf', level: 'sfc', alias: 'sf' }], members: ES_MEM, filter: { expression: 'sf > 0.00001' } }).then(function (rows) {
-      var by = {}, runB = 0, runs = {};
-      (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), m = r.member; if (!r.name || m == null || !isFinite(+r.sf)) return; var x = by[r.name] || (by[r.name] = {}), y = x[m] || (x[m] = { a: 0, b: 0 });
-        if (t === A) y.a = +r.sf; else if (t === B) { y.b = +r.sf; var ra = Date.parse(r.forecasted_at); runs[ra] = (runs[ra] || 0) + 1; if (ra > runB) runB = ra; } });
-      var st2 = {}, cells = [], top = 0;
-      list.forEach(function (p) { var x = by[p.name] || {}, tot = ES_MEM.map(function (m) { var y = x[m]; return y ? Math.max(0, y.b - y.a) * 39.3701 * 10 : 0; }), s = esStats(tot);
+    var times = []; for (var tt = A; tt <= B; tt += 12 * HOUR) times.push(tt);
+    var iso = times.map(function (t) { return new Date(t).toISOString().replace('.000Z', 'Z'); });
+    var pS = gsOwn('ifsenfo', { timesList: iso, coordinates: list, variables: [{ name: 'sf', level: 'sfc', alias: 'sf' }], members: ES_MEM, filter: { expression: 'sf > 0.00001' } });
+    var pT = gsOwn('ifsoper', { timesList: iso, coordinates: list, variables: KU_V }).then(null, function () { return null; });   // without it, 10 to 1
+    me.p = Promise.all([pS, pT]).then(function (res) {
+      var rows = res[0], by = {}, runB = 0, runs = {}, ku = {}, kuOk = !!res[1];
+      (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), m = r.member; if (!r.name || m == null || !isFinite(+r.sf) || times.indexOf(t) < 0) return;
+        ((by[r.name] || (by[r.name] = {}))[m] || (by[r.name][m] = {}))[t] = +r.sf;
+        if (t === B) { var ra = Date.parse(r.forecasted_at); runs[ra] = (runs[ra] || 0) + 1; if (ra > runB) runB = ra; } });
+      (res[1] || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), k = kuchera(r); if (!r.name || k == null || times.indexOf(t) < 0) return; (ku[r.name] || (ku[r.name] = {}))[t] = k; });
+      var st2 = {}, cells = [], top = 0, kuUsed = 0;
+      list.forEach(function (p) {
+        var x = by[p.name] || {}, K = ku[p.name] || {}, rat = [];
+        for (var i = 1; i < times.length; i++) { var a = K[times[i - 1]], b = K[times[i]], v = a != null && b != null ? (a + b) / 2 : a != null ? a : b; rat.push(v == null ? 10 : v); if (v != null) kuUsed++; }
+        var w10 = [], tot = ES_MEM.map(function (m) { var y = x[m] || {}, sum = 0, s10 = 0;
+          for (var i = 1; i < times.length; i++) { var d = Math.max(0, (y[times[i]] || 0) - (y[times[i - 1]] || 0)) * 39.3701; sum += d * rat[i - 1]; s10 += d * 10; }
+          w10.push(s10); return sum; });
+        var s = esStats(tot), s10 = esStats(w10), tw = w10.reduce(function (q, v) { return q + v; }, 0);
+        s.p50at10 = s10.p50; s.ratio = tw > 0.01 ? 10 * tot.reduce(function (q, v) { return q + v; }, 0) / tw : null;
         if (s.p90 > top) top = s.p90;
         if (p.name.charAt(0) === '#') { var ij = p.name.slice(1).split('_'); cells.push({ lat: L.lat0 + (+ij[1]) * L.step, lon: L.lon0 + (+ij[0]) * L.step, s: s }); } else st2[p.name] = s; });
-      me.d = { st: st2, cells: cells, L: L, run: runB, top: top, mixed: Object.keys(runs).length > 1 }; me.p = null;
+      me.d = { st: st2, cells: cells, L: L, run: runB, top: top, mixed: Object.keys(runs).length > 1, ku: kuOk && kuUsed > 0 }; me.p = null;
     }, function (e) { me.p = null; throw e; });
     return me.p;
   }
@@ -11451,7 +11478,8 @@ var REGMAP = (function () {
     var d = E.d, show = ES_SHOW[pk.k], odds = pk.k.charAt(0) === 'x', span = (pk.h <= 72 ? hrDay(E.A) + ' to ' + hrDay(E.B) : gsLocal(E.A).wd + ' to ' + gsLocal(E.B).wd);
     var fmt = function (v) { return odds ? String(R(v)) + '%' : v < 0.05 ? '0' : v < 9.95 ? v.toFixed(1) : String(R(v)); }, say = function (v) { return v < 0.05 ? 'none' : (v < 9.95 ? v.toFixed(1) : R(v)) + ' in'; };
     var grid = function (s) { return kv([['Likely (median)', '<b>' + say(s.p50) + '</b>'], ['Range, 10th to 90th', say(s.p10) + ' to ' + say(s.p90)], ['Wettest member', say(s.mx)],
-      ['Chance of 1 in+', R(s.x1) + '%'], ['Chance of 4 in+', R(s.x4) + '%'], ['Chance of 8 in+', R(s.x8) + '%']]) + '<div class="rg-note">50 ECMWF ensemble members, snow at 10 to 1, ' + esc(span) + '.</div>'; };
+      ['Chance of 1 in+', R(s.x1) + '%'], ['Chance of 4 in+', R(s.x4) + '%'], ['Chance of 8 in+', R(s.x8) + '%']].concat(d.ku ? [['Snow ratio (Kuchera)', s.ratio != null ? 'about ' + R(s.ratio) + ' to 1' : '–'], ['Likely at 10 to 1', say(s.p50at10)]] : [])) +
+      '<div class="rg-note">50 ECMWF ensemble members, ' + (d.ku ? 'snow at the Kuchera ratio from the ECMWF high-resolution run\u2019s column temperatures' : 'snow at 10 to 1 (the column temperatures did not load)') + ', ' + esc(span) + '.</div>'; };
     var pts = [];
     D.stn.forEach(function (o) { var s = d.st[o.id]; if (!s) return; var v = s[pk.k];
       pts.push({ o: o, v: v, main: fmt(v), wide: true, detail: head(o, 'Snow, ' + esc(span) + ': likely <b>' + say(s.p50) + '</b>, range ' + say(s.p10) + ' to ' + say(s.p90)) + grid(s) }); });
@@ -11461,7 +11489,7 @@ var REGMAP = (function () {
     var rt = d.run ? String(new Date(d.run).getUTCHours()).padStart(2, '0') + 'Z run' : '';
     return { title: T + ', ' + (pk.h <= 72 ? 'next ' + pk.h + ' h' : 'next 5 days'), pts: pts, field: field,
              subText: 'ECMWF ensemble' + (rt ? ', ' + rt : '') + ' · ' + show[0].toLowerCase() + (hm ? ' · ' + (odds ? R(hm[pk.k]) + '%' : say(hm[pk.k])) + ' at the marker' : ''),
-             sub2: show[1] + ', ' + span + ', from the 50 members of the ECMWF ensemble; snow at 10 to 1 from the snowfall water' + (d.mixed ? '. Some points came from an older run' : ''),
+             sub2: show[1] + ', ' + span + ', from the 50 members of the ECMWF ensemble; ' + (d.ku ? 'snow depth from the snowfall water at the Kuchera ratio, which follows the warmest air between the ground and 500 mb (colder air, fluffier snow)' + (hm && hm.ratio != null ? ', about ' + R(hm.ratio) + ' to 1 at the marker' : '') : 'snow at 10 to 1 from the snowfall water, because the column temperatures did not load') + (d.mixed ? '. Some points came from an older run' : ''),
              empty: d.top < 0.05 && !odds ? 'No member has measurable snow in view for this window.' : '' };
   }
   /* ════ Wisconsin 511 winter road conditions (v3.71.0) ════
