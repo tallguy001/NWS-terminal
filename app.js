@@ -3869,7 +3869,8 @@ function loadServerConfig() {
   if (location.protocol.indexOf('http') !== 0) return Promise.resolve();
   return netFetch('/api/config').then(function (r) { return r.ok ? r.json() : {}; })
     .then(function (c) {
-      gsServerToken = !!(c && c.gsServerToken); if (gsServerToken && typeof NEXTPX !== 'undefined' && NEXTPX._state().state === 'off') NEXTPX.refresh(true);   // v3.77.0: a place may have loaded first
+      gsServerToken = !!(c && c.gsServerToken); if (gsServerToken && typeof NEXTPX !== 'undefined' && NEXTPX._state().state === 'off') NEXTPX.refresh(true);
+      if (gsServerToken && typeof LAKEFX !== 'undefined' && LAKEFX._state().state === 'off') LAKEFX.refresh(true);   // v3.81.0   // v3.77.0: a place may have loaded first
       lightningServerKey = !!(c && c.lightningServerKey);
       radarServerKey = !!(c && c.radarServerKey); if (radarServerKey && typeof RADAROV !== 'undefined') RADAROV.refresh(false);   // a place may have loaded before this answer came
       camsServerKey = !!(c && c.camsServerKey); wi511ServerKey = !!(c && c.wi511ServerKey);
@@ -7152,6 +7153,7 @@ async function doFetch(opts) {
     fetchGsRtmaCurrent(geo.lat, geo.lon);
     if (typeof RADAROV !== 'undefined') RADAROV.load(geo.lat, geo.lon, true);
     if (typeof NEXTPX !== 'undefined') NEXTPX.load(geo.lat, geo.lon, true);   // v3.77.0
+    if (typeof LAKEFX !== 'undefined') LAKEFX.load(geo.lat, geo.lon, false);   // v3.81.0
     if (typeof OBSV !== 'undefined') OBSV.show(geo.lat, geo.lon);   // v3.62.0
     climateNormals = null;
     fetchNormalsAndRecords(geo.lat, geo.lon, mySeq);
@@ -7358,7 +7360,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.80.0';
+var APP_VERSION = '3.81.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -18460,6 +18462,156 @@ var TROP = (function () {
     return load(!!force).then(function (d) { status(d); storms(d); outlooks(d); key(d); loadVendor('leaflet').then(function () { draw(d); }, function () {}); }, function () { status(null); });
   }
   return { show: show, load: load, _storm: storm, _state: function () { return S; } };
+})();
+
+/* LAKEFX (v3.81.0): lake effect at the loaded place, next 48 hours, on Now (shown within about 250 miles of a Great Lake,
+   October to April). From the HRRR through GribStream, every 3 hours:
+   1. the 850 mb wind over the place (and 925 / 700 mb for the turning with height);
+   2. a line traced upwind from the place across the Great Lakes outlines in the base map, giving the over-water fetch
+      and the middle of that fetch;
+   3. the HRRR column at that mid-fetch point: lake surface temperature, 2 m dew point, 850 mb temperature, and how deep a
+      parcel warmed and moistened by the lake rises (lifted with the app's SHARPpy functions; its equilibrium level is the
+      top of the lake clouds, and the area between is lake-induced CAPE).
+   Rating from the usual ingredients (Niziol 1987; Niziol, Snyder and Waldstreicher 1995): lake minus 850 mb temperature
+   of 13 C or more, enough fetch, clouds at least about a kilometre deep, and little turning of the wind between 925 and
+   700 mb. It says whether the setup is there, not how much will fall; lake ice, which shuts it down, is on the Great
+   Lakes ice map. Two GribStream point requests (winds at the place, then the columns at the distinct fetch points). */
+var LAKEFX = (function () {
+  var cur = { key: '', at: 0, d: null, state: 'idle', err: '' }, seq = 0, H3 = 3 * 36e5, lakesP = null;
+  var LV = [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 650, 600, 550, 500];
+  function lakes() {   // the Great Lakes rings in degrees, with a box each and the name of the lake they belong to
+    if (lakesP) return lakesP;
+    var NAME = { 'Saginaw Bay': 'Lake Huron', 'Georgian Bay': 'Lake Huron', 'Lake Saint Clair': 'Lake St. Clair' };
+    return (lakesP = BASEMAP.load().then(function (j) {
+      if (!j) throw new Error('the lake outlines did not load');
+      var out = [], named = j.lakes.filter(function (l) { return l[0] === 'g' && l[1] && l[1] !== 'Laguna Madre'; });
+      j.lakes.forEach(function (l) {
+        if (l[0] !== 'g' || l[1] === 'Laguna Madre' || l[2] < 40) return;
+        var nm = NAME[l[1]] || l[1];
+        if (!nm) { var best = null; named.forEach(function (n) { var d = Math.hypot(n[2] - l[2], (n[3] - l[3]) * 0.7); if (!best || d < best.d) best = { d: d, n: n[1] }; }); nm = NAME[best.n] || best.n; }
+        l[4].forEach(function (r) { var pts = [], b = [1e9, 1e9, -1e9, -1e9]; for (var i = 0; i < r.length; i += 2) { var lo = r[i] / 1000, la = r[i + 1] / 1000; pts.push([lo, la]); if (lo < b[0]) b[0] = lo; if (la < b[1]) b[1] = la; if (lo > b[2]) b[2] = lo; if (la > b[3]) b[3] = la; } out.push({ name: nm, pts: pts, b: b }); });
+      });
+      return out;
+    }, function (e) { lakesP = null; throw e; }));
+  }
+  function inRing(pts, lo, la) { var c = false; for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) { if ((pts[i][1] > la) !== (pts[j][1] > la) && lo < (pts[j][0] - pts[i][0]) * (la - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0]) c = !c; } return c; }
+  function water(L, lo, la) { for (var i = 0; i < L.length; i++) { var b = L[i].b; if (lo >= b[0] && lo <= b[2] && la >= b[1] && la <= b[3] && inRing(L[i].pts, lo, la)) return L[i].name; } return null; }
+  function move(la, lo, km, brg) { var a = brg * Math.PI / 180; return [la + km * Math.cos(a) / 111.195, lo + km * Math.sin(a) / (111.195 * Math.cos(la * Math.PI / 180))]; }
+  function nearLake(L, la, lo) {   // miles to the nearest Great Lakes shore point, roughly
+    var m = 1e9; L.forEach(function (r) { for (var i = 0; i < r.pts.length; i += 3) { var d = haversine(la, lo, r.pts[i][1], r.pts[i][0]); if (d < m) m = d; } }); return m;
+  }
+  /* Trace upwind (toward where the wind comes from). Bands reach well inland, but not across a whole province: the first water
+     has to be within 120 km (75 miles) of the place, the fetch ends at 40 km (25 miles) of land after it (islands and
+     narrow points are crossed), and under 10 km of water counts as off land. The column is read at the middle water sample, an actual over-water point. */
+  function fetchOf(L, la, lo, from) {
+    var wet = [], names = {}, gap = 0;
+    for (var km = 1; km <= 450; km += 2) {
+      var q = move(la, lo, km, from), w = water(L, q[1], q[0]);
+      if (w) { wet.push(q); names[w] = (names[w] || 0) + 1; gap = 0; }
+      else if (wet.length) { gap += 2; if (gap > 40) break; }
+      else if (km > 120) break;
+    }
+    if (wet.length * 2 < 10) return { km: 0 };   // a ray that only clips a shore or harbour: its sample would be a coastal (partly land) grid point
+    var lake = Object.keys(names).sort(function (a, b) { return names[b] - names[a]; })[0];
+    return { km: wet.length * 2, lake: lake, mid: wet[Math.floor(wet.length / 2)] };
+  }
+  function dirOf(u, v) { return (Math.atan2(-u, -v) * 180 / Math.PI + 360) % 360; }   // where the wind comes from
+  function angDiff(a, b) { var d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+  function column(r) {   // one HRRR row -> what the rating needs, or null
+    var T = SND._thermo, num = function (k) { var v = r[k]; return v == null || !isFinite(+v) ? null : +v; };
+    var ts = num('ts'), td = num('td'), ps = num('ps'), t850 = num('t850'); if (ts == null || ps == null || t850 == null) return null;
+    ts -= 273.15; t850 -= 273.15; ps /= 100; td = td == null ? ts - 3 : Math.min(td - 273.15, ts);
+    var lv = LV.filter(function (p) { return p < ps - 2 && num('t' + p) != null && num('z' + p) != null; });
+    if (lv.length < 6) return null;
+    var lcl = T.drylift(ps, ts, td), z0 = num('z' + lv[0]) + (ps - lv[0]) * 8.4, el = null, cape = 0, prevB = null, prevZ = z0;
+    for (var i = 0; i < lv.length; i++) {
+      var p = lv[i], te = num('t' + p) - 273.15, z = num('z' + p), tp = p >= lcl[0] ? (ts + 273.15) * Math.pow(p / ps, 0.2857) - 273.15 : T.wetlift(lcl[0], lcl[1], p);
+      var b = 9.81 * (tp - te) / (te + 273.15);
+      if (b <= 0) { var f = prevB != null && prevB > 0 ? prevB / (prevB - b) : 0; el = prevZ + (z - prevZ) * f; if (prevB > 0) cape += prevB * (el - prevZ) / 2; break; }
+      if (prevB != null) cape += (prevB + b) / 2 * (z - prevZ); prevB = b; prevZ = z;
+    }
+    if (el == null) el = num('z' + lv[lv.length - 1]);
+    return { ts: ts, t850: t850, dT: ts - t850, depth: Math.max(0, el - z0), cape: Math.max(0, cape), rh850: num('r850') };
+  }
+  function rate(x) {   // 0 none, 1 marginal, 2 favourable, 3 strong
+    if (!x.f.km || !x.c || x.c.dT < 13 || x.f.km < 25) return 0;
+    var d = x.c.depth, sh = x.shear, ws = x.spd, rh = x.c.rh850 == null ? 80 : x.c.rh850;
+    if (rh < 50) return 0;   // dry air aloft: the lake clouds evaporate (checked against NWS Marquette, Nov 22 2026: 850 mb humidity 7 to 40% where it forecast sun)
+    var r = 0;
+    if (x.c.dT >= 20 && x.f.km >= 120 && d >= 2500 && (sh == null || sh <= 30) && ws >= 10) r = 3;
+    else if (x.f.km >= 60 && d >= 1500 && (sh == null || sh <= 30)) r = 2;
+    else if (d >= 900 && (sh == null || sh <= 60)) r = 1;
+    return rh < 70 ? Math.min(r, 1) : r;
+  }
+  var WORD = ['None', 'Marginal', 'Favorable', 'Strong'], TONE = ['', 'lfx-1', 'lfx-2', 'lfx-3'];
+  function load(lat, lon, force) {
+    lat = +lat; lon = +lon;
+    var sec = document.getElementById('lakeFxSec'), m = new Date().getUTCMonth() + 1;
+    var off = function () { cur = { key: '', at: 0, d: null, state: 'off', err: '' }; if (sec) sec.classList.add('hidden'); };
+    if (!isFinite(lat) || !isFinite(lon) || (m > 4 && m < 10) || typeof gsAvailable !== 'function' || !gsAvailable() || lat < 40 || lat > 50 || lon < -93.5 || lon > -74) { off(); return; }
+    var key = lat.toFixed(3) + ',' + lon.toFixed(3);
+    if (cur.key !== key) cur = { key: key, at: 0, d: null, state: 'idle', err: '' };
+    if (cur.state === 'busy' || (!force && cur.d && Date.now() - cur.at < 30 * 60000)) { render(); return; }
+    var my = ++seq; cur.state = 'busy';
+    lakes().then(function (L) {
+      if (nearLake(L, lat, lon) > 250) { if (my === seq) off(); return null; }
+      if (sec) sec.classList.remove('hidden'); render();
+      var a = Math.ceil(Date.now() / H3) * H3, b = a + 48 * 36e5, span = { fromTime: new Date(a - 60000).toISOString(), untilTime: new Date(b + 60000).toISOString() };
+      var W = [925, 850, 700].reduce(function (o, p) { return o.concat([{ name: 'UGRD', level: p + ' mb', alias: 'u' + p }, { name: 'VGRD', level: p + ' mb', alias: 'v' + p }]); }, []);
+      return gsPost('hrrr', Object.assign({ coordinates: [{ lat: +lat.toFixed(4), lon: +lon.toFixed(4), name: 'here' }], variables: W }, span)).then(function (rows) {
+        var by = {};
+        (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time); if (!isFinite(t) || (t - a) % H3) return; var o = by[t] || (by[t] = { t: t, run: 0 }); ['u925', 'v925', 'u850', 'v850', 'u700', 'v700'].forEach(function (k) { if (r[k] != null) o[k] = +r[k]; }); var ra = Date.parse(r.forecasted_at); if (ra > o.run) o.run = ra; });
+        var X = Object.keys(by).map(function (k) { return by[k]; }).filter(function (o) { return o.u850 != null && o.v850 != null; }).sort(function (p, q) { return p.t - q.t; });
+        var pts = {};
+        X.forEach(function (o) { o.from = dirOf(o.u850, o.v850); o.spd = Math.hypot(o.u850, o.v850) * 1.94384; o.shear = o.u925 != null && o.u700 != null ? angDiff(dirOf(o.u925, o.v925), dirOf(o.u700, o.v700)) : null;
+          o.f = fetchOf(L, lat, lon, o.from); if (o.f.km) { var k = o.f.mid[0].toFixed(2) + ',' + o.f.mid[1].toFixed(2); o.pk = k; pts[k] = { lat: +o.f.mid[0].toFixed(2), lon: +o.f.mid[1].toFixed(2), name: k }; } });
+        var list = Object.keys(pts).map(function (k) { return pts[k]; }).slice(0, 40);
+        if (!list.length) { X.forEach(function (o) { o.r = 0; }); return { X: X, run: X.reduce(function (q, o) { return Math.max(q, o.run || 0); }, 0) }; }
+        var V = [{ name: 'TMP', level: 'surface', alias: 'ts' }, { name: 'DPT', level: '2 m above ground', alias: 'td' }, { name: 'PRES', level: 'surface', alias: 'ps' }];
+        LV.forEach(function (p) { V.push({ name: 'TMP', level: p + ' mb', alias: 't' + p }, { name: 'HGT', level: p + ' mb', alias: 'z' + p }); });
+        V.push({ name: 'RH', level: '850 mb', alias: 'r850' });
+        return gsPost('hrrr', Object.assign({ coordinates: list, variables: V }, span)).then(function (rows2) {
+          var col = {}; (rows2 || []).forEach(function (r) { var t = Date.parse(r.forecasted_time); if (isFinite(t)) col[r.name + '@' + t] = r; });
+          X.forEach(function (o) { if (o.pk) o.c = column(col[o.pk + '@' + o.t] || {}); o.r = rate(o); });
+          return { X: X, run: X.reduce(function (q, o) { return Math.max(q, o.run || 0); }, 0) };
+        });
+      });
+    }).then(function (d) { if (my !== seq || cur.key !== key || !d) return; cur.d = d; cur.at = Date.now(); cur.err = ''; },
+            function (e) { if (my === seq && cur.key === key) cur.err = (e && e.message) || 'did not load'; })
+      .then(function () { if (my === seq && cur.key === key && cur.state !== 'off') { cur.state = 'idle'; render(); } });
+  }
+  function at(ms) { var o = { weekday: 'short', hour: 'numeric' }; if (typeof locTimezone !== 'undefined' && locTimezone) o.timeZone = locTimezone; return new Date(ms).toLocaleString('en-US', o).replace(',', ''); }
+  function f(c) { return Math.round(c * 9 / 5 + 32) + '°'; }
+  function ft(m) { return (Math.round(m * 3.28084 / 500) * 500).toLocaleString('en-US') + ' ft'; }
+  function render() {
+    var el = document.getElementById('lakeFx'); if (!el) return;
+    if (cur.state === 'off') { el.innerHTML = ''; return; }
+    if (!cur.d) { el.innerHTML = '<div class="nw-muted">' + (cur.err ? 'The lake-effect read did not load (' + esc(cur.err) + ').' : 'Reading the HRRR over the lakes…') + '</div>'; return; }
+    var X = cur.d.X, place = esc(((_lastLoc || 'here').split(',')[0])), best = null, runs = [];
+    X.forEach(function (o, i) { if (o.r > 0) { var last = runs[runs.length - 1]; if (last && last.b === i - 1 && last.lake === o.f.lake) { last.b = i; if (o.r > last.r) { last.r = o.r; last.o = o; } } else runs.push({ a: i, b: i, r: o.r, o: o, lake: o.f.lake }); } });
+    runs.sort(function (p, q) { return q.r - p.r || p.a - q.a; }); best = runs[0];
+    var head;
+    if (!best) {
+      var offLake = X.filter(function (o) { return o.f.km; }).length;
+      head = '<b>No lake-effect setup for ' + place + ' in the next 48 hours.</b> ' + (offLake ? 'The wind comes off a lake at times, but the air over it is not cold enough or deep enough.' : 'The wind stays off land.');
+    } else {
+      var o = best.o, c = o.c;
+      head = '<b>Lake effect off ' + esc(best.lake) + '</b>, about ' + esc(at(X[best.a].t)) + (best.b > best.a ? ' to ' + esc(at(X[best.b].t)) + ', <b>' + WORD[best.r].toLowerCase() + '</b> at its peak about ' + esc(at(o.t)) : ', <b>' + WORD[best.r].toLowerCase() + '</b>') + ' · lake ' + f(c.ts) + ', 850 mb ' + f(c.t850) + ' (difference ' + Math.round(c.dT) + ' °C) · ' +
+             Math.round(o.f.km * 0.621) + ' mi over water from the ' + compass16(o.from) + ' · clouds to about ' + ft(c.depth) + (runs.length > 1 ? ' · ' + (runs.length - 1) + ' more period' + (runs.length > 2 ? 's' : '') + ' below' : '');
+    }
+    var rows = X.map(function (o) {
+      var c = o.c;
+      return '<tr><th>' + esc(at(o.t)) + '</th><td>' + compass16(o.from) + ' ' + Math.round(o.spd / 5) * 5 + ' kt</td><td>' + (o.f.km ? Math.round(o.f.km * 0.621) + ' mi, ' + esc(o.f.lake.replace(/^Lake /, '')) : 'off land') + '</td>' +
+        '<td>' + (c ? f(c.ts) + ' / ' + f(c.t850) : '–') + '</td><td>' + (c ? Math.round(c.dT) + ' °C' : '–') + '</td><td>' + (c ? ft(c.depth) : '–') + '</td><td>' + (c && c.rh850 != null ? Math.round(c.rh850) + '%' : '–') + '</td><td>' + (o.shear != null ? Math.round(o.shear) + '°' : '–') + '</td>' +
+        '<td><span class="lfx ' + TONE[o.r] + '">' + WORD[o.r] + '</span></td></tr>';
+    }).join('');
+    el.innerHTML = '<p class="lfx-head">' + head + '</p>' +
+      '<div class="lfx-wrap"><table class="kv-table lfx-table"><thead><tr><th>Time</th><th>850 mb wind</th><th>Over water</th><th>Lake / 850 mb</th><th>Difference</th><th>Cloud depth</th><th>850 mb humidity</th><th>Turning</th><th>Setup</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<p class="source-note">HRRR' + (cur.d.run ? ', newest run ' + esc(fmtIssued(cur.d.run)) : '') + ', every 3 hours. The line from ' + place + ' is traced upwind across the Great Lakes for the distance over water; the lake temperature, the 850 mb temperature and the cloud depth (how high a parcel warmed by the lake rises) are read at the middle of that stretch. ' +
+      'A difference of 13 °C or more starts lake effect; more water, deeper clouds and little turning of the wind with height (925 to 700 mb) strengthen it, and dry air at 850 mb (under 50% humidity) shuts it off. This says whether the setup is there, not how much will fall; ice on the lake shuts it down (Maps → Great Lakes ice).</p>';
+  }
+  function refresh(force) { if (typeof currentLat !== 'undefined' && currentLat != null) load(currentLat, currentLon, force); }
+  return { load: load, refresh: refresh, _state: function () { return cur; }, _fetch: fetchOf, _lakes: lakes, _column: column };
 })();
 
 /* KALV (v3.55.0): the Kalshi screen laid out the way wethr.net lays out its own market page. Three cards across the top

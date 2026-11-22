@@ -2991,3 +2991,14 @@ body.snd-open #chatPanel { z-index: 9600; }
 .trop-card .snd-kv dd { text-align: left; white-space: normal; font-size: var(--fs-base); }
 .trop-track { max-width: 560px; }
 .trop-track td:nth-child(2) { width: auto; }
+
+/* ---- Lake effect on Now (v3.81.0) ---- */
+.lfx-head { margin: 0 0 var(--s3); line-height: 1.45; }
+.lfx-wrap { overflow-x: auto; }
+.lfx-table { min-width: 820px; }
+.lfx-table th, .lfx-table td { white-space: nowrap; }
+.lfx-table thead th:not(:first-child), .lfx-table td { width: auto; }
+.lfx { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--fs-sm); color: var(--text-3); border: 1px solid var(--border-default); }
+.lfx.lfx-1 { color: #FACC15; border-color: rgba(250,204,21,.5); }
+.lfx.lfx-2 { color: #F97316; border-color: rgba(249,115,22,.55); font-weight: 600; }
+.lfx.lfx-3 { color: #fff; background: #DC2626; border-color: #DC2626; font-weight: 700; }

@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.80.0">
+<link rel="stylesheet" href="/app.css?v=3.81.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -195,6 +195,11 @@
           <span class="nw-key"><i class="nw-norm-sw" aria-hidden="true"></i>Normal range</span>
         </div>
         <div id="nwTrace" class="nw-trace"></div>
+      </section>
+
+      <section class="section nw-lfx hidden" id="lakeFxSec" aria-labelledby="lakeFxH">
+        <h2 class="nw-h" id="lakeFxH">Lake effect, next 48 hours</h2>
+        <div id="lakeFx"></div>
       </section>
 
       <div class="nw-pair">
@@ -1851,6 +1856,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.80.0" defer></script>
+<script src="/app.js?v=3.81.0" defer></script>
 </body>
 </html>
