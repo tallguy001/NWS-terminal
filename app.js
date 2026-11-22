@@ -7351,7 +7351,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.74.1';
+var APP_VERSION = '3.75.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -11302,15 +11302,15 @@ var REGMAP = (function () {
   /* Rows on a lattice -> a grid the map can shade. val(row) gives the number to add at that point (or, with `peak`, to keep if
      it is the highest so far), or null to skip the row. Points that did not come back are zero: the filter left them out. */
   function gridFrom(L, rows, val, peak) {
-    var v = new Float32Array(L.nx * L.ny), mx = 0, n = 0;
+    var v = new Float32Array(L.nx * L.ny), has = new Uint8Array(L.nx * L.ny), mx = 0, n = 0;
     (rows || []).forEach(function (r) {
       var x = r ? val(r) : null; if (x == null) return;
       var i = Math.round((+r.lon - L.lon0) / L.step), j = L.ny - 1 - Math.round((+r.lat - L.lat0) / L.step); if (!(i >= 0 && i < L.nx && j >= 0 && j < L.ny)) return;
-      var k = j * L.nx + i; if (peak) { if (x > v[k]) v[k] = x; } else v[k] += x;
+      var k = j * L.nx + i; has[k] = 1; if (peak) { if (x > v[k]) v[k] = x; } else v[k] += x;
       n++; if (v[k] > mx) mx = v[k];
     });
     // where a fraction of the frame falls on the lattice: column = u0 + fx * du, row (from the north) = w0 + fy * dw
-    return { nx: L.nx, ny: L.ny, v: v, mi: L.mi, max: mx, n: n, u0: (L.b[0] - L.lon0) / L.step, du: (L.b[2] - L.b[0]) / L.step,
+    return { nx: L.nx, ny: L.ny, v: v, has: has, lon0: L.lon0, lat0: L.lat0, step: L.step, mi: L.mi, max: mx, n: n, u0: (L.b[0] - L.lon0) / L.step, du: (L.b[2] - L.b[0]) / L.step,
              w0: (L.lat0 + (L.ny - 1) * L.step - L.b[3]) / L.step, dw: (L.b[3] - L.b[1]) / L.step };
   }
   /* hz: '' for thunderstorms, or 'tor', 'hail', 'wind' */
@@ -11327,7 +11327,7 @@ var REGMAP = (function () {
       var w = tsWin(me).w, gk = w ? (hz || 't') + ':' + w.id : ''; if (!live() || !w || me.grids[gk] !== undefined) return;
       if (me.gP[gk]) return me.gP[gk];
       var L = lattice(W, H, 450), sel = hz ? SPCT.sevVar(hz, w, me.st.lag) : SPCT.fieldVar(w);
-      return (me.gP[gk] = gsArea(hz ? SPCT.GMODEL : SPCT.MODEL, L, sel, hz ? 'v >= 0.1' : 'v >= 1', w.b - HOUR / 2, w.b + HOUR / 2).then(function (rows) {
+      return (me.gP[gk] = gsArea(hz ? SPCT.GMODEL : SPCT.MODEL, L, sel, 'v >= 0', w.b - HOUR / 2, w.b + HOUR / 2).then(function (rows) {   // v3.75.0: zeros too (450 points), so the guidance grid's edge is known
         delete me.gP[gk]; me.grids[gk] = gridFrom(L, rows, function (r) { return Date.parse(r.forecasted_time) === w.b && r.v != null && isFinite(+r.v) ? +r.v : null; });
       }, function () { delete me.gP[gk]; me.grids[gk] = null; }));
     });
@@ -11345,14 +11345,14 @@ var REGMAP = (function () {
                  detail: head(o, 'Chance of ' + (sv ? sv.word : 'a thunderstorm') + ', ' + esc(span) + ': <b>' + SPCT.pct(v) + '</b>') +
                          SPCT.table(sv ? { G: S, list: [{ sp: Wn }], only: true, main: hz } : { S: S, list: [{ p: Wn }], only: true }) });
     });
-    var G = set.grids[(hz || 't') + ':' + Wn.id] || null, hv = val(T.by.home);
+    var G = set.grids[(hz || 't') + ':' + Wn.id] || null, hv = val(T.by.home), so = G ? seaOf(gridHas(G), 'guidance') : { sea: null, note: '' };
     if (G && G.max > top) top = G.max;
     return { title: name + ', ' + span, pts: pts,
-             subText: 'SPC guidance' + (T.run ? ', ' + clock(T.run) + ' ' + gsLocal(T.run).wd + ' run' : '') + ' · ' + (top < LVs[0] ? 'under ' + LVs[0] + '% in view' : hv != null ? SPCT.pct(hv) + ' at the marker' : pts.length + ' points'),
+             subText: 'SPC guidance' + (T.run ? ', ' + clock(T.run) + ' ' + gsLocal(T.run).wd + ' run' : '') + ' · ' + (top < LVs[0] ? 'under ' + LVs[0] + '% in view' : hv != null ? SPCT.pct(hv) + ' at the marker' : pts.length + ' points') + so.note,
              sub2: (sv ? 'percent chance of ' + sv.word + ' during the period, from SPC’s calibrated severe-weather guidance. '
                        : 'percent chance of at least one cloud-to-ground lightning strike within about 12 miles during the period. ') +
                    (G ? 'Shading samples the guidance about every ' + R(G.mi) + ' miles' : 'The sample grid did not load, so the shading is blended from the labelled stations only'),
-             field: { levels: LVs, colors: sv ? SPCT.SC : SPCT.C, grid: G, unit: '%' },
+             field: { levels: LVs, colors: sv ? SPCT.SC : SPCT.C, grid: G, unit: '%', sea: so.sea },
              empty: pts.length || G ? '' : miss };
   }
 
@@ -11596,13 +11596,13 @@ var REGMAP = (function () {
                  detail: head(o, 'Radar and gauge rain, ' + esc(span) + ': <b>' + mrSay(v) + '</b>') + mrTable(m, a, b) +
                          (gs != null ? kv([['Station gauge, same hours', gs < 0.005 ? 'none' : gs.toFixed(2) + ' in']]) : '') });
     });
-    var G = mrGrid(N), hv = mrSum(S.by.home, a, b);
+    var G = mrGrid(N), hv = mrSum(S.by.home, a, b), so = G ? seaOf(MRMS_BOX, 'analysis') : { sea: null, note: '' };
     if (G && G.max > top) top = G.max;
     return { title: 'Radar and gauge rain, ' + span, pts: pts,
-             subText: 'NOAA radar and gauge analysis (MRMS) · ' + (top < 0.005 ? 'none in view' : hv != null ? mrSay(hv) + ' at the marker' : pts.length + ' points'),
+             subText: 'NOAA radar and gauge analysis (MRMS) · ' + (top < 0.005 ? 'none in view' : hv != null ? mrSay(hv) + ' at the marker' : pts.length + ' points') + so.note,
              sub2: 'inches of rain and melted snow from NOAA’s radar and gauge analysis, which runs one to two hours behind. The numbers are read at the stations themselves. ' +
                    (G ? 'Shading samples the analysis about every ' + (G.mi < 3 ? G.mi.toFixed(1) : R(G.mi)) + ' miles' : 'The sample grid did not load, so the shading is blended from the labelled stations only'),
-             field: { levels: RAIN_LV, cuts: cutsOf(RAIN_LV), colors: RAIN_C, grid: G, flat: true, unit: ' in' },
+             field: { levels: RAIN_LV, cuts: cutsOf(RAIN_LV), colors: RAIN_C, grid: G, flat: true, unit: ' in', sea: so.sea },
              empty: pts.length || G ? '' : miss };
   }
 
@@ -11772,15 +11772,16 @@ var REGMAP = (function () {
                   detail: '<b>Rotating storm in the ' + M.label + '</b> · updraft helicity ' + R(u.uh) + ' m²/s² in the hour to ' + esc(hrDay(u.t)) + '<div class="rg-note">This is the model forming its own storm. Take the place and hour as approximate.</div>' });
     });
     var dim = function (c) { return rgb(c.map(function (ch, i) { return ch * 0.7 + [8, 12, 22][i] * 0.3; })); };
+    var so = G ? seaOf(st.sm === 'rap' ? true : HRRR_GRID.inside, 'model') : { sea: null, note: '' };   // the RAP covers North America
     return { title: 'Storm potential, ' + when, pts: pts, symbols: syms,
              subText: M.label + ' soundings' + (T.run ? ', ' + clock(T.run) + ' run' : '') + ' · ' + (top < 1 ? 'none in view' : hm ? SP_NAME[hm.tier].toLowerCase() + ' at the marker' : pts.length + ' points') +
-                      (syms.length ? ' · ' + syms.length + ' rotating storm' + (syms.length > 1 ? 's' : '') + ' in the model' : ''),
+                      (syms.length ? ' · ' + syms.length + ' rotating storm' + (syms.length > 1 ? 's' : '') + ' in the model' : '') + so.note,
              sub2: 'the highest level the air supports at this hour, if storms form, from SPC’s effective-layer measures worked out on the ' + M.label + ' sounding at each point. Storms possible: CAPE of 250 J/kg or more. ' +
                    'Organized: 1,000 J/kg with 20 kt of effective shear. Supercells: supercell composite of 1 or more. Tornadic: significant tornado parameter of 1 or more. ' +
                    (M.uh ? 'R marks a rotating storm the ' + M.label + ' itself produces in the three hours to this one (updraft helicity of ' + M.uh + ' or more; red at ' + 2 * M.uh + ')' : 'The RAP is too coarse to form its own storms, so no rotating storms are marked') +
                    (G ? '' : '. The shading is blended from the labelled stations only') + (set.uhFailed ? '. The search for rotating storms did not load, so none are marked' : '') +
                    (w.past ? '. This hour has passed; pick another to load it' : ''),
-             field: { levels: [1, 2, 3, 4], cuts: [0.5, 1.5, 2.5, 3.5], colors: SP_C, grid: G, flat: true, unit: '' },
+             field: { levels: [1, 2, 3, 4], cuts: [0.5, 1.5, 2.5, 3.5], colors: SP_C, grid: G, flat: true, unit: '', sea: so.sea },
              legendCat: SP_C.map(function (c, i) { return [dim(c), SP_NAME[i + 1]]; }).concat(M.uh ? [['#F59E0B', 'R  rotating storm in the model']] : []) };
   }
 
@@ -11842,12 +11843,12 @@ var REGMAP = (function () {
                detail: '<b>' + (rot ? 'Low-level rotation ' + R(u.v) + ' ×10⁻³/s' : 'Radar-estimated hail up to ' + fmt(u.v)) + '</b> · ' + esc(hrDay(u.t)) +
                        '<div class="rg-note">' + (rot ? 'From merged radar data, 0–2 km above ground. Strong values also occur along gust fronts and from bad radar data, so check the radar itself.' : 'An estimate from radar (MESH), not a report. It is tuned toward the largest stones a storm drops: about three quarters of hail reports come in smaller (Witt and others, 1998).') + '</div>' };
     });
-    var quiet = top < S.lv[0];
+    var quiet = top < S.lv[0], so = seaOf(MRMS_BOX, 'radar mosaic');
     return { title: name + ', past hour', pts: refNames(), symbols: syms,
-             subText: 'MRMS radar, ' + c.n + ' scans, ' + clock(c.first) + ' to ' + clock(c.last) + ' · ' + (quiet ? 'none in view' : 'highest ' + fmt(top) + (rot ? ' ×10⁻³/s' : '')),
+             subText: 'MRMS radar, ' + c.n + ' scans, ' + clock(c.first) + ' to ' + clock(c.last) + ' · ' + (quiet ? 'none in view' : 'highest ' + fmt(top) + (rot ? ' ×10⁻³/s' : '')) + so.note,
              sub2: rot ? 'how hard the wind turns across a storm in the lowest 2 km, in thousandths per second: the highest of the scans at each point, so a band of colour is the path of a rotating storm. About 5 is the core of a track; NWS training treats 15 or more as a sign a tornado is likely. R marks the strongest spots'
                        : 'radar-estimated maximum hail size in inches: the highest of the scans at each point, so a band of colour is a hail swath. 1 inch is the severe-storm size. H marks the largest',
-             field: { levels: S.lv, colors: S.c, grid: G, flat: true, unit: S.unit } };
+             field: { levels: S.lv, colors: S.c, grid: G, flat: true, unit: S.unit, sea: G ? so.sea : null } };
   }
 
   /* ════ future radar (v3.40.0) ════
@@ -11917,17 +11918,29 @@ var REGMAP = (function () {
     }
     return { inside: inside, cover: cover };
   })();
+  /* v3.75.0: the same over-water drawing for the other maps that are not tied to US land. Each passes a test for where
+     its source has data: MRMS (rotation, hail, radar rain) is a fixed box, 20 to 55 N and 130 to 60 W; the HRRR and RRFS
+     use HRRR_GRID; the RAP covers North America; SPC's calibrated guidance sits on a grid whose edge is read from the data
+     itself (gridHas). The result is { sea, note }: sea goes into the field, note onto the subtitle when the frame runs
+     past the edge, where the map is hatched. */
+  function MRMS_BOX(lat, lon) { return lat >= 20 && lat <= 55 && lon >= -130 && lon <= -60; }
+  function gridHas(G) { return function (lat, lon) { if (!G || !G.has) return true; var i = Math.round((lon - G.lon0) / G.step), j = G.ny - 1 - Math.round((lat - G.lat0) / G.step); return i >= 0 && i < G.nx && j >= 0 && j < G.ny && !!G.has[j * G.nx + i]; }; }
+  function seaOf(test, src) {
+    var b = frame && frame.bbox, hit = 0, k = 0; if (!b || test === true) return { sea: true, note: '' };
+    for (var a = 0; a <= 12; a++) for (var c = 0; c <= 12; c++, k++) if (test(b[1] + (b[3] - b[1]) * a / 12, b[0] + (b[2] - b[0]) * c / 12)) hit++;
+    return hit === k ? { sea: true, note: '' } : { sea: test, note: hit ? ' \u00B7 hatched: past the ' + (src || 'data') + '\u2019s edge' : '' };
+  }
   function fradarLayer() {
     var S = FRS[frSrc()], c = frBlock(), fi = frInfo(), who = S.short + ' simulated radar';
     if (!c || !c.frames) return { title: 'Future radar', pts: refNames(), subText: who, empty: 'The simulated radar did not load.' };
     if (!c.have[fi.t]) return { title: 'Future radar, ' + fi.label, pts: refNames(), subText: who + (c.run ? ', ' + clock(c.run) + ' run' : ''),
                                 empty: Object.keys(c.have).length ? 'The ' + S.label + ' fields do not reach ' + fi.label + ' yet. ' + S.reach : 'The ' + S.short + ' has no simulated radar for this area. It covers the lower 48 states.' };
-    var G = c.frames[fi.i], cov = frame && frame.bbox ? HRRR_GRID.cover(frame.bbox) : 'all';
+    var G = c.frames[fi.i], so = seaOf(HRRR_GRID.inside, 'model'), cov = so.note ? 'part' : 'all';
     return { title: 'Future radar, ' + fi.label, pts: refNames(),
              subText: who + (c.run ? ', ' + clock(c.run) + ' run' : '') + ' · ' + (G.max >= 5 ? 'strongest echo ' + R(G.max) + ' dBZ' : 'no echoes in view') + (cov === 'part' ? ' · hatched: past the model\u2019s edge' : ''),
              sub2: 'what the ' + S.short + ' model expects radar to show at this time, in dBZ: a forecast, not an observation. Echoes are drawn over lakes, coastal waters and Canada as well as land' +
                    (cov === 'part' ? ', out to the edge of the model\u2019s grid; the hatched area is beyond it' : '') + '. ' + S.every + '; drag the slider, use the arrows or press Play',
-             field: { levels: FR_LV, colors: FR_C, grid: G, flat: true, unit: 'dBZ', sea: cov === 'all' ? true : HRRR_GRID.inside } };
+             field: { levels: FR_LV, colors: FR_C, grid: G, flat: true, unit: 'dBZ', sea: so.sea } };
   }
 
   /* ════ winter impact maps from NOAA's map services (v3.40.0) ════
