@@ -1,4 +1,4 @@
-/* NWS Terminal edge worker (v3.83.0)
+/* NWS Terminal edge worker (v3.83.1)
    - serves the app shell from static assets with security + cache headers
    - /p/<kind>/...   same-origin read-only proxy for NOAA hosts without CORS
    - /p/gs/...       GribStream POST proxy (keeps the token off third parties)
@@ -10,7 +10,7 @@
    - /api/health     liveness for uptime checks
    - /push/...       push alerts: key, sub, unsub, test (the app) and tick (the cron Worker); needs KV bound as PUSH */
 
-const VERSION = '3.83.0';
+const VERSION = '3.83.1';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -731,9 +731,9 @@ async function vapidKeys(env) {
   await env.PUSH.put('vapid', JSON.stringify(v));
   return v;
 }
-async function vapidAuth(v, endpoint, origin) {   // RFC 8292: a signed token the push service checks against the app's public key
+async function vapidAuth(v, endpoint, origin, env) {   // Apple refuses a token whose sub is not a mailto: address it likes (BadJwtToken); the others take either   // RFC 8292: a signed token the push service checks against the app's public key
   const enc = (o) => b64u(TE.encode(JSON.stringify(o)));
-  const unsigned = enc({ typ: 'JWT', alg: 'ES256' }) + '.' + enc({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: origin });
+  const unsigned = enc({ typ: 'JWT', alg: 'ES256' }) + '.' + enc({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: env && /^mailto:[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(env.PUSH_CONTACT || '') ? env.PUSH_CONTACT : 'mailto:alerts@' + new URL(origin).hostname });
   const key = await crypto.subtle.importKey('jwk', v.jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, TE.encode(unsigned));
   return 'vapid t=' + unsigned + '.' + b64u(sig) + ', k=' + v.pub;
@@ -757,10 +757,13 @@ async function pushEncrypt(keys, text) {   // RFC 8291, aes128gcm: only the devi
   const head = new Uint8Array(21); head.set(salt, 0); new DataView(head.buffer).setUint32(16, 4096); head[20] = 65;
   return cat(head, asPub, ct);
 }
-async function pushSend(v, sub, msg, origin) {   // -> HTTP status from the push service
+async function pushSend(v, sub, msg, origin, env, kind) {   // -> HTTP status from the push service; a refusal is noted in 'diag'
   const body = await pushEncrypt(sub.k, JSON.stringify(msg));
   const r = await fetch(sub.ep, { method: 'POST', body, signal: AbortSignal.timeout(10000),
-    headers: { Authorization: await vapidAuth(v, sub.ep, origin), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: String(msg.ttl || 3600), Urgency: msg.urgent ? 'high' : 'normal' } });
+    headers: { Authorization: await vapidAuth(v, sub.ep, origin, env), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: String(msg.ttl || 3600), Urgency: msg.urgent ? 'high' : 'normal' } });
+  const ok = r.status >= 200 && r.status < 300, why = ok ? '' : String(await r.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200);
+  if (env && (kind === 'test' || !ok)) await env.PUSH.put('diag', JSON.stringify({ at: new Date().toISOString(), kind: kind || 'send', host: new URL(sub.ep).hostname, status: r.status, why })).catch(() => {});
+  pushSend.why = why;
   return r.status;
 }
 const pushId = async (ep) => (await sha256hex('push:' + ep)).slice(0, 20);
@@ -948,7 +951,7 @@ async function pushTick(env, origin, force) {
   for (const [id, msg] of queue) {
     if ((per[id] = (per[id] || 0) + 1) > 6 || !subs[id]) continue;
     try {
-      msg.ts = now; const code = await pushSend(v, subs[id], msg, origin);
+      msg.ts = now; const code = await pushSend(v, subs[id], msg, origin, env, 'send');
       if (code === 404 || code === 410) { delete subs[id]; delete sent[id]; dirtySubs = dirtySent = true; out.gone++; }
       else if (code >= 200 && code < 300) out.sent++;
     } catch (e) { /* the next run tries again only for new items; a missed send is not retried */ }
@@ -988,8 +991,8 @@ async function pushRoute(path, request, env) {
     if (!isSameOriginRead(request)) return json({ error: 'This route only answers the app itself.' }, 401, NS);
     if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
     if (!env.PUSH) return json({ ready: false, why: 'storage' }, 200, NS);
-    const [v, beat] = await Promise.all([vapidKeys(env), env.PUSH.get('beat', 'json')]);
-    return json({ ready: true, key: v.pub, beat: beat && beat.at || null, rain: !!env.GS_TOKEN }, 200, NS);
+    const [v, beat, diag] = await Promise.all([vapidKeys(env), env.PUSH.get('beat', 'json'), env.PUSH.get('diag', 'json')]);
+    return json({ ready: true, key: v.pub, beat: beat && beat.at || null, rain: !!env.GS_TOKEN, last: diag || null }, 200, NS);
   }
   const bad = await keyGuard(request, env); if (bad) return bad;
   if (request.method !== 'POST') return json({ error: 'POST only' }, 405, NS);
@@ -1017,9 +1020,10 @@ async function pushRoute(path, request, env) {
     const s = subs[id]; if (!s) return json({ error: 'This device is not signed up yet.' }, 404, NS);
     if (!(await cacheLock('test-' + id, 20))) return json({ error: 'One test every 20 seconds.' }, 429, NS);
     const home = s.places.find((p) => p.home) || s.places[0];
-    const code = await pushSend(await vapidKeys(env), s, { title: 'NWS Terminal test', body: 'Alerts are on for ' + s.places.length + ' place' + (s.places.length === 1 ? '' : 's') + (home ? ', home ' + home.n : '') + '. Sent ' + pushClock(Date.now(), s.tz) + '.', tag: 'test', url: origin + '/', ttl: 600, ts: Date.now() }, origin);
+    const code = await pushSend(await vapidKeys(env), s, { title: 'NWS Terminal test', body: 'Alerts are on for ' + s.places.length + ' place' + (s.places.length === 1 ? '' : 's') + (home ? ', home ' + home.n : '') + '. Sent ' + pushClock(Date.now(), s.tz) + '.', tag: 'test', url: origin + '/', ttl: 600, ts: Date.now() }, origin, env, 'test');
     if (code === 404 || code === 410) { delete subs[id]; await env.PUSH.put('subs', JSON.stringify(subs)); return json({ error: 'The push service dropped this device. Turn alerts off and on again.' }, 410, NS); }
-    return json({ ok: code >= 200 && code < 300, status: code }, code >= 200 && code < 300 ? 200 : 502, NS);
+    if (code >= 200 && code < 300) return json({ ok: true, status: code }, 200, NS);
+    return json({ ok: false, status: code, error: 'The push service refused the test (HTTP ' + code + (pushSend.why ? ': ' + pushSend.why.slice(0, 120) : '') + ').' }, 502, NS);
   }
   return json({ error: 'Unknown push route' }, 404, NS);
 }

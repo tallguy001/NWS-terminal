@@ -7361,7 +7361,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.83.0';
+var APP_VERSION = '3.83.1';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
