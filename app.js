@@ -7353,7 +7353,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.77.0';
+var APP_VERSION = '3.78.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -16620,9 +16620,40 @@ var NOWX = (function () {
     }
     return fp.length ? 'No rain or snow in the seven-day forecast' : '';
   }
+  /* v3.78.0: one line for the next six hours, worked out from what the page already has: rain and snow timing from the
+     HRRR (NEXTPX) or, before it loads or without GribStream, the NWS hourly chances; the temperature now (the latest
+     observation within 90 minutes, else this hour's forecast) and where the NWS hourly forecast takes it; the wind, and
+     the wind chill when it is 3 degrees or more below the air. Nothing here is fetched. */
+  function chill(f, mph) { return f <= 50 && mph >= 3 ? 35.74 + 0.6215 * f - 35.75 * Math.pow(mph, 0.16) + 0.4275 * f * Math.pow(mph, 0.16) : f; }
+  function next6() {
+    var hp = typeof _hourlyPeriods !== 'undefined' && _hourlyPeriods ? _hourlyPeriods : null, now = Date.now(); if (!hp || !hp.length) return '';
+    var H = hp.filter(function (p) { var t = Date.parse(p.startTime); return t + HOUR > now && t < now + 6 * HOUR; }); if (H.length < 3) return '';
+    var parts = [], lastObs = (S.rows || []).map(function (r) { return { t: Date.parse(r.properties.timestamp), f: r.properties.temperature && r.properties.temperature.value != null ? cToF(r.properties.temperature.value) : NaN }; })
+      .filter(function (o) { return isFinite(o.t) && isFinite(o.f) && now - o.t < 90 * 60000; }).sort(function (a, b) { return b.t - a.t; })[0];
+    var hx = typeof NEXTPX !== 'undefined' ? NEXTPX.next6() : null, pop = H.reduce(function (m, p) { var v = p.probabilityOfPrecipitation && p.probabilityOfPrecipitation.value; return v != null && v > m.v ? { v: v, p: p } : m; }, { v: 0, p: null });
+    if (hx && hx.wet) parts.push(hx.text.charAt(0).toUpperCase() + hx.text.slice(1));
+    else if (hx) parts.push('Dry' + (pop.v >= 40 ? ' in the HRRR; NWS has a ' + pop.v + '% chance by ' + hourLabel(Date.parse(pop.p.startTime)) : ''));
+    else if (pop.v >= 30) parts.push((/snow|flurr/i.test(pop.p.shortForecast) ? (/rain/i.test(pop.p.shortForecast) ? 'Rain or snow' : 'Snow') : 'Rain') + ' chance up to ' + pop.v + '% by ' + hourLabel(Date.parse(pop.p.startTime)));
+    else parts.push('Dry');
+    var t0 = lastObs ? Math.round(lastObs.f) : +H[0].temperature, tl = H[H.length - 1], t1 = +tl.temperature, temps = H.map(function (p) { return +p.temperature; }), hi = Math.max.apply(null, temps.concat([t0])), lo = Math.min.apply(null, temps.concat([t0]));
+    var endL = hourLabel(Date.parse(tl.startTime) + HOUR);
+    if (Math.abs(t1 - t0) <= 2 && hi - lo <= 3) parts.push('steady near ' + t0 + '°');
+    else if (hi > Math.max(t0, t1) + 2) parts.push(t0 + '° now, up to ' + hi + '°, ' + t1 + '° by ' + endL);
+    else if (lo < Math.min(t0, t1) - 2) parts.push(t0 + '° now, down to ' + lo + '°, ' + t1 + '° by ' + endL);
+    else parts.push(t0 + '° now, ' + (t1 > t0 ? 'rising' : 'falling') + ' to ' + t1 + '° by ' + endL);
+    var w = H.map(function (p) { var m = String(p.windSpeed || '').match(/\d+/g); return { lo: m ? +m[0] : 0, hi: m ? +m[m.length - 1] : 0, d: p.windDirection || '', f: +p.temperature }; });
+    var wlo = Math.min.apply(null, w.map(function (x) { return x.lo; })), whi = Math.max.apply(null, w.map(function (x) { return x.hi; })), dirs = {};
+    w.forEach(function (x) { if (x.d) dirs[x.d] = (dirs[x.d] || 0) + 1; });
+    var dir = Object.keys(dirs).sort(function (a, b) { return dirs[b] - dirs[a]; })[0] || '';
+    parts.push(whi >= 5 ? (dir ? dir + ' ' : '') + 'wind ' + (whi - wlo >= 5 ? wlo + '–' + whi : whi) + ' mph' : 'light wind');
+    var wc = Math.min.apply(null, w.map(function (x) { return chill(x.f, x.hi); })), coldest = Math.min.apply(null, w.map(function (x) { return x.f; }));
+    if (coldest <= 50 && coldest - wc >= 3) parts.push('wind chill down to ' + Math.round(wc) + '°');   // the coldest it feels in the six hours, not now
+    return '<b>Next 6 hours:</b> ' + esc(parts.join(' · '));
+  }
   function status() {
     var el = document.getElementById('nwStatus'); if (!el) return;
-    var city = (_lastLoc || '').split(',')[0] || 'this place', items = [];
+    var city = (_lastLoc || '').split(',')[0] || 'this place', items = [], n6 = next6();
+    if (n6) items.push(['next6', n6]);   // not 'clock': that class is the header clock's (no wrapping)
     if (S.alerts) {
       if (S.alerts.length) items.push(['warn', '<button type="button" class="nw-link" onclick="switchSection(\'alerts\')">' + S.alerts.length + ' active ' + (S.alerts.length === 1 ? 'alert' : 'alerts') + ': ' + esc(S.alerts[0].event) + '</button>']);
       else items.push(['ok', 'No alerts for ' + esc(city)]);
@@ -16633,14 +16664,15 @@ var NOWX = (function () {
     var IC = {
       ok: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-4.8"/>',
       warn: '<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4m0 4h.01"/>',
-      drop: '<path d="M12 3.5s6 6.4 6 10.5a6 6 0 0 1-12 0c0-4.1 6-10.5 6-10.5Z"/>' };
+      drop: '<path d="M12 3.5s6 6.4 6 10.5a6 6 0 0 1-12 0c0-4.1 6-10.5 6-10.5Z"/>',
+      next6: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' };
     el.innerHTML = items.map(function (it) {
       return '<li class="nw-st ' + it[0] + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + IC[it[0]] + '</svg><span>' + it[1] + '</span></li>';
     }).join('');
   }
 
   /* ---------- thermograph ---------- */
-  function obs(rows) { S.rows = rows || null; draw(); }
+  function obs(rows) { S.rows = rows || null; draw(); status(); }
   function draw() {
     var sec = document.getElementById('nwTraceSec'), box = document.getElementById('nwTrace');
     if (!sec || !box) return;
@@ -17991,10 +18023,21 @@ var NEXTPX = (function () {
     gsPost('hrrrsubh', { fromTime: new Date(now - Q).toISOString(), untilTime: new Date(now + 18 * 36e5).toISOString(), coordinates: [{ lat: +lat.toFixed(4), lon: +lon.toFixed(4), name: 'here' }], variables: V })
       .then(function (rows) { if (my !== seq || cur.key !== key) return; var F = frames(rows); cur.d = { F: F, run: F.reduce(function (m, f) { return Math.max(m, f.run || 0); }, 0) }; cur.at = Date.now(); cur.err = ''; },
             function () { if (my === seq && cur.key === key) cur.err = 'The HRRR timing did not load.'; })
-      .then(function () { if (my === seq && cur.key === key) { cur.state = 'idle'; render(); } });
+      .then(function () { if (my === seq && cur.key === key) { cur.state = 'idle'; render(); if (typeof NOWX !== 'undefined') NOWX.status(); } });
   }
   function refresh(force) { if (typeof currentLat !== 'undefined' && currentLat != null) load(currentLat, currentLon, force); }
-  return { load: load, refresh: refresh, _say: say, _frames: frames, _state: function () { return cur; } };
+  function next6() {   // v3.78.0: the same read over the next six hours only, for the Now page's verdict; null until loaded
+    if (!cur.d || !cur.d.F || !cur.d.F.length) return null;
+    var now = Date.now(), F = cur.d.F.filter(function (f) { return f.t >= now - Q / 2 && f.t <= now + 6 * 36e5; });
+    if (F.length < 8) return null;
+    var S = spells(F); if (!S.length) return { wet: false, text: '' };
+    var s = S[0], ch = changes(s.run), nowWet = s.a === 0, last = s.b === F.length - 1, k = ch.first === 'precipitation' ? 'rain or snow' : ch.first;
+    var t = nowWet ? k + (last ? ' through the period' : ' until about ' + at(F[s.b].t + Q) + (S[1] ? ', more about ' + at(F[S[1].a].t) : ', then dry'))
+                   : k + ' from about ' + at(F[s.a].t) + (last ? '' : ' to ' + at(F[s.b].t + Q));
+    if (ch.list.length) t += ', turning to ' + ch.list[0].k + ' about ' + at(ch.list[0].t);
+    return { wet: true, text: t };
+  }
+  return { load: load, refresh: refresh, next6: next6, _say: say, _frames: frames, _state: function () { return cur; } };
 })();
 
 /* KALV (v3.55.0): the Kalshi screen laid out the way wethr.net lays out its own market page. Three cards across the top
