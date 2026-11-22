@@ -7360,7 +7360,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.81.0';
+var APP_VERSION = '3.82.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -10599,6 +10599,25 @@ var REGMAP = (function () {
       ['Hazards, air and water', [['smoke', 'Smoke'], ['heatrisk', 'HeatRisk']]],
       ['Confidence', [['spread', 'Model spread'], ['fcchk', 'Forecast vs observed']]]] }
   ];
+  /* v3.82.0: maps that answer the same question from different sources sit behind one entry, with a row to switch source.
+     Each member is still its own map (state, links and loading unchanged): [layer, chip, settings it implies]. A member that
+     fixes a setting (HRRR or RRFS) hides that setting's own row. key: the row's name. */
+  var FAMS = {
+    fcrainF: { mode: 'fc', label: 'Rain total', src: 'NWS · HRRR · RRFS', key: 'Source', members: [['fcrain', 'NWS forecast'], ['mqpf', 'HRRR', { mm: 'hrrr' }], ['mqpf', 'RRFS', { mm: 'rrfs' }]] },
+    fcsnowF: { mode: 'fc', label: 'Snow total', src: 'NWS · HRRR · RRFS · ECMWF', key: 'Source', members: [['fcsnow', 'NWS forecast'], ['msnow', 'HRRR', { mm: 'hrrr' }], ['msnow', 'RRFS', { mm: 'rrfs' }], ['ecsnow', 'ECMWF ensemble']] },
+    tempF:   { mode: 'fc', label: 'Temperature', src: 'NWS · models', key: 'Source', members: [['fcst', 'NWS highs and lows'], ['model', 'Models, by hour'], ['ghigh', 'Daily high, GFS/ECMWF'], ['glow', 'Daily low, GFS/ECMWF']] },
+    spcF:    { mode: 'fc', label: 'Storm chances', src: 'SPC', key: 'Hazard', members: [['tstm', 'Thunderstorms'], ['gtor', 'Tornado'], ['ghail', 'Hail'], ['gwind', 'Damaging wind']] },
+    wpcF:    { mode: 'fc', label: 'Storm severity', src: 'WPC', key: 'Show', members: [['wssi', 'Expected impact'], ['wssip', 'Odds']] },
+    obsrainF: { mode: 'now', label: 'Rain', src: 'stations · observers · analysis · radar', key: 'Source', members: [['precip', 'Stations, 24 h'], ['obsrain', 'Observers'], ['rain', 'Analysis'], ['mrain', 'Radar and gauge']] },
+    obssnowF: { mode: 'now', label: 'Snow', src: 'observers · estimate · analysis', key: 'Source', members: [['snow', 'New snow, observers'], ['snowgnd', 'On the ground, estimate'], ['snowdepth', 'Depth, analysis']] }
+  };
+  var FAMOF = {}; Object.keys(FAMS).forEach(function (f) { FAMS[f].members.forEach(function (m) { FAMOF[m[0]] = f; }); });
+  function eff(k) { return k === 'mm' ? mfModel() : String(st[k]); }
+  function famMember(f) {   // index of the member on show, or -1
+    var F = FAMS[f], hit = -1; F.members.forEach(function (m, i) { if (hit < 0 && m[0] === st.layer && (!m[2] || Object.keys(m[2]).every(function (k) { return eff(k) === String(m[2][k]); }))) hit = i; }); return hit;
+  }
+  function famPick(f) { var F = FAMS[f], i = st.famLast && st.famLast[f] != null ? +st.famLast[f] : 0; return F.members[i] ? i : 0; }   // the member to open from the menu
+  function famGo(f, i) { var m = FAMS[f].members[i]; if (!m) return; used(st.layer); st.layer = m[0]; if (m[2]) Object.keys(m[2]).forEach(function (k) { st[k] = m[2][k]; }); (st.famLast || (st.famLast = {}))[f] = i; used(st.layer); st.back = 0; save(); }
   var OPT_NAME = { es: 'Window', ek: 'Show', fc: 'Period', pw: 'Period', tw: 'Period', mh: 'Period', sw: 'Hour', sm: 'Model', fb: 'Period', wc: 'Impact', wd: 'Day', wl: 'Level', wp: 'Day', wt: 'Amount', wq: 'Day', sv: 'Time', hr: 'Day', ml: 'Lead time', mm: 'Model', gm: 'Model', fs: 'Frames', rain: 'Period', lsr: 'Period', model: 'Model', lead: 'Lead time' };
   function allLayers(m) { var a = []; MODES.forEach(function (x) { if (!m || x.id === m) x.groups.forEach(function (g) { g[1].forEach(function (p) { a.push(p[0]); }); }); }); return a; }
   function modeOf(layer) { return allLayers('fc').indexOf(layer) >= 0 ? 'fc' : 'now'; }
@@ -10628,10 +10647,10 @@ var REGMAP = (function () {
     ['now', 'fc'].forEach(function (m) { if (o.last && allLayers(m).indexOf(o.last[m]) >= 0) last[m] = o.last[m]; });
     if (ok) last[modeOf(o.layer)] = o.layer;
     var recent = { now: [], fc: [] }; ['now', 'fc'].forEach(function (m) { if (o.recent && Array.isArray(o.recent[m])) recent[m] = o.recent[m].filter(function (id) { return allLayers(m).indexOf(id) >= 0; }).slice(0, 6); });
-    return { last: last, recent: recent, layer: ok ? o.layer : 'temp', range: RANGES.some(function (r) { return r[0] === o.range; }) ? o.range : 120,
-             back: 0, fc: 0, pw: '0', tw: 'd0', mh: '24', sw: '0', sm: 'hrrr', fb: 0, ff: 0, fs: 'q', wc: 'all', wd: '13', wl: 'mod', wp: 0, wt: 's4', wq: 1, sv: '0', hr: '0', ml: '6', mm: 'hrrr', gm: 'gfs', gd: 1, rain: '24', lsr: '24', model: 'hrrr', lead: 6 };
+    return { last: last, recent: recent, layer: ok ? o.layer : 'temp', range: RANGES.some(function (r) { return r[0] === o.range; }) ? o.range : 120, famLast: o.famLast && typeof o.famLast === 'object' ? o.famLast : {},
+             back: 0, fc: 0, pw: '0', tw: 'd0', mh: '24', sw: '0', sm: 'hrrr', fb: 0, ff: 0, fs: 'q', wc: 'all', wd: '13', wl: 'mod', wp: 0, wt: 's4', wq: 1, sv: '0', hr: '0', ml: '6', mm: o.mm === 'rrfs' ? 'rrfs' : 'hrrr', gm: 'gfs', gd: 1, rain: '24', lsr: '24', model: 'hrrr', lead: 6 };
   }
-  function save() { st.last[modeOf(st.layer)] = st.layer; lsSet('nws_regmap', JSON.stringify({ layer: st.layer, range: st.range, last: st.last, recent: st.recent })); }
+  function save() { st.last[modeOf(st.layer)] = st.layer; lsSet('nws_regmap', JSON.stringify({ layer: st.layer, range: st.range, last: st.last, recent: st.recent, famLast: st.famLast || {}, mm: st.mm })); }
   var R = Math.round;
   function clock(ms) { return fmtLocTime(new Date(ms)); }
   function sgn(v, dp) { var a = dp ? Math.abs(v).toFixed(dp) : String(Math.abs(R(v))); return +a === 0 ? a : (v > 0 ? '+' : '\u2212') + a; }
@@ -12807,7 +12826,8 @@ var REGMAP = (function () {
     /* v3.43.0: the map is chosen from one menu (PICK) instead of five or six rows of buttons, which had pushed the map itself off the
        bottom of an iPad screen. The button shows the map in use; the three maps used most recently on this side sit beside it. */
     var names = {}, srcs = {}; MD.groups.forEach(function (g) { g[1].forEach(function (p) { names[p[0]] = p[1]; if (p[2]) srcs[p[0]] = p[2]; }); });
-    var rec = recentOf(mode).filter(function (id) { return id !== st.layer && names[id]; }).slice(0, 3), menu = document.getElementById('regMapMenu');
+    Object.keys(FAMOF).forEach(function (id) { var F = FAMS[FAMOF[id]]; if (F.mode !== mode) return; names[id] = F.label; var mi = id === st.layer ? famMember(FAMOF[id]) : -1; srcs[id] = mi >= 0 ? F.members[mi][1] : F.src; });   // v3.82.0
+    var seenF = {}, rec = recentOf(mode).filter(function (id) { if (id === st.layer || !names[id]) return false; var f = FAMOF[id]; if (f) { if (seenF[f] || f === FAMOF[st.layer]) return false; seenF[f] = 1; } return true; }).slice(0, 3), menu = document.getElementById('regMapMenu');
     ln.innerHTML = '<button type="button" class="pick-btn" id="regMapMenuBtn" aria-haspopup="dialog" aria-controls="regMapMenu" aria-expanded="' + (PICK.isOpen('regMapMenu') ? 'true' : 'false') + '"><span class="pick-k">Map</span><span class="pick-v">' + esc(names[st.layer] || L[st.layer].label || st.layer) + (srcs[st.layer] ? '<span class="pick-s">' + esc(srcs[st.layer]) + '</span>' : '') + '</span>' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>' +
       (rec.length ? '<div class="pick-recent" role="group" aria-label="Maps used recently"><span class="pick-clock" title="Used recently"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' + rec.map(function (id) { return chip(names[id] + (srcs[id] ? ' · ' + srcs[id] : ''), false, 'data-layer="' + id + '"'); }).join('') + '</div>' : '');
@@ -12815,8 +12835,10 @@ var REGMAP = (function () {
       /* v3.69.0: one grid for both sides. Subjects are rows, in the order the two sides share; what was observed and what is
          forecast sit side by side, so there is no Current / Forecast switch to flip first. A box filters the grid as you type. */
       var subj = [], byS = {};
-      MODES.forEach(function (M) { M.groups.forEach(function (g) { if (subj.indexOf(g[0]) < 0) subj.push(g[0]); (byS[g[0]] || (byS[g[0]] = {}))[M.id] = g[1]; }); });
-      var opt = function (p) { return '<button type="button" class="pick-opt' + (p[0] === st.layer ? ' active' : '') + '" aria-pressed="' + (p[0] === st.layer ? 'true' : 'false') + '" data-layer="' + p[0] + '"><span class="pick-l">' + esc(p[1]) + '</span>' + (p[2] ? '<span class="pick-s">' + esc(p[2]) + '</span>' : '') + '</button>'; };
+      MODES.forEach(function (M) { M.groups.forEach(function (g) { if (subj.indexOf(g[0]) < 0) subj.push(g[0]);
+        var seen = {}, list = []; g[1].forEach(function (p) { var f = FAMOF[p[0]]; if (!f) { list.push(p); return; } if (seen[f]) return; seen[f] = 1; var F = FAMS[f], i = FAMOF[st.layer] === f ? Math.max(0, famMember(f)) : famPick(f); list.push([F.members[i][0], F.label, F.src, f, i]); });   // v3.82.0: one entry per family
+        (byS[g[0]] || (byS[g[0]] = {}))[M.id] = list; }); });
+      var opt = function (p) { var on = p[3] ? FAMOF[st.layer] === p[3] : p[0] === st.layer; return '<button type="button" class="pick-opt' + (on ? ' active' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" data-layer="' + p[0] + '"' + (p[3] ? ' data-fam="' + p[3] + '" data-fmi="' + p[4] + '"' : '') + '><span class="pick-l">' + esc(p[1]) + '</span>' + (p[2] ? '<span class="pick-s">' + esc(p[2]) + '</span>' : '') + '</button>'; };
       var mh = '<div class="pick-head"><span class="pick-title">Choose a map</span><label class="pick-find"><span class="sr-only">Find a map</span><input type="search" class="pick-q" placeholder="Find a map: snow, gusts, SPC, HRRR" autocomplete="off" spellcheck="false"></label><button type="button" class="pick-x" aria-label="Close the list">\u00D7</button></div>' +
         '<div class="pick-grid" role="table" aria-label="Maps by subject"><div class="pick-gr pick-ghead" role="row"><span role="columnheader">Subject</span><span role="columnheader"><b>Observed</b> now and over the last day</span><span role="columnheader"><b>Forecast</b> hours to two weeks ahead</span></div>' +
         subj.map(function (n) {
@@ -12829,11 +12851,17 @@ var REGMAP = (function () {
     }
     navSync();
     rn.innerHTML = RANGES.map(function (r, i) { return chip(i === RANGES.length - 1 ? r[1] : String(r[0]), r[0] === st.range, 'data-range="' + r[0] + '" aria-label="Map half-width ' + r[0] + ' miles"'); }).join('');   // 60 | 120 | 200 mi: the unit once
-    var lay = L[st.layer], h = '';
+    var lay = L[st.layer], h = '', fam = FAMOF[st.layer], fmi = fam ? famMember(fam) : -1, hide = {};
+    if (fam) {   // v3.82.0: the source row; a member that fixes a setting hides that setting's own row
+      var FM = FAMS[fam]; if (fmi >= 0 && FM.members[fmi][2]) Object.keys(FM.members[fmi][2]).forEach(function (k) { hide[k] = 1; });
+      h += '<div class="regmap-row"><span class="regmap-glabel">' + esc(FM.key) + '</span><div class="cpc-nav" role="group" aria-label="' + esc(FM.key) + '">' +
+        FM.members.map(function (m, i) { return chip(m[1], i === fmi, 'data-fam="' + fam + '" data-fmi="' + i + '"'); }).join('') + '</div></div>';
+    }
     if (lay.controls) {
       var items = lay.controls(), keys = {};
       items.forEach(function (it) { (keys[it[2]] || (keys[it[2]] = [])).push(it); });
       Object.keys(keys).forEach(function (k) { if (mode === 'fc' && TIME_KEYS[k]) return;   // times go on the slider below
+        if (hide[k]) return;
         h += '<div class="regmap-row"><span class="regmap-glabel">' + (OPT_NAME[k] || 'Show') + '</span><div class="cpc-nav" role="group" aria-label="' + (OPT_NAME[k] || 'Show') + '">' +
         keys[k].map(function (it) { return chip(it[1], String(st[k]) === String(it[0]), 'data-opt="' + k + '" data-val="' + it[0] + '"'); }).join('') + '</div></div>'; });
     }
@@ -13592,6 +13620,7 @@ var REGMAP = (function () {
       if (b && b.id === 'regMapPlay') { frToggle(); return; }
       if (b && b.hasAttribute('data-stepby')) { var row0 = b.closest('.regmap-row'), sl0 = row0 ? row0.querySelector('.regmap-stepin') : null; frStop(); if (sl0) stepSet(sl0.getAttribute('data-key'), +sl0.value + +b.getAttribute('data-stepby'), true); return; }
       if (b && (b.hasAttribute('data-layer') || b.hasAttribute('data-range') || b.hasAttribute('data-opt'))) { spTap = Date.now(); frStop(); if (b.getAttribute('data-opt') === 'fs') { st.fb = 0; st.ff = 0; } }
+      if (b && b.hasAttribute('data-fam')) { if (!b.hasAttribute('data-layer')) { spTap = Date.now(); frStop(); } famGo(b.getAttribute('data-fam'), +b.getAttribute('data-fmi')); clearDetail(); load(false); return; }   // v3.82.0
       if (b && b.hasAttribute('data-layer')) { used(st.layer); st.layer = b.getAttribute('data-layer'); used(st.layer); st.back = 0; save(); clearDetail(); load(false); return; }
       if (b && b.hasAttribute('data-range')) { st.range = +b.getAttribute('data-range'); save(); clearDetail(); view = null; load(false); return; }
       if (b && b.hasAttribute('data-opt')) { var k = b.getAttribute('data-opt'), v = b.getAttribute('data-val'); st[k] = k === 'fc' || k === 'lead' ? +v : v; clearDetail(); load(false); return; }
