@@ -11416,11 +11416,10 @@ var REGMAP = (function () {
      Kept for an hour.
      v3.76.0: snow depth from the Kuchera ratio, not a flat 10 to 1. Snowfall comes as water; each 12-hour step's water is
      multiplied by SLR = 12 + (271.16 - Tmax) when Tmax <= 271.16 K, else 12 + 2 x (271.16 - Tmax), floored at 0, where
-     Tmax is the warmest temperature from the ground (2 m) up to 500 mb in the ECMWF high-resolution run at that point
-     (levels below the surface skipped), averaged over the step's two ends. The ensemble members share that run's ratio;
-     their own column temperatures would cost 50 times as much. If the temperatures do not load, 10 to 1 is used and said.
-     Requests: ensemble snowfall at every 12-hour mark (3 to 11 times x 50 members x 1 bundle) and the high-resolution
-     column at the same times (8 fields x 1 bundle). */
+     Tmax is the warmest temperature from the ground (2 m) up to 500 mb in that member's own column at that point (levels
+     below the surface skipped), averaged over the step's two ends, so each member's snow gets its own ratio. A step
+     without temperatures falls back to 10 to 1. One request: snowfall plus the column (9 fields) at every 12-hour mark
+     (3 to 11 times) x 50 members x 1 bundle, only where a member has snow. */
   var ES_WIN = { '24': ['Next 24 h', 24], '48': ['48 h', 48], '72': ['72 h', 72], '120': ['5 days', 120] };
   var ES_SHOW = { p50: ['Likely', 'the middle of the 50 members'], p10: ['Low end', 'the 10th percentile: 9 in 10 members have more'], p90: ['High end', 'the 90th percentile: 1 in 10 members has more'],
                   x1: ['1 in+', 'chance of 1 inch or more'], x4: ['4 in+', 'chance of 4 inches or more'], x8: ['8 in+', 'chance of 8 inches or more'] };
@@ -11449,26 +11448,27 @@ var REGMAP = (function () {
     var me = ES = { key: key, at: Date.now(), d: null, p: null, A: A, B: B, h: pk.h };
     var times = []; for (var tt = A; tt <= B; tt += 12 * HOUR) times.push(tt);
     var iso = times.map(function (t) { return new Date(t).toISOString().replace('.000Z', 'Z'); });
-    var pS = gsOwn('ifsenfo', { timesList: iso, coordinates: list, variables: [{ name: 'sf', level: 'sfc', alias: 'sf' }], members: ES_MEM, filter: { expression: 'sf > 0.00001' } });
-    var pT = gsOwn('ifsoper', { timesList: iso, coordinates: list, variables: KU_V }).then(null, function () { return null; });   // without it, 10 to 1
-    me.p = Promise.all([pS, pT]).then(function (res) {
-      var rows = res[0], by = {}, runB = 0, runs = {}, ku = {}, kuOk = !!res[1];
+    // one request: each member's snowfall and its own column, wherever that member has snow (the filter)
+    me.p = gsOwn('ifsenfo', { timesList: iso, coordinates: list, variables: [{ name: 'sf', level: 'sfc', alias: 'sf' }].concat(KU_V), members: ES_MEM, filter: { expression: 'sf > 0.00001' } }).then(function (rows) {
+      var by = {}, runB = 0, runs = {}, kuN = 0, kuAll = 0;
       (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), m = r.member; if (!r.name || m == null || !isFinite(+r.sf) || times.indexOf(t) < 0) return;
-        ((by[r.name] || (by[r.name] = {}))[m] || (by[r.name][m] = {}))[t] = +r.sf;
+        var x = (by[r.name] || (by[r.name] = {}))[m] || (by[r.name][m] = { sf: {}, k: {} }); x.sf[t] = +r.sf; var k = kuchera(r); if (k != null) x.k[t] = k;
         if (t === B) { var ra = Date.parse(r.forecasted_at); runs[ra] = (runs[ra] || 0) + 1; if (ra > runB) runB = ra; } });
-      (res[1] || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), k = kuchera(r); if (!r.name || k == null || times.indexOf(t) < 0) return; (ku[r.name] || (ku[r.name] = {}))[t] = k; });
-      var st2 = {}, cells = [], top = 0, kuUsed = 0;
+      var st2 = {}, cells = [], top = 0;
       list.forEach(function (p) {
-        var x = by[p.name] || {}, K = ku[p.name] || {}, rat = [];
-        for (var i = 1; i < times.length; i++) { var a = K[times[i - 1]], b = K[times[i]], v = a != null && b != null ? (a + b) / 2 : a != null ? a : b; rat.push(v == null ? 10 : v); if (v != null) kuUsed++; }
-        var w10 = [], tot = ES_MEM.map(function (m) { var y = x[m] || {}, sum = 0, s10 = 0;
-          for (var i = 1; i < times.length; i++) { var d = Math.max(0, (y[times[i]] || 0) - (y[times[i - 1]] || 0)) * 39.3701; sum += d * rat[i - 1]; s10 += d * 10; }
+        var x = by[p.name] || {}, w10 = [], tot = ES_MEM.map(function (m) { var y = x[m] || { sf: {}, k: {} }, sum = 0, s10 = 0;
+          for (var i = 1; i < times.length; i++) {
+            var d = Math.max(0, (y.sf[times[i]] || 0) - (y.sf[times[i - 1]] || 0)) * 39.3701; if (!d) continue;
+            var ka = y.k[times[i - 1]], kb = y.k[times[i]], k = ka != null && kb != null ? (ka + kb) / 2 : ka != null ? ka : kb;
+            kuAll++; if (k != null) kuN++; else k = 10;
+            sum += d * k; s10 += d * 10;
+          }
           w10.push(s10); return sum; });
         var s = esStats(tot), s10 = esStats(w10), tw = w10.reduce(function (q, v) { return q + v; }, 0);
         s.p50at10 = s10.p50; s.ratio = tw > 0.01 ? 10 * tot.reduce(function (q, v) { return q + v; }, 0) / tw : null;
         if (s.p90 > top) top = s.p90;
         if (p.name.charAt(0) === '#') { var ij = p.name.slice(1).split('_'); cells.push({ lat: L.lat0 + (+ij[1]) * L.step, lon: L.lon0 + (+ij[0]) * L.step, s: s }); } else st2[p.name] = s; });
-      me.d = { st: st2, cells: cells, L: L, run: runB, top: top, mixed: Object.keys(runs).length > 1, ku: kuOk && kuUsed > 0 }; me.p = null;
+      me.d = { st: st2, cells: cells, L: L, run: runB, top: top, mixed: Object.keys(runs).length > 1, ku: !kuAll || kuN / kuAll > 0.5 }; me.p = null;
     }, function (e) { me.p = null; throw e; });
     return me.p;
   }
@@ -11479,7 +11479,7 @@ var REGMAP = (function () {
     var fmt = function (v) { return odds ? String(R(v)) + '%' : v < 0.05 ? '0' : v < 9.95 ? v.toFixed(1) : String(R(v)); }, say = function (v) { return v < 0.05 ? 'none' : (v < 9.95 ? v.toFixed(1) : R(v)) + ' in'; };
     var grid = function (s) { return kv([['Likely (median)', '<b>' + say(s.p50) + '</b>'], ['Range, 10th to 90th', say(s.p10) + ' to ' + say(s.p90)], ['Wettest member', say(s.mx)],
       ['Chance of 1 in+', R(s.x1) + '%'], ['Chance of 4 in+', R(s.x4) + '%'], ['Chance of 8 in+', R(s.x8) + '%']].concat(d.ku ? [['Snow ratio (Kuchera)', s.ratio != null ? 'about ' + R(s.ratio) + ' to 1' : '–'], ['Likely at 10 to 1', say(s.p50at10)]] : [])) +
-      '<div class="rg-note">50 ECMWF ensemble members, ' + (d.ku ? 'snow at the Kuchera ratio from the ECMWF high-resolution run\u2019s column temperatures' : 'snow at 10 to 1 (the column temperatures did not load)') + ', ' + esc(span) + '.</div>'; };
+      '<div class="rg-note">50 ECMWF ensemble members, ' + (d.ku ? 'snow at the Kuchera ratio from each member\u2019s own column temperatures' : 'snow at 10 to 1 (the column temperatures did not load)') + ', ' + esc(span) + '.</div>'; };
     var pts = [];
     D.stn.forEach(function (o) { var s = d.st[o.id]; if (!s) return; var v = s[pk.k];
       pts.push({ o: o, v: v, main: fmt(v), wide: true, detail: head(o, 'Snow, ' + esc(span) + ': likely <b>' + say(s.p50) + '</b>, range ' + say(s.p10) + ' to ' + say(s.p90)) + grid(s) }); });
