@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.76.0">
+<link rel="stylesheet" href="/app.css?v=3.77.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -183,7 +183,7 @@
       <section class="section nw-cur" aria-labelledby="nwCurH">
         <h2 class="sr-only" id="nwCurH">Current conditions</h2><span class="sec-age nw-age" data-age="forecast"></span>
         <div id="currentText"></div>
-        <div class="nw-details"><div id="rtmaCurrent"></div><div id="radarOverhead"></div><div id="observersNear"></div></div>
+        <div class="nw-details"><div id="rtmaCurrent"></div><div id="radarOverhead"></div><div id="precipTiming"></div><div id="observersNear"></div></div>
       </section>
 
       <section class="section nw-trace-sec hidden" id="nwTraceSec" aria-labelledby="nwTraceH">
@@ -1837,6 +1837,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.76.0" defer></script>
+<script src="/app.js?v=3.77.0" defer></script>
 </body>
 </html>

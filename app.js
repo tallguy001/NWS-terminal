@@ -493,6 +493,7 @@ function getLocHour(d) {
 function switchSection(name) {
   if (name === 'satellite') name = 'radar';   // v3.44.0: one screen, Radar and satellite; old links still land
   if (name === 'forecast' && typeof RADAROV !== 'undefined') { var _rv = RADAROV._state(); if (_rv.data && Date.now() - _rv.at > 5 * 60000) RADAROV.refresh(false); }
+  if (name === 'forecast' && typeof NEXTPX !== 'undefined') NEXTPX.refresh(false);   // v3.77.0: kept ten minutes
   if (typeof HOME !== 'undefined' && HOME.on() && !HOME.leaveFor(name)) return;   // the US map is up: show the loaded place, or stay if there is none
   SECTIONS.forEach(function(s) {
     var el = document.getElementById('section-' + s);
@@ -3867,7 +3868,7 @@ function loadServerConfig() {
   if (location.protocol.indexOf('http') !== 0) return Promise.resolve();
   return netFetch('/api/config').then(function (r) { return r.ok ? r.json() : {}; })
     .then(function (c) {
-      gsServerToken = !!(c && c.gsServerToken);
+      gsServerToken = !!(c && c.gsServerToken); if (gsServerToken && typeof NEXTPX !== 'undefined' && NEXTPX._state().state === 'off') NEXTPX.refresh(true);   // v3.77.0: a place may have loaded first
       lightningServerKey = !!(c && c.lightningServerKey);
       radarServerKey = !!(c && c.radarServerKey); if (radarServerKey && typeof RADAROV !== 'undefined') RADAROV.refresh(false);   // a place may have loaded before this answer came
       camsServerKey = !!(c && c.camsServerKey); wi511ServerKey = !!(c && c.wi511ServerKey);
@@ -7145,6 +7146,7 @@ async function doFetch(opts) {
     fetchCurrentObservation(geo.lat, geo.lon, mySeq);
     fetchGsRtmaCurrent(geo.lat, geo.lon);
     if (typeof RADAROV !== 'undefined') RADAROV.load(geo.lat, geo.lon, true);
+    if (typeof NEXTPX !== 'undefined') NEXTPX.load(geo.lat, geo.lon, true);   // v3.77.0
     if (typeof OBSV !== 'undefined') OBSV.show(geo.lat, geo.lon);   // v3.62.0
     climateNormals = null;
     fetchNormalsAndRecords(geo.lat, geo.lon, mySeq);
@@ -7351,7 +7353,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.76.0';
+var APP_VERSION = '3.77.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -17905,6 +17907,94 @@ var RADAROV = (function () {
   }
   function refresh(force) { if (typeof currentLat !== 'undefined' && currentLat != null) load(currentLat, currentLon, force); }
   return { load: load, refresh: refresh, _say: say, _state: function () { return cur; } };
+})();
+
+/* NEXTPX (v3.77.0): when rain or snow starts and stops at the loaded spot, on Current under the radar line. The HRRR's
+   15-minute fields at this one point for its next 18 hours: precipitation rate at the ground, the 1 km reflectivity and its
+   own rain / snow / freezing rain / sleet flags. A frame is wet at 0.01 in/h of liquid or more (GribStream rounds the rate
+   to 0.0001 kg/m2/s, 0.014 in/h), or when the model flags a type with 15 dBZ or more at 1 km (light snow and drizzle sit
+   under the rate threshold). Gaps of 30 minutes or less inside a wet spell are bridged, and a lone 15-minute blip under
+   0.03 in/h is dropped, so on-and-off light showers read as one spell. Times are the model's 15-minute frames, shown as
+   "about". One GribStream point request (72 times x 6 fields); asked when a place loads and on coming back to Current
+   after ten minutes, never on a timer. */
+var NEXTPX = (function () {
+  var cur = { key: '', at: 0, d: null, state: 'idle', err: '' }, seq = 0, Q = 15 * 60000;
+  var V = [['PRATE', 'surface', 'pr'], ['REFD', '1000 m above ground', 'd'], ['CSNOW', 'surface', 'sn'], ['CRAIN', 'surface', 'ra'], ['CFRZR', 'surface', 'fz'], ['CICEP', 'surface', 'pl']]
+          .map(function (x) { return { name: x[0], level: x[1], alias: x[2] }; });
+  function inUS(la, lo) { return la >= 21 && la <= 50 && lo >= -125 && lo <= -66; }
+  function kind(f) { return f.fz ? 'freezing rain' : f.pl ? 'sleet' : f.sn && f.ra ? 'rain and snow' : f.sn ? 'snow' : f.ra ? 'rain' : 'precipitation'; }
+  function word(k) { return k === 'precipitation' ? 'Rain or snow' : k.charAt(0).toUpperCase() + k.slice(1); }
+  function day(ms) { var o = { weekday: 'short' }; if (typeof locTimezone !== 'undefined' && locTimezone) o.timeZone = locTimezone; try { return new Date(ms).toLocaleDateString('en-US', o); } catch (e) { return ''; } }
+  function at(ms) { return fmtLocTime(new Date(ms)) + (day(ms) !== day(Date.now()) ? ' ' + day(ms) : ''); }   // the weekday once it is not today
+  function frames(rows) {   // -> [{ t, r in/h, d, k, wet }], one per 15 minutes, oldest first
+    var by = {};
+    (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time); if (!isFinite(t)) return; var x = by[t] || (by[t] = { t: t, run: 0 }); V.forEach(function (v) { var n = r[v.alias]; if (n != null && isFinite(+n)) x[v.alias] = +n; }); var ra = Date.parse(r.forecasted_at); if (ra > x.run) x.run = ra; });
+    return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return a.t - b.t; }).map(function (x) {
+      var r = x.pr != null ? x.pr * 3600 / 25.4 : 0, flag = x.sn || x.ra || x.fz || x.pl, d = x.d != null ? x.d : null;
+      return { t: x.t, run: x.run, r: r, d: d, k: kind(x), wet: r >= 0.01 || (!!flag && d != null && d >= 15) };
+    });
+  }
+  function spells(F) {   // wet runs, gaps of up to two frames bridged, lone light blips dropped
+    var out = [], i = 0;
+    while (i < F.length) {
+      if (!F[i].wet) { i++; continue; }
+      var a = i, b = i;
+      for (var j = i + 1; j < F.length; j++) { if (F[j].wet) b = j; else if (j - b > 2) break; }
+      var run = F.slice(a, b + 1), peak = run.reduce(function (m, f) { return f.r > m.r ? f : m; }, run[0]);
+      if (!(a === b && F[a].r < 0.03)) out.push({ a: a, b: b, peak: peak, run: run });
+      i = b + 1;
+    }
+    return out;
+  }
+  function changes(run) {   // type changes inside a spell, ignoring one-frame flickers
+    var seq2 = [], out = [];
+    run.forEach(function (f) { if (!f.wet) return; var k = f.k; if (!seq2.length || seq2[seq2.length - 1].k !== k) seq2.push({ k: k, t: f.t, n: 1 }); else seq2[seq2.length - 1].n++; });
+    seq2 = seq2.filter(function (x, i) { return x.n >= 2 || i === 0; });
+    for (var i = 1; i < seq2.length; i++) if (seq2[i].k !== seq2[i - 1].k) out.push(seq2[i]);
+    return { first: seq2.length ? seq2[0].k : run[0].k, list: out };
+  }
+  function rate(r) { return r >= 0.3 ? 'heavy' : r >= 0.1 ? 'moderate' : 'light'; }
+  function say(F, now) {   // -> { head, bits[], wet }
+    now = now || Date.now();
+    F = F.filter(function (f) { return f.t >= now - Q / 2; });
+    if (!F.length) return null;
+    var S = spells(F), end = F[F.length - 1].t, bits = [], head;
+    if (!S.length) return { head: 'No rain or snow in the next ' + Math.max(1, Math.round((end - now) / 36e5)) + ' hours', bits: ['dry through ' + at(end)], wet: false, F: F };
+    var s = S[0], ch = changes(s.run), nowWet = s.a === 0, last = s.b === F.length - 1;
+    head = nowWet ? word(ch.first) + ' now, ' + (last ? 'continuing past ' + at(end) : 'ending about ' + at(F[s.b].t + Q)) : word(ch.first) + ' starting about ' + at(F[s.a].t) + (last ? '' : ', ending about ' + at(F[s.b].t + Q));
+    ch.list.forEach(function (c) { bits.push('changing to ' + c.k + ' about ' + at(c.t)); });
+    var wetF = s.run.filter(function (f) { return f.wet; }), mean = wetF.reduce(function (q, f) { return q + f.r; }, 0) / Math.max(1, wetF.length), amt = function (r) { return r >= 0.01 ? ', ' + (r < 0.095 ? r.toFixed(2) : r.toFixed(1)) + ' in/h of liquid' : ''; };
+    if (wetF.length >= 3 && s.peak.r >= 0.03 && s.peak.r >= 1.3 * mean) bits.push('heaviest about ' + at(s.peak.t) + ' (' + rate(s.peak.r) + amt(s.peak.r) + ')');
+    else bits.push(rate(s.peak.r) + (wetF.length >= 3 ? ' throughout' : '') + amt(s.peak.r));
+    if (S[1]) bits.push('more about ' + at(F[S[1].a].t));
+    return { head: head, bits: bits, wet: true, F: F };
+  }
+  function render() {
+    var el = document.getElementById('precipTiming'); if (!el) return;
+    if (cur.state === 'off') { el.innerHTML = ''; return; }
+    var tag = '<span class="ob-src radar">HRRR</span>';
+    if (!cur.d) { el.innerHTML = cur.state === 'busy' ? '<div class="ob-meta ob-rov">' + tag + '<span>Timing rain and snow here…</span></div>' : cur.err ? '<div class="ob-meta ob-rov">' + tag + '<span>' + esc(cur.err) + '</span></div>' : ''; return; }
+    var x = say(cur.d.F);
+    if (!x) { el.innerHTML = '<div class="ob-meta ob-rov">' + tag + '<span>The HRRR sent nothing for the coming hours here.</span></div>'; return; }
+    var bars = x.F.slice(0, 24).map(function (f) { var h = !f.wet ? 2 : Math.max(4, Math.min(16, Math.round(4 + f.r / 0.3 * 12))); return '<i style="height:' + h + 'px"' + (f.wet ? '' : ' class="dry"') + '></i>'; }).join('');
+    el.innerHTML = '<div class="ob-meta ob-rov' + (x.wet ? ' wet' : '') + '">' + tag + '<span class="rov-text"><b>' + esc(x.head) + '</b>' + (x.bits.length ? ' · ' + esc(x.bits.join(' · ')) : '') +
+      ' · <span class="rov-use">' + esc((cur.d.run ? fmtLocTime(new Date(cur.d.run), { hour: 'numeric' }) + ' run, ' : '') + 'model forecast in 15-minute steps') + '</span></span>' +
+      '<span class="rov-bars" role="img" aria-label="Model precipitation here, the next six hours" title="HRRR, the next 6 hours in 15-minute steps: taller is heavier">' + bars + '</span></div>';
+  }
+  function load(lat, lon, force) {
+    lat = +lat; lon = +lon;
+    if (typeof gsAvailable !== 'function' || !gsAvailable() || !isFinite(lat) || !isFinite(lon) || !inUS(lat, lon)) { cur = { key: '', at: 0, d: null, state: 'off', err: '' }; render(); return; }
+    var key = lat.toFixed(3) + ',' + lon.toFixed(3);
+    if (cur.key !== key) cur = { key: key, at: 0, d: null, state: 'idle', err: '' };
+    if (cur.state === 'busy' || (!force && cur.d && Date.now() - cur.at < 10 * 60000)) { render(); return; }
+    var my = ++seq, now = Date.now(); cur.state = 'busy'; render();
+    gsPost('hrrrsubh', { fromTime: new Date(now - Q).toISOString(), untilTime: new Date(now + 18 * 36e5).toISOString(), coordinates: [{ lat: +lat.toFixed(4), lon: +lon.toFixed(4), name: 'here' }], variables: V })
+      .then(function (rows) { if (my !== seq || cur.key !== key) return; var F = frames(rows); cur.d = { F: F, run: F.reduce(function (m, f) { return Math.max(m, f.run || 0); }, 0) }; cur.at = Date.now(); cur.err = ''; },
+            function () { if (my === seq && cur.key === key) cur.err = 'The HRRR timing did not load.'; })
+      .then(function () { if (my === seq && cur.key === key) { cur.state = 'idle'; render(); } });
+  }
+  function refresh(force) { if (typeof currentLat !== 'undefined' && currentLat != null) load(currentLat, currentLon, force); }
+  return { load: load, refresh: refresh, _say: say, _frames: frames, _state: function () { return cur; } };
 })();
 
 /* KALV (v3.55.0): the Kalshi screen laid out the way wethr.net lays out its own market page. Three cards across the top
