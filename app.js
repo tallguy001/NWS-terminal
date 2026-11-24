@@ -7361,7 +7361,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.83.1';
+var APP_VERSION = '3.83.2';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -13663,6 +13663,10 @@ var REGMAP = (function () {
      v3.83.1: the lattice is up to 12,000 points (was 2,600), so a local or close view is asked for at the model's own 3 km
      (0.027°) instead of 6 to 9 km. At most 24 bundles x 12 times, about 290 credits a view every 15 minutes; wider views
      coarsen as before. The lattice origin and size go back with the rows so the frame can be drawn as a field (futPaint). */
+  /* v3.83.2: the reflectivity 1 km above ground (REFD), not the composite (REFC, the strongest echo anywhere in the column).
+     It is what the model's lowest radar beam would see, so it compares with the base reflectivity on the radar loop; the
+     composite shows snow and rain aloft (virga, the melting layer) as echoes that never reach the ground. */
+  var FUT_VAR = { name: 'REFD', level: '1000 m above ground', alias: 'c' };
   function futureGrid(bb) {
     if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
     var S = FRS.q, t0 = Math.ceil(Date.now() / S.step) * S.step, times = []; for (var i = 0; i < 12; i++) times.push(t0 + i * S.step);
@@ -13670,11 +13674,15 @@ var REGMAP = (function () {
     var lat0 = Math.floor(bb.minLat / step) * step, lon0 = Math.floor(bb.minLon / step) * step;
     return gsOwn(S.model, { fromTime: new Date(times[0] - 4 * 6e4).toISOString(), untilTime: new Date(times[11] + 4 * 6e4).toISOString(),
       grid: { minLatitude: +lat0.toFixed(4), maxLatitude: +(+bb.maxLat).toFixed(4), minLongitude: +lon0.toFixed(4), maxLongitude: +(+bb.maxLon).toFixed(4), step: step },
-      variables: [FR_VAR], filter: { expression: 'c >= 5' } }).then(function (rows) {
+      variables: [FUT_VAR], filter: { expression: 'c >= 5' } }).then(function (rows) {
         var by = {}, run = 0;
         (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), ra = Date.parse(r.forecasted_at); if (!isFinite(t)) return; (by[t] || (by[t] = [])).push(r); if (ra > run) run = ra; });
-        return { times: times, by: by, step: step, run: run, lv: FR_LV, col: FR_C, lat0: lat0, lon0: lon0,
-                 nx: Math.round((bb.maxLon - lon0) / step) + 2, ny: Math.round((bb.maxLat - lat0) / step) + 2 };
+        var nx = Math.round((bb.maxLon - lon0) / step) + 2, ny = Math.round((bb.maxLat - lat0) / step) + 2, grids = {};
+        Object.keys(by).forEach(function (t) {   // one lattice per valid time; points the filter dropped (under 5 dBZ) stay 0
+          var g = grids[t] = new Float32Array(nx * ny);
+          by[t].forEach(function (r) { var c = +r.c, i = Math.round((+r.lon - lon0) / step), j = Math.round((+r.lat - lat0) / step); if (isFinite(c) && i >= 0 && i < nx && j >= 0 && j < ny && c > g[j * nx + i]) g[j * nx + i] = c; });
+        });
+        return { times: times, by: by, grids: grids, step: step, run: run, lat0: lat0, lon0: lon0, nx: nx, ny: ny };
       });
   }
   /* v3.70.0: on a forecast map, tapping a station or the place draws its model sounding inside the pop-up (the button still
@@ -15203,6 +15211,8 @@ var HRMAP = (function () {
     Promise.all([svgImage(svgs[0]), svgImage(svgs[1])]).then(function (v) {
       var cv = document.createElement('canvas'), sc = 2; cv.width = W * sc; cv.height = H * sc; var cx = cv.getContext('2d');
       cx.drawImage(v[0], 0, 0, cv.width, cv.height);
+      var fc = el.querySelector('.hr-stage.is-future .hr-fut-img');   // v3.83.2: a forecast frame saves as shown
+      if (fc) cx.drawImage(fc, 0, 0, cv.width, cv.height); else
       (s.cur || []).forEach(function (im) { if (!(im.naturalWidth || im.width)) return; cx.globalAlpha = /hr-over/.test(im.className) ? 0.85 : 1; var dw = cv.width * s.V.fx, dh = cv.height * s.V.fy; cx.save(); cx.translate(cv.width / 2, cv.height / 2); cx.rotate(s.V.rot); cx.drawImage(im, -dw / 2, -dh / 2, dw, dh); cx.restore(); });
       cx.globalAlpha = 1; cx.drawImage(v[1], 0, 0, cv.width, cv.height);
       var lg = el.querySelector('.hr-legend'); if (lg && lg.naturalWidth) cx.drawImage(lg, 12 * sc, (H - 27) * sc, 250 * sc, 15 * sc);
@@ -15222,38 +15232,52 @@ var HRMAP = (function () {
      back to the radar. The model points come from REGMAP (GribStream), once per view every fifteen minutes. ---- */
   var FUT_STOPS = [[5, '#04e9e7'], [10, '#019ff4'], [15, '#0300f4'], [20, '#02fd02'], [25, '#01c501'], [30, '#008e00'], [35, '#fdf802'], [40, '#e5bc00'], [45, '#fd9500'], [50, '#fd0000'], [55, '#d40000'], [60, '#bc0000'], [65, '#f800fd']];
   function futCol(c) { var col = null; for (var i = 0; i < FUT_STOPS.length; i++) if (c >= FUT_STOPS[i][0]) col = FUT_STOPS[i][1]; return col; }
-  /* v3.83.1: a forecast frame drawn as a field, the way radar is: the lattice values are interpolated (bilinear) at every
-     pixel, then coloured in the radar's 5 dBZ steps, so echoes have smooth edges at any zoom. It replaces squares softened
-     with a canvas blur, which Safari (the iPad) does not apply, so the frames showed as blocks. Points under 5 dBZ are not
-     returned (the request filters them) and count as 0. Drawn at half size and scaled up with smoothing: about 160,000
-     inverse projections, a few tens of milliseconds. */
+  /* v3.83.1: a forecast frame is drawn as a field, the way radar is: the lattice is interpolated (bilinear) at every pixel,
+     so echoes have smooth edges at any zoom. It replaced squares softened with a canvas blur, which Safari (the iPad) does
+     not apply, so the frames showed as blocks.
+     v3.83.2: drawn at the screen's own resolution (up to 2x) straight into a canvas, with no image encoding between frames.
+     Longitude and latitude come from the projection on a 16-pixel mesh and are interpolated between, so a 2.5-million-pixel
+     frame takes a few tens of milliseconds. Colours: on Site radar, the radar's own colour key (the legend the service
+     publishes, 5 px a dBZ from -25 dBZ) and the same weak-echo cut as the loop, so a forecast frame reads exactly like the
+     scans before it; on the other imagery, the NWS reflectivity steps. */
   var FUT_RGB = FUT_STOPS.map(function (x) { return [x[0], parseInt(x[1].slice(1, 3), 16), parseInt(x[1].slice(3, 5), 16), parseInt(x[1].slice(5, 7), 16)]; });
-  function futPaint(d, rows, V) {
-    var nx = d.nx, ny = d.ny, st = d.step, g = new Float32Array(nx * ny);
-    rows.forEach(function (r) {
-      var c = +r.c, i = Math.round((+r.lon - d.lon0) / st), j = Math.round((+r.lat - d.lat0) / st);
-      if (isFinite(c) && i >= 0 && i < nx && j >= 0 && j < ny && c > g[j * nx + i]) g[j * nx + i] = c;
-    });
-    var R = 2, cw = Math.ceil(W / R), ch = Math.ceil(H / R), small = document.createElement('canvas'); small.width = cw; small.height = ch;
-    var sx = small.getContext('2d'), id = sx.createImageData(cw, ch), px = id.data, ca = V.ca, sa = V.sa, m = V.mpp;
-    if (rows.length) for (var y = 0; y < ch; y++) {
-      var dy = (y + 0.5) * R - H / 2;
-      for (var x = 0; x < cw; x++) {
-        var dx = (x + 0.5) * R - W / 2, ll = invAlbers(V.cx + (ca * dx + sa * dy) * m, V.cy + (sa * dx - ca * dy) * m);   // V.proj run backwards
-        var fi = (ll[0] - d.lon0) / st, fj = (ll[1] - d.lat0) / st, i0 = Math.floor(fi), j0 = Math.floor(fj);
-        if (i0 < 0 || j0 < 0 || i0 >= nx - 1 || j0 >= ny - 1) continue;
-        var u = fi - i0, v = fj - j0, k = j0 * nx + i0;
-        var c = (g[k] * (1 - u) + g[k + 1] * u) * (1 - v) + (g[k + nx] * (1 - u) + g[k + nx + 1] * u) * v;
-        if (c < 5) continue;
-        var n = 0; while (n + 1 < FUT_RGB.length && c >= FUT_RGB[n + 1][0]) n++;
-        var o = (y * cw + x) * 4; px[o] = FUT_RGB[n][1]; px[o + 1] = FUT_RGB[n][2]; px[o + 2] = FUT_RGB[n][3]; px[o + 3] = 255;
+  function futPal(s) {   // -> { rgb: 3 bytes for each half dBZ from 5 to 80, cut: dBZ below which nothing is drawn, key: true when the radar's own }
+    var tbl = new Uint8Array(151 * 3), nws = function () {
+      for (var q = 0; q < 151; q++) { var c = 5 + q / 2, n = 0; while (n + 1 < FUT_RGB.length && c >= FUT_RGB[n + 1][0]) n++; tbl[q * 3] = FUT_RGB[n][1]; tbl[q * 3 + 1] = FUT_RGB[n][2]; tbl[q * 3 + 2] = FUT_RGB[n][3]; }
+      return { rgb: tbl, cut: 5, key: false };
+    };
+    if (s.base !== 'site') return Promise.resolve(nws());
+    return lut(siteOf(s).id, baseOf('site')[4]).then(function (L) {
+      if (!L || !L.n || !L.px) return nws();
+      var k = L.n / 500;
+      for (var q = 0; q < 151; q++) { var c = 5 + q / 2, x = Math.max(0, Math.min(L.n - 1, Math.round(k * 5 * (c + 25)))); tbl[q * 3] = L.px[x * 4]; tbl[q * 3 + 1] = L.px[x * 4 + 1]; tbl[q * 3 + 2] = L.px[x * 4 + 2]; }
+      return { rgb: tbl, cut: s.weak ? 5 : Math.max(5, L.cut / k / 5 - 25), key: true };
+    }, function () { return nws(); });
+  }
+  function futPaint(cv, d, g, V, P) {
+    var nx = d.nx, ny = d.ny, st = d.step, cw = cv.width, ch = cv.height, R = W / cw, ctx = cv.getContext('2d');
+    var id = ctx.createImageData(cw, ch), px = id.data, ca = V.ca, sa = V.sa, m = V.mpp, rgb = P.rgb, cut = P.cut;
+    if (g) {
+      var M = 16, mx = Math.ceil(cw / M) + 1, my = Math.ceil(ch / M) + 1, LO = new Float64Array(mx * my), LA = new Float64Array(mx * my);
+      for (var b = 0; b < my; b++) for (var a = 0; a < mx; a++) {   // V.proj run backwards at the mesh nodes
+        var dx = a * M * R - W / 2, dy = b * M * R - H / 2, ll = invAlbers(V.cx + (ca * dx + sa * dy) * m, V.cy + (sa * dx - ca * dy) * m);
+        LO[b * mx + a] = (ll[0] - d.lon0) / st; LA[b * mx + a] = (ll[1] - d.lat0) / st;
+      }
+      for (var y = 0; y < ch; y++) {
+        var by = (y + 0.5) / M, b0 = Math.min(my - 2, Math.floor(by)), fy = by - b0, o = y * cw * 4;
+        for (var x = 0; x < cw; x++, o += 4) {
+          var bx = (x + 0.5) / M, a0 = Math.min(mx - 2, Math.floor(bx)), fx = bx - a0, q0 = b0 * mx + a0, q1 = q0 + mx;
+          var fi = (LO[q0] * (1 - fx) + LO[q0 + 1] * fx) * (1 - fy) + (LO[q1] * (1 - fx) + LO[q1 + 1] * fx) * fy;
+          var fj = (LA[q0] * (1 - fx) + LA[q0 + 1] * fx) * (1 - fy) + (LA[q1] * (1 - fx) + LA[q1 + 1] * fx) * fy;
+          var i0 = fi | 0, j0 = fj | 0; if (fi < 0 || fj < 0 || i0 >= nx - 1 || j0 >= ny - 1) continue;
+          var u = fi - i0, v = fj - j0, k = j0 * nx + i0;
+          var c = (g[k] * (1 - u) + g[k + 1] * u) * (1 - v) + (g[k + nx] * (1 - u) + g[k + nx + 1] * u) * v;
+          if (c < cut) continue;
+          var t = Math.min(150, ((c - 5) * 2) | 0) * 3; px[o] = rgb[t]; px[o + 1] = rgb[t + 1]; px[o + 2] = rgb[t + 2]; px[o + 3] = 255;
+        }
       }
     }
-    sx.putImageData(id, 0, 0);
-    var out = document.createElement('canvas'); out.width = W; out.height = H; var o2 = out.getContext('2d');
-    o2.imageSmoothingEnabled = true; try { o2.imageSmoothingQuality = 'high'; } catch (x) { /* optional */ }
-    o2.drawImage(small, 0, 0, W, H);
-    return out;
+    ctx.putImageData(id, 0, 0);
   }
   function futBox(V) {   // the frame's corners and edge midpoints, back to longitude and latitude
     var b = V.bbox, pts = [[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]], [(b[0] + b[2]) / 2, b[1]], [(b[0] + b[2]) / 2, b[3]], [b[0], (b[1] + b[3]) / 2], [b[2], (b[1] + b[3]) / 2]].map(function (q) { return invAlbers(q[0], q[1]); });
@@ -15286,17 +15310,20 @@ var HRMAP = (function () {
     var key = V.bbox.join(',') + ':' + Math.floor(Date.now() / 9e5);
     if (!s.futD || s.futD.key !== key) { s.futD = { key: key, p: REGMAP.futureGrid(futBox(V)) }; futBanner(k, '<b>Forecast, not radar.</b> Loading the HRRR simulated radar\u2026'); }
     var want = s.fut, my = s.futD;
-    my.p.then(function (d) {
+    if (!my.pal) my.pal = my.p.then(function () { return futPal(s); });   // the colour key, read once per fetch
+    Promise.all([my.p, my.pal]).then(function (dp) {
+      var d = dp[0], P = dp[1];
       if (s.futD !== my || s.fut !== want || !e.stage.isConnected) return;
       var t = d.times[want - 1], rows = d.by[t] || [];
-      var img = e.stage.querySelector('.hr-fut-img');
-      if (!img) {   // v3.83.1: under the map overlay (labels, title, scale), as the radar itself is, not on top of it
-        img = document.createElement('img'); img.className = 'hr-fut-img'; img.alt = '';
-        var lay = e.stage.querySelector('.hr-layers'); if (lay) e.stage.insertBefore(img, lay.nextSibling); else e.stage.appendChild(img);
+      var cv = e.stage.querySelector('.hr-fut-img'), dpr = window.devicePixelRatio || 1, sc = Math.max(1, Math.min(2, Math.round((e.stage.clientWidth || W) * dpr / W * 4) / 4));
+      if (!cv) {   // v3.83.1: under the map overlay (labels, title, scale), as the radar itself is, not on top of it
+        cv = document.createElement('canvas'); cv.className = 'hr-fut-img'; cv.setAttribute('aria-hidden', 'true');
+        var lay = e.stage.querySelector('.hr-layers'); if (lay) e.stage.insertBefore(cv, lay.nextSibling); else e.stage.appendChild(cv);
       }
-      img.src = futPaint(d, rows, V).toDataURL('image/png');
+      if (cv.width !== Math.round(W * sc)) { cv.width = Math.round(W * sc); cv.height = Math.round(H * sc); }
+      futPaint(cv, d, d.grids[t], V, P);
       var lead = Math.round((t - Date.now()) / 6e4), when = new Date(t).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined });
-      futBanner(k, '<b>Forecast, not radar.</b> HRRR simulated radar for ' + esc(when) + (d.run ? ', from the ' + esc(new Date(d.run).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined })) + ' run' : '') + (rows.length ? '' : '. No echoes expected in view.'));
+      futBanner(k, '<b>Forecast, not radar.</b> HRRR simulated radar (1 km) for ' + esc(when) + (d.run ? ', from the ' + esc(new Date(d.run).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined })) + ' run' : '') + (rows.length ? '' : '. No echoes expected in view.'));
       if (e.time) e.time.textContent = when + ' \u00B7 ' + (lead >= 60 ? Math.floor(lead / 60) + ' h ' + (lead % 60 ? lead % 60 + ' min ' : '') : lead + ' min ') + 'ahead';
     }, function (err) {
       if (s.futD === my) s.futD = null;
