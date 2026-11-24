@@ -7361,7 +7361,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.83.2';
+var APP_VERSION = '3.83.3';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -11909,7 +11909,8 @@ var REGMAP = (function () {
   }
 
   /* ════ future radar (v3.40.0) ════
-     The HRRR's simulated composite reflectivity every 15 minutes, in three-hour blocks out to 15 hours: twelve frames a
+     v3.83.3: the reflectivity 1 km above ground (REFD) on a lattice of about 12,000 points (was the composite on 5,000).
+     The HRRR's simulated reflectivity every 15 minutes, in three-hour blocks out to 15 hours: twelve frames a
      block, one area request (12 valid times x about 11 bundles), plus one point request that says which of the times the
      model has reached. A slider and a Play button step through the frames without asking for anything more. */
   var FR_VAR = { name: 'REFC', level: 'entire atmosphere', alias: 'c' }, FR_LV = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65];
@@ -11917,9 +11918,9 @@ var REGMAP = (function () {
   var FR = null, frTimer = null;   // FR: { key, blk: { n: { at, times, have, frames, run, p } } }
   /* v3.53.0: the 15-minute HRRR frames (18 hours), or hourly frames from the HRRR (36 hours) or the RRFS (60 hours). Frames are
      asked for twelve at a time; the slider runs across all of them and a block is fetched the first time the slider lands in it. */
-  var FRS = { q: { label: 'HRRR 15-minute', short: 'HRRR', model: 'hrrrsubh', step: 9e5, n: 60, level: 'entire atmosphere', every: 'One frame every 15 minutes', reach: 'They run 18 hours from each hourly run.' },
-              h: { label: 'HRRR hourly', short: 'HRRR', model: 'hrrr', step: HOUR, n: 36, level: 'entire atmosphere', every: 'One frame an hour', reach: 'Its hourly runs reach 18 hours and the 00, 06, 12 and 18 UTC runs 48.' },
-              r: { label: 'RRFS hourly', short: 'RRFS', model: 'rrfs2dfld', step: HOUR, n: 60, level: 'entire atmosphere (considered as a single layer)', every: 'One frame an hour', reach: 'It runs every three hours.' } };
+  var FRS = { q: { label: 'HRRR 15-minute', short: 'HRRR', model: 'hrrrsubh', step: 9e5, n: 60, level: '1000 m above ground', every: 'One frame every 15 minutes', reach: 'They run 18 hours from each hourly run.' },
+              h: { label: 'HRRR hourly', short: 'HRRR', model: 'hrrr', step: HOUR, n: 36, level: '1000 m above ground', every: 'One frame an hour', reach: 'Its hourly runs reach 18 hours and the 00, 06, 12 and 18 UTC runs 48.' },
+              r: { label: 'RRFS hourly', short: 'RRFS', model: 'rrfs2dfld', step: HOUR, n: 60, level: '1000 m above ground', every: 'One frame an hour', reach: 'It runs every three hours.' } };
   function frSrc() { return FRS[st.fs] ? st.fs : 'q'; }
   function frBlockNo() { return Math.max(0, Math.min(FRS[frSrc()].n / 12 - 1, Math.round(+st.fb || 0))); }
   function frTimes(fb) { var S = FRS[frSrc()], t0 = Math.ceil(Date.now() / S.step) * S.step + (fb == null ? frBlockNo() : fb) * 12 * S.step, a = []; for (var i = 0; i < 12; i++) a.push(t0 + i * S.step); return a; }
@@ -11948,8 +11949,8 @@ var REGMAP = (function () {
     if (c && c.p) return c.p;
     if (c && c.frames && (c.times[0] === times[0] || !tapped())) return Promise.resolve();   // a block that has slipped behind the clock is replaced only on a tap
     c = FR.blk[fb] = { at: Date.now(), times: times, have: {}, frames: null, run: 0, p: null };
-    var V = { name: 'REFC', level: S.level, alias: 'c' };
-    var Lt = lattice(W, H, 5000), a = times[0] - 4 * 6e4, b = times[11] + 4 * 6e4, home = [{ lat: +(+currentLat).toFixed(4), lon: +(+currentLon).toFixed(4), name: 'home' }];
+    var V = { name: 'REFD', level: S.level, alias: 'c' };
+    var Lt = lattice(W, H, 12000), a = times[0] - 4 * 6e4, b = times[11] + 4 * 6e4, home = [{ lat: +(+currentLat).toFixed(4), lon: +(+currentLon).toFixed(4), name: 'home' }];
     var pH = gsOwn(S.model, { fromTime: new Date(a).toISOString(), untilTime: new Date(b).toISOString(), coordinates: home, variables: [V] }).then(function (rows) {
       (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), ra = Date.parse(r.forecasted_at); if (isFinite(t) && r.c != null) c.have[t] = 1; if (ra > c.run) c.run = ra; });
     });
@@ -11995,7 +11996,7 @@ var REGMAP = (function () {
     var G = c.frames[fi.i], so = seaOf(HRRR_GRID.inside, 'model'), cov = so.note ? 'part' : 'all';
     return { title: 'Future radar, ' + fi.label, pts: refNames(),
              subText: who + (c.run ? ', ' + clock(c.run) + ' run' : '') + ' · ' + (G.max >= 5 ? 'strongest echo ' + R(G.max) + ' dBZ' : 'no echoes in view') + (cov === 'part' ? ' · hatched: past the model\u2019s edge' : ''),
-             sub2: 'what the ' + S.short + ' model expects radar to show at this time, in dBZ: a forecast, not an observation. Echoes are drawn over lakes, coastal waters and Canada as well as land' +
+             sub2: 'what the ' + S.short + ' model expects radar to show at this time, in dBZ, 1 km above the ground (as a radar\u2019s lowest beam sees it): a forecast, not an observation. Echoes are drawn over lakes, coastal waters and Canada as well as land' +
                    (cov === 'part' ? ', out to the edge of the model\u2019s grid; the hatched area is beyond it' : '') + '. ' + S.every + '; drag the slider, use the arrows or press Play',
              field: { levels: FR_LV, colors: FR_C, grid: G, flat: true, unit: 'dBZ', sea: so.sea } };
   }
@@ -13660,30 +13661,51 @@ var REGMAP = (function () {
   }
   /* v3.70.0: the HRRR's 15-minute simulated radar over any box, for the Radar screen's forecast frames. One request covers
      the next three hours; points under 5 dBZ are left out by the filter, so a dry box costs little.
-     v3.83.1: the lattice is up to 12,000 points (was 2,600), so a local or close view is asked for at the model's own 3 km
-     (0.027°) instead of 6 to 9 km. At most 24 bundles x 12 times, about 290 credits a view every 15 minutes; wider views
-     coarsen as before. The lattice origin and size go back with the rows so the frame can be drawn as a field (futPaint). */
-  /* v3.83.2: the reflectivity 1 km above ground (REFD), not the composite (REFC, the strongest echo anywhere in the column).
-     It is what the model's lowest radar beam would see, so it compares with the base reflectivity on the radar loop; the
-     composite shows snow and rain aloft (virga, the melting layer) as echoes that never reach the ground. */
+     v3.83.1-3: the reflectivity 1 km above ground (REFD), not the composite (REFC, the strongest echo anywhere in the column):
+     it is what a radar's lowest beam sees, so it compares with the loop, where the composite shows snow and rain aloft (virga,
+     the melting layer) that never reaches the ground. Up to 16,000 points, so a local or close view is at the model's own
+     3 km (0.027°): at most 32 bundles x 12 times, about 380 credits a view every 15 minutes. A view that would need a
+     coarser lattice than 0.04° is refused ('WIDE'): the Radar screen takes those from Iowa State's HRRR imagery instead,
+     which is 0.02° everywhere and free (HRMAP iemLoad). `force` asks anyway, coarsened, when that imagery cannot be had.
+     withType: a second request at twice the spacing for the categorical snow, freezing rain and ice pellets (rain where none
+     is set), filtered to echoes: 4 fields x 8 bundles x 12 times, about 380 credits more. HRMAP asks for it only where and
+     when frozen precipitation is plausible (frozenSeason). Each frame comes back as lattices ready to draw (HRMAP futPaint). */
   var FUT_VAR = { name: 'REFD', level: '1000 m above ground', alias: 'c' };
-  function futureGrid(bb) {
+  var FUT_TYPE = [{ name: 'CSNOW', level: 'surface', alias: 'sn' }, { name: 'CFRZR', level: 'surface', alias: 'zr' }, { name: 'CICEP', level: 'surface', alias: 'ip' }];
+  function futureGrid(bb, withType, force) {
     if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
     var S = FRS.q, t0 = Math.ceil(Date.now() / S.step) * S.step, times = []; for (var i = 0; i < 12; i++) times.push(t0 + i * S.step);
-    var area = Math.max(0.01, (bb.maxLon - bb.minLon) * (bb.maxLat - bb.minLat)), step = Math.max(0.027, +Math.sqrt(area / 12000).toFixed(3));
-    var lat0 = Math.floor(bb.minLat / step) * step, lon0 = Math.floor(bb.minLon / step) * step;
-    return gsOwn(S.model, { fromTime: new Date(times[0] - 4 * 6e4).toISOString(), untilTime: new Date(times[11] + 4 * 6e4).toISOString(),
-      grid: { minLatitude: +lat0.toFixed(4), maxLatitude: +(+bb.maxLat).toFixed(4), minLongitude: +lon0.toFixed(4), maxLongitude: +(+bb.maxLon).toFixed(4), step: step },
-      variables: [FUT_VAR], filter: { expression: 'c >= 5' } }).then(function (rows) {
-        var by = {}, run = 0;
-        (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), ra = Date.parse(r.forecasted_at); if (!isFinite(t)) return; (by[t] || (by[t] = [])).push(r); if (ra > run) run = ra; });
-        var nx = Math.round((bb.maxLon - lon0) / step) + 2, ny = Math.round((bb.maxLat - lat0) / step) + 2, grids = {};
-        Object.keys(by).forEach(function (t) {   // one lattice per valid time; points the filter dropped (under 5 dBZ) stay 0
-          var g = grids[t] = new Float32Array(nx * ny);
-          by[t].forEach(function (r) { var c = +r.c, i = Math.round((+r.lon - lon0) / step), j = Math.round((+r.lat - lat0) / step); if (isFinite(c) && i >= 0 && i < nx && j >= 0 && j < ny && c > g[j * nx + i]) g[j * nx + i] = c; });
+    var area = Math.max(0.01, (bb.maxLon - bb.minLon) * (bb.maxLat - bb.minLat)), step = Math.max(0.027, +Math.sqrt(area / 16000).toFixed(3));
+    if (step > 0.04 && !force) return Promise.reject(new Error('WIDE'));
+    var req = function (st, vars) {
+      var la0 = Math.floor(bb.minLat / st) * st, lo0 = Math.floor(bb.minLon / st) * st;
+      return gsOwn(S.model, { fromTime: new Date(times[0] - 4 * 6e4).toISOString(), untilTime: new Date(times[11] + 4 * 6e4).toISOString(),
+        grid: { minLatitude: +la0.toFixed(4), maxLatitude: +(+bb.maxLat).toFixed(4), minLongitude: +lo0.toFixed(4), maxLongitude: +(+bb.maxLon).toFixed(4), step: st },
+        variables: vars, filter: { expression: 'c >= 5' } }).then(function (rows) {
+          return { rows: rows || [], lat0: la0, lon0: lo0, step: st, nx: Math.round((bb.maxLon - lo0) / st) + 2, ny: Math.round((bb.maxLat - la0) / st) + 2 };
         });
-        return { times: times, by: by, grids: grids, step: step, run: run, lat0: lat0, lon0: lon0, nx: nx, ny: ny };
+    };
+    var pR = req(step, [FUT_VAR]), pT = withType ? req(+(step * 2).toFixed(3), [FUT_VAR].concat(FUT_TYPE)).catch(function () { return null; }) : Promise.resolve(null);
+    return Promise.all([pR, pT]).then(function (res) {
+      var A = res[0], T = res[1], run = 0, idx = {};
+      times.forEach(function (t, k) { idx[t] = k; });
+      var frames = times.map(function () {
+        var f = { g: new Float32Array(A.nx * A.ny), nx: A.nx, ny: A.ny, lat0: A.lat0, lon0: A.lon0, step: A.step, T: null };
+        if (T) { f.T = new Uint8Array(T.nx * T.ny); f.T.fill(255); f.tnx = T.nx; f.tny = T.ny; f.tlat0 = T.lat0; f.tlon0 = T.lon0; f.tstep = T.step; }
+        return f;
       });
+      A.rows.forEach(function (r) {   // points the filter dropped (under 5 dBZ) stay 0
+        var k = idx[Date.parse(r.forecasted_time)], ra = Date.parse(r.forecasted_at); if (ra > run) run = ra; if (k == null) return;
+        var f = frames[k], c = +r.c, i = Math.round((+r.lon - A.lon0) / A.step), j = Math.round((+r.lat - A.lat0) / A.step);
+        if (isFinite(c) && i >= 0 && i < A.nx && j >= 0 && j < A.ny && c > f.g[j * A.nx + i]) f.g[j * A.nx + i] = c;
+      });
+      if (T) T.rows.forEach(function (r) {   // 0 rain, 1 snow, 2 freezing rain, 3 ice pellets; where flags overlap the more hazardous wins
+        var k = idx[Date.parse(r.forecasted_time)]; if (k == null) return;
+        var i = Math.round((+r.lon - T.lon0) / T.step), j = Math.round((+r.lat - T.lat0) / T.step); if (!(i >= 0 && i < T.nx && j >= 0 && j < T.ny)) return;
+        frames[k].T[j * T.nx + i] = +r.zr > 0 ? 2 : +r.ip > 0 ? 3 : +r.sn > 0 ? 1 : 0;
+      });
+      return { src: 'gs', times: times, run: run, typed: !!T, frame: function (n) { return Promise.resolve(frames[n]); } };
+    });
   }
   /* v3.70.0: on a forecast map, tapping a station or the place draws its model sounding inside the pop-up (the button still
      opens the full one). Observed maps keep the button alone, so a tap there costs no model credits. */
@@ -15239,8 +15261,21 @@ var HRMAP = (function () {
      Longitude and latitude come from the projection on a 16-pixel mesh and are interpolated between, so a 2.5-million-pixel
      frame takes a few tens of milliseconds. Colours: on Site radar, the radar's own colour key (the legend the service
      publishes, 5 px a dBZ from -25 dBZ) and the same weak-echo cut as the loop, so a forecast frame reads exactly like the
-     scans before it; on the other imagery, the NWS reflectivity steps. */
+     scans before it; on the other imagery, the NWS reflectivity steps.
+     v3.83.3: precipitation type. Where the frame carries one, snow is drawn in blues, freezing rain in pinks and sleet (ice
+     pellets) in purples, by intensity; rain keeps the radar colours. The type at a pixel is the one with the most weight
+     among the four nearest lattice points (bilinear weights), so the boundary between types is smooth too. */
   var FUT_RGB = FUT_STOPS.map(function (x) { return [x[0], parseInt(x[1].slice(1, 3), 16), parseInt(x[1].slice(3, 5), 16), parseInt(x[1].slice(5, 7), 16)]; });
+  var FUT_PT = [null, [[5, [176, 216, 255]], [15, [118, 176, 245]], [25, [62, 124, 222]], [35, [30, 70, 180]], [45, [18, 40, 130]]],    // snow
+                [[5, [255, 196, 224]], [15, [248, 140, 192]], [25, [234, 84, 156]], [35, [206, 34, 120]], [45, [150, 0, 86]]],      // freezing rain
+                [[5, [222, 200, 255]], [15, [186, 146, 245]], [25, [150, 98, 226]], [35, [114, 54, 196]], [45, [80, 20, 150]]]];      // sleet
+  var FUT_PT_NAME = ['Rain', 'Snow', 'Freezing rain', 'Sleet'], FUT_PT_KEY = [null, '#6EA2EA', '#EA549C', '#9662E2'];
+  var FUT_PT_TBL = FUT_PT.map(function (S) {
+    if (!S) return null; var t = new Uint8Array(151 * 3);
+    for (var q = 0; q < 151; q++) { var c = 5 + q / 2, n = 0; while (n + 1 < S.length && c >= S[n + 1][0]) n++; var a = S[n], b = S[Math.min(S.length - 1, n + 1)], f = b === a ? 0 : Math.min(1, (c - a[0]) / (b[0] - a[0]));
+      for (var z = 0; z < 3; z++) t[q * 3 + z] = Math.round(a[1][z] + (b[1][z] - a[1][z]) * f); }
+    return t;
+  });
   function futPal(s) {   // -> { rgb: 3 bytes for each half dBZ from 5 to 80, cut: dBZ below which nothing is drawn, key: true when the radar's own }
     var tbl = new Uint8Array(151 * 3), nws = function () {
       for (var q = 0; q < 151; q++) { var c = 5 + q / 2, n = 0; while (n + 1 < FUT_RGB.length && c >= FUT_RGB[n + 1][0]) n++; tbl[q * 3] = FUT_RGB[n][1]; tbl[q * 3 + 1] = FUT_RGB[n][2]; tbl[q * 3 + 2] = FUT_RGB[n][3]; }
@@ -15254,14 +15289,15 @@ var HRMAP = (function () {
       return { rgb: tbl, cut: s.weak ? 5 : Math.max(5, L.cut / k / 5 - 25), key: true };
     }, function () { return nws(); });
   }
-  function futPaint(cv, d, g, V, P) {
-    var nx = d.nx, ny = d.ny, st = d.step, cw = cv.width, ch = cv.height, R = W / cw, ctx = cv.getContext('2d');
-    var id = ctx.createImageData(cw, ch), px = id.data, ca = V.ca, sa = V.sa, m = V.mpp, rgb = P.rgb, cut = P.cut;
+  function futPaint(cv, F, V, P) {   // -> pixels drawn of each type [rain, snow, freezing rain, sleet]
+    var cw = cv.width, ch = cv.height, R = W / cw, ctx = cv.getContext('2d'), cnt = [0, 0, 0, 0];
+    var id = ctx.createImageData(cw, ch), px = id.data, ca = V.ca, sa = V.sa, m = V.mpp, cut = P.cut, g = F && F.g;
     if (g) {
-      var M = 16, mx = Math.ceil(cw / M) + 1, my = Math.ceil(ch / M) + 1, LO = new Float64Array(mx * my), LA = new Float64Array(mx * my);
+      var nx = F.nx, ny = F.ny, st = F.step, T = F.T, tnx = F.tnx || nx, tny = F.tny || ny, tk = T ? (F.tstep || st) / st : 1, ti0 = T ? ((F.tlon0 == null ? F.lon0 : F.tlon0) - F.lon0) / st : 0, tj0 = T ? ((F.tlat0 == null ? F.lat0 : F.tlat0) - F.lat0) / st : 0;
+      var M = 16, mx = Math.ceil(cw / M) + 1, my = Math.ceil(ch / M) + 1, LO = new Float64Array(mx * my), LA = new Float64Array(mx * my), wt = [0, 0, 0, 0];
       for (var b = 0; b < my; b++) for (var a = 0; a < mx; a++) {   // V.proj run backwards at the mesh nodes
         var dx = a * M * R - W / 2, dy = b * M * R - H / 2, ll = invAlbers(V.cx + (ca * dx + sa * dy) * m, V.cy + (sa * dx - ca * dy) * m);
-        LO[b * mx + a] = (ll[0] - d.lon0) / st; LA[b * mx + a] = (ll[1] - d.lat0) / st;
+        LO[b * mx + a] = (ll[0] - F.lon0) / st; LA[b * mx + a] = (ll[1] - F.lat0) / st;
       }
       for (var y = 0; y < ch; y++) {
         var by = (y + 0.5) / M, b0 = Math.min(my - 2, Math.floor(by)), fy = by - b0, o = y * cw * 4;
@@ -15273,11 +15309,92 @@ var HRMAP = (function () {
           var u = fi - i0, v = fj - j0, k = j0 * nx + i0;
           var c = (g[k] * (1 - u) + g[k + 1] * u) * (1 - v) + (g[k + nx] * (1 - u) + g[k + nx + 1] * u) * v;
           if (c < cut) continue;
-          var t = Math.min(150, ((c - 5) * 2) | 0) * 3; px[o] = rgb[t]; px[o + 1] = rgb[t + 1]; px[o + 2] = rgb[t + 2]; px[o + 3] = 255;
+          var pt = 0;
+          if (T) {
+            var ui = (fi - ti0) / tk, vj = (fj - tj0) / tk, ii = Math.floor(ui), jj = Math.floor(vj);
+            if (ii >= 0 && jj >= 0 && ii < tnx - 1 && jj < tny - 1) {
+              var uu = ui - ii, vv = vj - jj, kk = jj * tnx + ii, t1 = T[kk], t2 = T[kk + 1], t3 = T[kk + tnx], t4 = T[kk + tnx + 1];
+              wt[0] = wt[1] = wt[2] = wt[3] = 0;
+              if (t1 < 4) wt[t1] += (1 - uu) * (1 - vv); if (t2 < 4) wt[t2] += uu * (1 - vv); if (t3 < 4) wt[t3] += (1 - uu) * vv; if (t4 < 4) wt[t4] += uu * vv;
+              if (wt[1] > wt[pt]) pt = 1; if (wt[2] > wt[pt]) pt = 2; if (wt[3] > wt[pt]) pt = 3;
+            }
+          }
+          var tb = pt ? FUT_PT_TBL[pt] : P.rgb, t = Math.min(150, ((c - 5) * 2) | 0) * 3; cnt[pt]++;
+          px[o] = tb[t]; px[o + 1] = tb[t + 1]; px[o + 2] = tb[t + 2]; px[o + 3] = 255;
         }
       }
     }
     ctx.putImageData(id, 0, 0);
+    return cnt;
+  }
+  /* v3.83.3: wide views (Region, National), and any view when GribStream is not set up or does not answer, take the frames
+     from the Iowa Environmental Mesonet (Iowa State University), which serves the HRRR's REFD (1 km above ground, the same
+     field) and REFP (the same with the model's precipitation type) every 15 minutes to 18 hours, at 0.02°, free, with open
+     CORS (mesonet.agron.iastate.edu/GIS/model.phtml). It runs about :40 past the hour for the run of the hour before, so it
+     is often one run behind GribStream; the banner names the run. The WMS answers in EPSG:4326 with the exact colours of
+     its palettes, so each pixel decodes back: REFD index i -> i / 2 - 32.5 dBZ (the IEM N0Q scale: 0 missing, 1 = -32 dBZ, 0.5 dBZ steps; GIS/rasters.php), REFP index i -> type
+     floor((i - 1) / 22) (22 shades each of rain, snow, freezing rain, ice pellets). Palettes taken from IEM's own rasters
+     (24 Nov 2026). Frames load one at a time as they are shown, with the next one fetched ahead. */
+  var IEM_REFD_PAL = '00000085718f85728f86738d87758b87768b887789897987897a878a7b858b7d848b7e848c7f828d81808d82808e837e8f847c8f857c90877b918879918979928b77938d759691539894579b975b9d9a60a09d64a3a068a5a36da8a671aaa976adac7ab0af7eb2b283b7b88cbabb90bdbe94bfc199c2c49dc4c7a2c7caa6cacdaaccd0afd2d4b4cfd2b4c9ccb4c6c9b4c3c7b4c0c4b4bdc1b4b9beb4b6bbb4b3b9b4b0b6b4adb3b4aab0b4a4abb4a0a8b49da5b49aa2b497a0b4949db4919ab4949bb59098b48c95b38892b2808cb07c89af7886ae7483ac7080ab6c7daa6779a96376a85f73a75b70a6576da44f67a24b64a14761a0435e9f415b9e4361a24568a6486faa4a76ae4d7db24f84b6518bbb5699c3599fc75ba6cb5eadcf60b4d462bbd865c2dc67c9e06ad0e46fd6e868d6d759d6b352d6a24bd69043d67e3cd66d35d65b11d51811d11710cd1710c81610c4160fbc150fb7140eb3140eaf130eab130da6120da2120d9e110c99110c95100c91100b880f0b840e0a800e0a7c0d0a770d09730c096f0c096b0b08660b08620a095e09327308467d085b88076f9207849d0698a806adb205c1bd05d6c704ead204ffe200ffd800ffd300ffce00ffc900ffc400ffc000ffbb00ffb600ffb100ffac00ffa700ffa200ff9900ff9400ff8f00ff8a00ff8500ff8000ff0000f80000f10000ea0000e30000d50000cd0000c60000bf0000b80000b10000aa0000a300009b00009400008d00007f0000780000710000fffffffff5ffffeaffffdfffffd4ffffc9ffffbeffffb3ffff9dffff92ffff75fffc6bfdf960faf656f7f34bf4f040f1ed36efea2bece720e9e10be3b200ffac00fca400f79b00f49300ef8800ea8300e87900e27200dd6900db05ecf005ebf005eaf005dde005dce005dbe005cdd005ccd004bdc004bcc004bbc004aeb004adb0049ea0049da0049ca0038e90038d90038c90037e80037d80036f70036e70036d70025f60025e60024f50024e50024d50023f40023e40023d40013030012f30012020011f20011e203a67b53a66b53a65b53a64b53a63b53a62b5';
+  var IEM_REFP_PAL = '000000eef8eae5f5e0d6efd0c7e9c0b4e1ada0d99b8ace8873c4765ab76940aa5d319a50228a44117b38006c2c00572300441bffe81affd710ffc505ffb700ffab00ffa000b4dae699ccdd81c0d566b3cc4ea6c43399bb1b8db30080aa0073a2006699005a91004d88003f7f00337700266e001a668d003bb80b4ed81b6ae53592df66b0cd8bc2ffeee6fee6dafedecffdd0bcfcc2aafcb499fca588fc9576fc8767fb7858fb694af7593ff24734ec382bde2b25d11e1fc4161cb61319a81016940b137c051067000df8f6faf3f1f7eeecf4e6e5f1deddedd5d5e9cacae3bebfddb4b4d7a9a7cf9e9ac89390c38885be7e79b87669af6e58a766499f5e3a98552a904e1c8a460d833f007d';
+  var IEMH = 'https://mesonet.agron.iastate.edu', IEM_LUT = null;
+  function iemLut() {
+    if (IEM_LUT) return IEM_LUT;
+    var mk = function (h) { var m = new Map(); for (var i = 0; i * 6 < h.length; i++) { var k = parseInt(h.substr(i * 6, 6), 16); if (!m.has(k)) m.set(k, i); } return m; };
+    return (IEM_LUT = { d: mk(IEM_REFD_PAL), p: mk(IEM_REFP_PAL) });
+  }
+  function iemPix(url) {   // -> { data, w, h } of a cross-origin PNG
+    return new Promise(function (res, rej) {
+      var im = new Image(); im.crossOrigin = 'anonymous';
+      im.onload = function () { try { var c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; var x = c.getContext('2d'); x.drawImage(im, 0, 0); res({ data: x.getImageData(0, 0, c.width, c.height).data, w: c.width, h: c.height }); } catch (e) { rej(e); } };
+      im.onerror = function () { rej(new Error('IEM imagery did not load')); };
+      im.src = url;
+    });
+  }
+  function iemJson(name) { return netFetch(IEMH + '/data/gis/images/4326/hrrr/' + name + '.json?t=' + Math.floor(Date.now() / 12e4)).then(function (r) { if (!r.ok) throw new Error('IEM HTTP ' + r.status); return r.json(); }).then(function (j) { var t = Date.parse(j.model_init_utc); if (!isFinite(t)) throw new Error('IEM run time missing'); return t; }); }
+  function iemLoad(bb, withType) {
+    var t0 = Math.ceil(Date.now() / 9e5) * 9e5, times = []; for (var i = 0; i < 12; i++) times.push(t0 + i * 9e5);
+    var area = Math.max(0.01, (bb.maxLon - bb.minLon) * (bb.maxLat - bb.minLat)), st = Math.max(1, Math.ceil(Math.sqrt(area / 1.6e6) / 0.02 - 1e-9)) * 0.02;
+    // edges on IEM's own pixel grid (centres at 126 W + k x 0.02, 50 N - k x 0.02), so at 0.02 each pixel is one of theirs
+    var x0 = -126.01 + Math.floor((bb.minLon + 126.01) / st) * st, x1 = -126.01 + Math.ceil((bb.maxLon + 126.01) / st) * st;
+    var y1 = 50.01 - Math.floor((50.01 - bb.maxLat) / st) * st, y0 = 50.01 - Math.ceil((50.01 - bb.minLat) / st) * st;
+    var w = Math.max(2, Math.round((x1 - x0) / st)), h = Math.max(2, Math.round((y1 - y0) / st));
+    var wms = function (prod, min) { return IEMH + '/cgi-bin/wms/hrrr/' + prod + '.cgi?service=WMS&version=1.1.1&request=GetMap&layers=' + prod + '_' + String(min).padStart(4, '0') +
+      '&styles=&srs=EPSG:4326&bbox=' + x0.toFixed(3) + ',' + y0.toFixed(3) + ',' + x1.toFixed(3) + ',' + y1.toFixed(3) + '&width=' + w + '&height=' + h + '&format=image/png&transparent=true&t=' + Math.floor(Date.now() / 12e4); };
+    return iemJson('refd_1080').then(function (init) {   // the last frame IEM writes: a run that has it is complete
+      var cache = {}, d = { src: 'iem', times: times, run: init, typed: !!withType };
+      var one = function (n) {
+        var min = Math.round((times[n] - init) / 6e4);
+        if (min < 0 || min > 1080 || min % 15) return Promise.resolve(null);
+        return Promise.all([iemPix(wms('refd', min)), withType ? iemPix(wms('refp', min)).catch(function () { return null; }) : null, iemJson('refd_' + String(min).padStart(4, '0')).catch(function () { return init; })]).then(function (r) {
+          var L = iemLut(), A = r[0], B = r[1], f = { g: new Float32Array(A.w * A.h), nx: A.w, ny: A.h, lat0: y0 + st / 2, lon0: x0 + st / 2, step: st, T: null, run: r[2] };
+          if (B && B.w === A.w && B.h === A.h) { f.T = new Uint8Array(A.w * A.h); f.T.fill(255); }
+          for (var yy = 0; yy < A.h; yy++) for (var xx = 0; xx < A.w; xx++) {
+            var o = (yy * A.w + xx) * 4, k = (A.h - 1 - yy) * A.w + xx;   // image rows run from the north; the lattice from the south
+            if (A.data[o + 3]) { var di = L.d.get((A.data[o] << 16) | (A.data[o + 1] << 8) | A.data[o + 2]); if (di) { var c = di / 2 - 32.5; if (c >= 5) f.g[k] = c; } }
+            if (f.T && B.data[o + 3]) { var pi = L.p.get((B.data[o] << 16) | (B.data[o + 1] << 8) | B.data[o + 2]); if (pi && pi <= 88) f.T[k] = Math.floor((pi - 1) / 22); }
+          }
+          return f;
+        });
+      };
+      d.frame = function (n) {
+        if (!cache[n]) { cache[n] = one(n); cache[n].catch(function () { delete cache[n]; }); }
+        if (n + 1 < times.length && !cache[n + 1]) { cache[n + 1] = one(n + 1); cache[n + 1].catch(function () { delete cache[n + 1]; }); }   // the next one, ahead
+        return cache[n];
+      };
+      return d;
+    });
+  }
+  /* Frozen precipitation is plausible: October to April from 27 N, and May and September from 38 N. Outside that the type
+     fields are not asked for (rain is assumed and drawn in the radar colours). */
+  function frozenSeason(lat) { var mo = new Date().getUTCMonth() + 1; return lat >= 27 && (mo >= 10 || mo <= 4) || lat >= 38 && (mo === 5 || mo === 9); }
+  function futLoad(V) {
+    var bb = futBox(V), ty = frozenSeason(isFinite(V.latC) ? V.latC : 40), iem = function () { return iemLoad(bb, ty); };
+    var gs = typeof REGMAP !== 'undefined' && REGMAP.futureGrid && gsAvailable();
+    if (!gs) return iem();
+    return REGMAP.futureGrid(bb, ty).then(null, function (e) {
+      return iem().then(null, function () { return REGMAP.futureGrid(bb, false, true).then(null, function () { throw e; }); });
+    });
   }
   function futBox(V) {   // the frame's corners and edge midpoints, back to longitude and latitude
     var b = V.bbox, pts = [[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]], [(b[0] + b[2]) / 2, b[1]], [(b[0] + b[2]) / 2, b[3]], [b[0], (b[1] + b[3]) / 2], [b[2], (b[1] + b[3]) / 2]].map(function (q) { return invAlbers(q[0], q[1]); });
@@ -15306,28 +15423,32 @@ var HRMAP = (function () {
   function futShow(k) {
     var s = state(k), e = futEls(k); if (!e || !e.stage || !s.fut) return;
     var V = s.V || viewOf(s); e.stage.classList.add('is-future');
-    if (typeof REGMAP === 'undefined' || !REGMAP.futureGrid || !gsAvailable()) { futBanner(k, '<b>Forecast frames need GribStream.</b> Add the GS_TOKEN secret to see the HRRR simulated radar.'); return; }
     var key = V.bbox.join(',') + ':' + Math.floor(Date.now() / 9e5);
-    if (!s.futD || s.futD.key !== key) { s.futD = { key: key, p: REGMAP.futureGrid(futBox(V)) }; futBanner(k, '<b>Forecast, not radar.</b> Loading the HRRR simulated radar\u2026'); }
+    if (!s.futD || s.futD.key !== key) { s.futD = { key: key, p: futLoad(V) }; futBanner(k, '<b>Forecast, not radar.</b> Loading the HRRR simulated radar\u2026'); }
     var want = s.fut, my = s.futD;
     if (!my.pal) my.pal = my.p.then(function () { return futPal(s); });   // the colour key, read once per fetch
     Promise.all([my.p, my.pal]).then(function (dp) {
       var d = dp[0], P = dp[1];
-      if (s.futD !== my || s.fut !== want || !e.stage.isConnected) return;
-      var t = d.times[want - 1], rows = d.by[t] || [];
-      var cv = e.stage.querySelector('.hr-fut-img'), dpr = window.devicePixelRatio || 1, sc = Math.max(1, Math.min(2, Math.round((e.stage.clientWidth || W) * dpr / W * 4) / 4));
-      if (!cv) {   // v3.83.1: under the map overlay (labels, title, scale), as the radar itself is, not on top of it
-        cv = document.createElement('canvas'); cv.className = 'hr-fut-img'; cv.setAttribute('aria-hidden', 'true');
-        var lay = e.stage.querySelector('.hr-layers'); if (lay) e.stage.insertBefore(cv, lay.nextSibling); else e.stage.appendChild(cv);
-      }
-      if (cv.width !== Math.round(W * sc)) { cv.width = Math.round(W * sc); cv.height = Math.round(H * sc); }
-      futPaint(cv, d, d.grids[t], V, P);
-      var lead = Math.round((t - Date.now()) / 6e4), when = new Date(t).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined });
-      futBanner(k, '<b>Forecast, not radar.</b> HRRR simulated radar (1 km) for ' + esc(when) + (d.run ? ', from the ' + esc(new Date(d.run).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined })) + ' run' : '') + (rows.length ? '' : '. No echoes expected in view.'));
-      if (e.time) e.time.textContent = when + ' \u00B7 ' + (lead >= 60 ? Math.floor(lead / 60) + ' h ' + (lead % 60 ? lead % 60 + ' min ' : '') : lead + ' min ') + 'ahead';
-    }, function (err) {
+      return d.frame(want - 1).then(function (F) {
+        if (s.futD !== my || s.fut !== want || !e.stage.isConnected) return;
+        var t = d.times[want - 1];
+        var cv = e.stage.querySelector('.hr-fut-img'), dpr = window.devicePixelRatio || 1, sc = Math.max(1, Math.min(2, Math.round((e.stage.clientWidth || W) * dpr / W * 4) / 4));
+        if (!cv) {   // v3.83.1: under the map overlay (labels, title, scale), as the radar itself is, not on top of it
+          cv = document.createElement('canvas'); cv.className = 'hr-fut-img'; cv.setAttribute('aria-hidden', 'true');
+          var lay = e.stage.querySelector('.hr-layers'); if (lay) e.stage.insertBefore(cv, lay.nextSibling); else e.stage.appendChild(cv);
+        }
+        if (cv.width !== Math.round(W * sc)) { cv.width = Math.round(W * sc); cv.height = Math.round(H * sc); }
+        var cnt = futPaint(cv, F, V, P), any = cnt[0] + cnt[1] + cnt[2] + cnt[3];
+        var tz = { hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined }, run = (F && F.run) || d.run;
+        var lead = Math.round((t - Date.now()) / 6e4), when = new Date(t).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined });
+        var key2 = [1, 2, 3].filter(function (n) { return cnt[n] > 0; }).map(function (n) { return '<span class="fut-pt"><i style="background:' + FUT_PT_KEY[n] + '"></i>' + FUT_PT_NAME[n] + '</span>'; }).join('');
+        futBanner(k, '<b>Forecast, not radar.</b> HRRR simulated radar for ' + esc(when) + (run ? ', from the ' + esc(new Date(run).toLocaleTimeString('en-US', tz)) + ' run' : '') +
+          (d.src === 'iem' ? ' (via Iowa State\u2019s IEM)' : '') + (!F ? '. This time is past the end of that run.' : any ? '' : '. No echoes expected in view.') + (key2 ? '<span class="fut-key">' + key2 + '</span>' : ''));
+        if (e.time) e.time.textContent = when + ' \u00B7 ' + (lead >= 60 ? Math.floor(lead / 60) + ' h ' + (lead % 60 ? lead % 60 + ' min ' : '') : lead + ' min ') + 'ahead';
+      });
+    }).catch(function (err) {
       if (s.futD === my) s.futD = null;
-      futBanner(k, '<b>Forecast frames did not load</b> (' + esc(err && err.message === 'NOGS' ? 'GribStream is not set up' : (err && err.message) || 'network error') + '). Move the radar slider to go back.');
+      futBanner(k, '<b>Forecast frames did not load</b> (' + esc((err && err.message) || 'network error') + '). Move the radar slider to go back.');
     });
   }
   function leave(k) { if (inst[k]) { stop(k, true); futClear(k); } }
