@@ -6111,6 +6111,7 @@ function openDrawer() {
   d.classList.add('open');
   $('drawerScrim').classList.add('open');
   if (typeof PUSHUI !== 'undefined') PUSHUI.open();
+  if (typeof ERRUI !== 'undefined') ERRUI.open();   // v3.84.0
   var f = $('gsTokenInput'); if (f) setTimeout(function () { f.focus(); }, 50);
 }
 function closeDrawer() {
@@ -7361,7 +7362,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.83.0';
+var APP_VERSION = '3.84.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -18227,6 +18228,44 @@ var RADAROV = (function () {
    0.03 in/h is dropped, so on-and-off light showers read as one spell. Times are the model's 15-minute frames, shown as
    "about". One GribStream point request (72 times x 6 fields); asked when a place loads and on coming back to Current
    after ten minutes, never on a timer. */
+/* ---- app health (v3.84.0) ----
+   Settings, App health: the script errors this app has reported about itself (index.html holds the reporter). The list comes
+   from the server, so it covers every device; when the server keeps none, the last few seen in this browser are shown. */
+var ERRUI = (function () {
+  var S = { data: null, bad: '', busy: false };
+  var KIND = { error: 'Script error', promise: 'Uncaught promise', load: 'File did not load', caught: 'Handled error' };
+  function when(iso) { var t = Date.parse(iso); if (!isFinite(t)) return ''; var d = new Date(t); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+  function row(r) {
+    var bits = [r.w, r.p ? 'on ' + r.p : '', r.d, r.v ? 'v' + r.v + (r.v0 && r.v0 !== r.v ? ' (since v' + r.v0 + ')' : '') : ''].filter(Boolean).map(esc).join(' · ');
+    return '<li class="errlog-row"><div class="errlog-top"><b>' + esc(KIND[r.k] || 'Error') + '</b><span>' + (r.n > 1 ? esc(r.n) + '× · ' : '') + esc(when(r.last)) + '</span></div>' +
+      '<div class="errlog-msg">' + esc(r.m) + '</div>' + (bits ? '<div class="errlog-meta">' + bits + '</div>' : '') + '</li>';
+  }
+  function render() {
+    var el = document.getElementById('errBox'); if (!el) return;
+    var d = S.data, server = !!(d && d.store), list = server ? (d.list || []) : (window.NWSERR ? NWSERR.local() : []);
+    var head = S.bad ? 'Could not read the error log: ' + esc(S.bad) + '. Showing this browser only.'
+      : !d ? 'Loading…'
+      : !list.length ? 'No script errors reported' + (server ? ', on any device.' : ' in this browser.')
+      : list.length + (list.length === 1 ? ' error' : ' different errors') + ' reported' + (server ? ', all devices, newest first.' : ' in this browser, newest first.');
+    el.innerHTML = '<div class="field-hint">Version ' + esc(APP_VERSION) + '. ' + head + '</div>' +
+      (list.length ? '<ul class="errlog-list">' + list.slice(0, 40).map(row).join('') + '</ul><button type="button" class="btn btn-ghost" id="errClear"' + (S.busy ? ' disabled' : '') + '>Clear the list</button>' : '');
+    var b = document.getElementById('errClear'); if (b) b.addEventListener('click', clear);
+  }
+  function load() {
+    if (location.protocol.indexOf('http') !== 0) { S.data = { store: false }; render(); return Promise.resolve(); }
+    return fetch('/api/errors', { cache: 'no-store' }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j && j.error || 'HTTP ' + r.status); return j; }); })
+      .then(function (j) { S.data = j; S.bad = ''; render(); }, function (e) { S.data = { store: false }; S.bad = String(e && e.message || e).slice(0, 120); render(); });
+  }
+  function clear() {
+    if (S.busy) return; S.busy = true; render();
+    if (window.NWSERR) NWSERR.clearLocal();
+    var done = function () { S.busy = false; return load(); };
+    if (S.data && S.data.store) fetch('/api/errors', { method: 'DELETE' }).then(done, done); else done();
+  }
+  function open() { render(); if (window.NWSERR) NWSERR.flush(); load(); }
+  return { open: open, render: render, _state: function () { return S; } };
+})();
+
 /* ---- push alerts (v3.83.0) ----
    Settings, Push alerts: this device signs up with the server for home plus saved places. The server checks every two minutes
    (NWS warnings, watches and advisories; SPC Slight or higher at home on Day 1 or 2; rain or snow starting within about 30

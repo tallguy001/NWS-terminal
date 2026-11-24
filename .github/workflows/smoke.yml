@@ -1,0 +1,50 @@
+# Screen tests for NWS Terminal. Every push, on any branch, is tested at the address Cloudflare Pages gives that branch:
+# main at nws4.pages.dev, any other branch at its preview address. A red run means do not ship (or, on main, look now).
+name: Screen tests
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Worker tests
+        run: node tests/worker-errors.test.mjs
+      - name: Install the test browser
+        working-directory: tests
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1
+          npx playwright install --with-deps chromium
+      - name: Wait for Cloudflare to serve this version
+        run: |
+          VERSION=$(sed -n "s/^const VERSION = '\(.*\)';/\1/p" _worker.js)
+          if [ "$GITHUB_REF_NAME" = "main" ]; then BASE=https://nws4.pages.dev
+          else SLUG=$(printf '%s' "$GITHUB_REF_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-28 | sed 's/^-*//; s/-*$//'); BASE="https://$SLUG.nws4.pages.dev"; fi
+          echo "BASE=$BASE" >> "$GITHUB_ENV"; echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          for i in $(seq 1 48); do
+            V=$(curl -fsS -m 10 "$BASE/api/health" 2>/dev/null | sed -n 's/.*"version":"\([^"]*\)".*/\1/p' || true)
+            [ "$V" = "$VERSION" ] && break; sleep 10
+          done
+          [ "$V" = "$VERSION" ] || { echo "Cloudflare is not serving $VERSION at $BASE (it answers: ${V:-nothing})"; exit 1; }
+          echo "Serving $VERSION at $BASE"
+      - name: Screen tests
+        run: node tests/smoke.cjs --base "$BASE" --expect "$VERSION" --out smoke-out
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-out
+          path: smoke-out
+          retention-days: 7
+          if-no-files-found: ignore

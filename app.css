@@ -3019,3 +3019,13 @@ body.snd-open #chatPanel { z-index: 9600; }
 .push-msg { margin-top: var(--s2); color: var(--text-2); }
 .push-msg.bad { color: var(--warn-c); }
 .push-beat { margin-top: var(--s2); font-variant-numeric: tabular-nums; }
+
+/* app health (v3.84.0) */
+.errlog { margin-bottom: var(--s5); }
+.errlog-list { list-style: none; margin: var(--s2) 0 var(--s3); padding: 0; max-height: 320px; overflow-y: auto; border-top: 1px solid var(--border-subtle); }
+.errlog-row { padding: var(--s2) 0; border-bottom: 1px solid var(--border-subtle); }
+.errlog-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); font-size: var(--fs-sm); color: var(--text-1); }
+.errlog-top b { font-weight: 600; }
+.errlog-top span { font-size: var(--fs-micro); color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.errlog-msg { margin-top: 2px; font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--text-2); line-height: 1.45; overflow-wrap: anywhere; }
+.errlog-meta { margin-top: 2px; font-size: var(--fs-micro); color: var(--text-3); overflow-wrap: anywhere; }

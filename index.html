@@ -21,7 +21,70 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.83.0">
+<script>
+/* Error reporter (v3.84.0). It sits here, ahead of app.js, so a release whose app.js will not load or will not parse still
+   reports. An uncaught error, a promise nobody caught, or app.js / app.css failing to load is sent to /api/err: the message,
+   file and line, the section on screen, the kind of device and the version. Never the place on screen: web addresses lose
+   their query string and long decimals (coordinates) are blanked. Network failures are not reported; the source status
+   panel already covers those. At most 20 different errors and 6 sends per page load. */
+(function () {
+  var seen = {}, q = [], sends = 0, timer = 0;
+  var NOISE = /^(Failed to fetch|Load failed|NetworkError|Request timed out|The operation was aborted|The user aborted|Fetch is aborted|cancelled|canceled|ResizeObserver loop)/i;
+  function clean(v, n) {
+    var o = ''; try { o = location.origin + '/'; } catch (e) {}
+    return String(v == null ? '' : v).split(o).join('').replace(/(https?:\/\/[^\s)'"?#]+)[?#][^\s)'":]*/g, '$1').replace(/(\.(?:js|css))\?[^\s)'":]*/g, '$1').replace(/-?\d{1,3}\.\d{3,}/g, '#').slice(0, n);
+  }
+  function ver() { try { var s = document.querySelector('script[src^="/app.js"]'); return (/[?&]v=(\d+\.\d+\.\d+)/.exec(s ? s.getAttribute('src') : '') || [])[1] || '0.0.0'; } catch (e) { return '0.0.0'; } }
+  function page() {   // the section on screen, from the app once it is running, else from the address
+    try { if (typeof HOME !== 'undefined' && HOME.on()) return 'home'; if (typeof _currentSection === 'string') return _currentSection; } catch (e) {}
+    try { var h = location.hash; if (!h || h === '#') return 'home'; var m = /[#&]s=([a-z0-9_-]{1,24})/i.exec(h); return m ? m[1] : 'forecast'; } catch (e) { return ''; }
+  }
+  function dev() { var u = navigator.userAgent || ''; return /iPad/.test(u) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'ipad' : /iPhone|iPod/.test(u) ? 'iphone' : /Android/.test(u) ? 'android' : /Mac/.test(u) ? 'mac' : /Windows/.test(u) ? 'windows' : 'other'; }
+  function app() { try { return navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches); } catch (e) { return false; } }
+  function local(e) { try { var a = JSON.parse(localStorage.getItem('nwst_errs') || '[]'); a.unshift(e); localStorage.setItem('nwst_errs', JSON.stringify(a.slice(0, 20))); } catch (x) {} }
+  function add(kind, msg, src, line, col, stack) {
+    msg = clean(msg, 300).trim(); if (!msg || NOISE.test(msg)) return;
+    stack = clean(stack, 700);
+    var where = src ? clean(String(src).split('/').pop(), 60) + ':' + (line || 0) + ':' + (col || 0) : '';
+    if (!where && stack) { var f = /([\w.-]+\.js):(\d+):(\d+)/.exec(stack); if (f) where = f[1] + ':' + f[2] + ':' + f[3]; }
+    var key = kind + '|' + msg + '|' + where.split(':')[0];
+    if (seen[key]) { seen[key].n++; return; }
+    if (Object.keys(seen).length >= 20) return;
+    var e = { k: kind, m: msg, w: where, p: page(), st: stack, n: 1 };
+    seen[key] = e; q.push(e); local({ k: kind, m: msg, w: where, p: e.p, v: ver(), last: new Date().toISOString() });
+    if (!timer) timer = setTimeout(flush, 5000);
+  }
+  function flush(leaving) {
+    if (timer) { clearTimeout(timer); timer = 0; }
+    if (!q.length) return;
+    if (sends >= 6 || location.protocol !== 'https:') { q.length = 0; return; }
+    var body = JSON.stringify({ v: ver(), d: dev(), a: app() ? 1 : 0, errs: q.splice(0, 10) }); sends++;
+    try {
+      if (leaving === true && navigator.sendBeacon) { navigator.sendBeacon('/api/err', new Blob([body], { type: 'application/json' })); return; }
+      fetch('/api/err', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }).catch(function () {});
+    } catch (x) {}
+  }
+  window.addEventListener('error', function (e) {
+    if (!e) return;
+    var t = e.target;
+    if (t && t !== window && t.tagName) {   // a file that did not load; only this site's own script and stylesheet matter here
+      var u = String(t.src || t.href || '');
+      if ((t.tagName === 'SCRIPT' || t.tagName === 'LINK') && u.indexOf(location.origin + '/') === 0) add('load', t.tagName === 'SCRIPT' ? 'Script did not load' : 'Stylesheet did not load', u, 0, 0, '');
+      return;
+    }
+    add('error', e.message || (e.error && e.error.message), e.filename, e.lineno, e.colno, e.error && e.error.stack);
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason; if (r && (r.name === 'AbortError' || r.name === 'TimeoutError')) return;
+    add('promise', r && r.message ? r.message : String(r), '', 0, 0, r && r.stack);
+  });
+  window.addEventListener('pagehide', function () { flush(true); });
+  window.NWSERR = { add: function (msg, stack) { add('caught', msg, '', 0, 0, stack); }, flush: flush,
+    local: function () { try { return JSON.parse(localStorage.getItem('nwst_errs') || '[]') || []; } catch (e) { return []; } },
+    clearLocal: function () { try { localStorage.removeItem('nwst_errs'); } catch (e) {} } };
+})();
+</script>
+<link rel="stylesheet" href="/app.css?v=3.84.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -1697,6 +1760,9 @@
     <h3>Push alerts</h3>
     <div class="push-box" id="pushBox"><div class="field-hint">Loading…</div></div>
 
+    <h3>App health</h3>
+    <div class="errlog" id="errBox"><div class="field-hint">Loading…</div></div>
+
     <div class="drawer-note">
       <b>API keys live in Cloudflare, not in this browser.</b> Each service is switched on by a secret in the
       Cloudflare dashboard for this site (Settings, then Variables and Secrets), followed by a new deployment.
@@ -1859,6 +1925,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.83.0" defer></script>
+<script src="/app.js?v=3.84.0" defer></script>
 </body>
 </html>

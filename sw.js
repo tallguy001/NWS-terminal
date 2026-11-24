@@ -1,4 +1,4 @@
-/* NWS Terminal service worker (v3.83.0): push alerts only. It does not touch page requests, so every load still comes
+/* NWS Terminal service worker (v3.84.0): push alerts only. It does not touch page requests, so every load still comes
    straight from the network. A push carries { title, body, tag, url, renotify, sticky, ts }, encrypted for this device. */
 self.addEventListener('install', function () { self.skipWaiting(); });
 self.addEventListener('activate', function (e) { e.waitUntil(self.clients.claim()); });

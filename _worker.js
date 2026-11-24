@@ -1,4 +1,4 @@
-/* NWS Terminal edge worker (v3.83.0)
+/* NWS Terminal edge worker (v3.84.0)
    - serves the app shell from static assets with security + cache headers
    - /p/<kind>/...   same-origin read-only proxy for NOAA hosts without CORS
    - /p/gs/...       GribStream POST proxy (keeps the token off third parties)
@@ -8,9 +8,10 @@
    - /api/wiroads    Wisconsin 511 winter road conditions in a box (same key)
    - /api/config     what the server can do for the client
    - /api/health     liveness for uptime checks
-   - /push/...       push alerts: key, sub, unsub, test (the app) and tick (the cron Worker); needs KV bound as PUSH */
+   - /push/...       push alerts: key, sub, unsub, test (the app) and tick (the cron Worker); needs KV bound as PUSH
+   - /api/err        the app reports its own script errors here; /api/errors lists them (same KV, key 'errs') */
 
-const VERSION = '3.83.0';
+const VERSION = '3.84.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -706,6 +707,65 @@ function securityHeaders(res, url) {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
 }
 
+/* ---- app error log (v3.84.0) ----
+   The page reports its own script errors (an uncaught exception, a promise nobody caught, app.js or app.css failing to load)
+   to /api/err; /api/errors lists them, newest first, for Settings and for whoever maintains the app. Kept in the PUSH KV
+   namespace under one key, 'errs': { day, w, list: [{ id, k, m, w, p, st, d, v, v0, n, first, last }] }, at most ERR_MAX rows.
+   One row per error (kind + message + file); a repeat adds to its count. To stay far inside the free KV allowance a repeat
+   seen within the hour is not written again, and no more than ERR_DAY_WRITES writes are made in a day.
+   Nothing personal is kept: web addresses lose their query string and long decimals (coordinates) are blanked, here as well
+   as in the page; the place on screen is never sent, only the section name. */
+const ERR_MAX = 40, ERR_DAY_WRITES = 120, ERR_REPEAT_MS = 3600e3;
+const errClean = (v, n) => String(v == null ? '' : v).replace(/(https?:\/\/[^\s)'"?#]+)[?#][^\s)'":]*/g, '$1').replace(/-?\d{1,3}\.\d{3,}/g, '#').replace(/[\u0000-\u0008\u000b-\u001f]/g, ' ').slice(0, n);
+async function errRoute(path, request, env) {
+  const NS = { 'Cache-Control': 'no-store' };
+  if (path === '/api/errors') {
+    if (request.method === 'GET' || request.method === 'HEAD') {
+      if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
+      const e = env.PUSH ? ((await env.PUSH.get('errs', 'json')) || {}) : {};
+      return json({ version: VERSION, store: !!env.PUSH, day: e.day || null, writes: e.w || 0, list: Array.isArray(e.list) ? e.list : [] }, 200, NS);
+    }
+    if (request.method === 'DELETE') {
+      const bad = await keyGuard(request, env); if (bad) return bad;
+      if (env.PUSH) {   // the day's write count carries on, so clearing cannot be used to get round the cap
+        const e = (await env.PUSH.get('errs', 'json')) || {}, today = new Date().toISOString().slice(0, 10);
+        await env.PUSH.put('errs', JSON.stringify({ day: today, w: (e.day === today ? (e.w || 0) : 0) + 1, list: [] }));
+      }
+      return json({ ok: true }, 200, NS);
+    }
+    return json({ error: 'GET or DELETE only' }, 405, NS);
+  }
+  if (request.method !== 'POST') return json({ error: 'POST only' }, 405, NS);
+  const bad = await keyGuard(request, env); if (bad) return bad;
+  const raw = await request.text(); if (raw.length > 12288) return json({ error: 'Too large' }, 413, NS);
+  let b; try { b = JSON.parse(raw); } catch (e) { return json({ error: 'Bad JSON' }, 400, NS); }
+  const v = String(b && b.v || ''); if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(v) || !Array.isArray(b.errs)) return json({ error: 'Bad report' }, 400, NS);
+  const dev = /^(ipad|iphone|mac|windows|android|other)$/.test(b.d) ? b.d : 'other', app = b.a ? ' app' : '';
+  const now = Date.now(), today = new Date(now).toISOString().slice(0, 10), inc = [];
+  for (const x of b.errs.slice(0, 10)) {
+    if (!x || typeof x !== 'object') continue;
+    const k = /^(error|promise|load|caught)$/.test(x.k) ? x.k : 'error', m = errClean(x.m, 300).trim(); if (!m) continue;
+    const w = errClean(x.w, 80).replace(/[^\w.:@-]/g, ''), file = w.split(':')[0];
+    inc.push({ id: (await sha256hex(k + '|' + m + '|' + file)).slice(0, 12), k, m, w, p: errClean(x.p, 24).replace(/[^a-z0-9_-]/gi, ''), st: errClean(x.st, 700), n: Math.min(999, Math.max(1, Math.round(Number(x.n)) || 1)) });
+  }
+  if (!inc.length) return json({ ok: true, stored: 0 }, 200, NS);
+  if (!env.PUSH) return json({ ok: true, stored: 0, why: 'storage' }, 200, NS);
+  const e = (await env.PUSH.get('errs', 'json')) || {}; let list = Array.isArray(e.list) ? e.list : [], fresh = 0;
+  const w = e.day === today ? (e.w || 0) : 0;
+  for (const x of inc) {
+    const was = list.find((r) => r.id === x.id);
+    if (was) {
+      if (was.v === v && now - Date.parse(was.last) < ERR_REPEAT_MS) continue;   // the same error again within the hour: not worth a write
+      was.n = Math.min(99999, (was.n || 1) + x.n); was.last = new Date(now).toISOString(); was.v = v; was.w = x.w; was.p = x.p; was.d = dev + app; if (x.st) was.st = x.st; fresh++;
+    } else { list.push(Object.assign(x, { d: dev + app, v, v0: v, first: new Date(now).toISOString(), last: new Date(now).toISOString() })); fresh++; }
+  }
+  if (!fresh) return json({ ok: true, stored: 0, why: 'repeat' }, 200, NS);
+  if (w >= ERR_DAY_WRITES) return json({ ok: true, stored: 0, why: 'cap' }, 200, NS);
+  list.sort((a, c) => Date.parse(c.last) - Date.parse(a.last)); list = list.slice(0, ERR_MAX);
+  await env.PUSH.put('errs', JSON.stringify({ day: today, w: w + 1, list }));
+  return json({ ok: true, stored: fresh }, 200, NS);
+}
+
 /* ---- push alerts (v3.83.0) ----
    Web Push to the installed app for the places a device chooses (home plus saved places): NWS warnings, watches and advisories,
    SPC Slight risk or higher at home on Day 1 or 2, and rain or snow starting within about 30 minutes (HRRR 15-minute steps,
@@ -1090,9 +1150,14 @@ export default {
       try { return await pushRoute(path, request, env); }
       catch (err) { return json({ error: 'Push request failed: ' + String(err && err.message || err).slice(0, 120) }, 502, { 'Cache-Control': 'no-store' }); }
     }
+    if (path === '/api/err' || path === '/api/errors') {   // v3.84.0
+      try { return await errRoute(path, request, env); }
+      catch (err) { return json({ error: 'Error log request failed: ' + String(err && err.message || err).slice(0, 120) }, 502, { 'Cache-Control': 'no-store' }); }
+    }
+    if (path.startsWith('/tests/') || path.startsWith('/.github/')) return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });   // repository files, not part of the site
     if (path === '/api/unlock') return unlock(request, env);
     if (path === '/api/config') {
-      return json({ gsServerToken: !!env.GS_TOKEN, lightningServerKey: !!env.LIGHTNING_KEY, radarServerKey: !!env.RADAR_TILES_KEY, camsServerKey: !!env.WINDY_WEBCAMS_KEY, wi511ServerKey: !!env.WI511_KEY, claudeServerKey: !!env.ANTHROPIC_API_KEY, wethrServerKey: !!env.WETHR_API_KEY, pushStore: !!env.PUSH,
+      return json({ errStore: !!env.PUSH, gsServerToken: !!env.GS_TOKEN, lightningServerKey: !!env.LIGHTNING_KEY, radarServerKey: !!env.RADAR_TILES_KEY, camsServerKey: !!env.WINDY_WEBCAMS_KEY, wi511ServerKey: !!env.WI511_KEY, claudeServerKey: !!env.ANTHROPIC_API_KEY, wethrServerKey: !!env.WETHR_API_KEY, pushStore: !!env.PUSH,
                     passcode: !!env.APP_PASSCODE, locked: !(await unlocked(request, env)), version: VERSION }, 200, { 'Cache-Control': 'no-store' });
     }
     if (path === '/api/health') {
