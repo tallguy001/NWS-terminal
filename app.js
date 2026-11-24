@@ -7361,7 +7361,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.83.0';
+var APP_VERSION = '3.83.1';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -13659,18 +13659,22 @@ var REGMAP = (function () {
     renderBar();
   }
   /* v3.70.0: the HRRR's 15-minute simulated radar over any box, for the Radar screen's forecast frames. One request covers
-     the next three hours; points under 5 dBZ are left out by the filter, so a dry box costs little. */
+     the next three hours; points under 5 dBZ are left out by the filter, so a dry box costs little.
+     v3.83.1: the lattice is up to 12,000 points (was 2,600), so a local or close view is asked for at the model's own 3 km
+     (0.027°) instead of 6 to 9 km. At most 24 bundles x 12 times, about 290 credits a view every 15 minutes; wider views
+     coarsen as before. The lattice origin and size go back with the rows so the frame can be drawn as a field (futPaint). */
   function futureGrid(bb) {
     if (!gsAvailable()) return Promise.reject(new Error('NOGS'));
     var S = FRS.q, t0 = Math.ceil(Date.now() / S.step) * S.step, times = []; for (var i = 0; i < 12; i++) times.push(t0 + i * S.step);
-    var area = Math.max(0.01, (bb.maxLon - bb.minLon) * (bb.maxLat - bb.minLat)), step = Math.max(0.03, +Math.sqrt(area / 2600).toFixed(3));
+    var area = Math.max(0.01, (bb.maxLon - bb.minLon) * (bb.maxLat - bb.minLat)), step = Math.max(0.027, +Math.sqrt(area / 12000).toFixed(3));
     var lat0 = Math.floor(bb.minLat / step) * step, lon0 = Math.floor(bb.minLon / step) * step;
     return gsOwn(S.model, { fromTime: new Date(times[0] - 4 * 6e4).toISOString(), untilTime: new Date(times[11] + 4 * 6e4).toISOString(),
       grid: { minLatitude: +lat0.toFixed(4), maxLatitude: +(+bb.maxLat).toFixed(4), minLongitude: +lon0.toFixed(4), maxLongitude: +(+bb.maxLon).toFixed(4), step: step },
       variables: [FR_VAR], filter: { expression: 'c >= 5' } }).then(function (rows) {
         var by = {}, run = 0;
         (rows || []).forEach(function (r) { var t = Date.parse(r.forecasted_time), ra = Date.parse(r.forecasted_at); if (!isFinite(t)) return; (by[t] || (by[t] = [])).push(r); if (ra > run) run = ra; });
-        return { times: times, by: by, step: step, run: run, lv: FR_LV, col: FR_C };
+        return { times: times, by: by, step: step, run: run, lv: FR_LV, col: FR_C, lat0: lat0, lon0: lon0,
+                 nx: Math.round((bb.maxLon - lon0) / step) + 2, ny: Math.round((bb.maxLat - lat0) / step) + 2 };
       });
   }
   /* v3.70.0: on a forecast map, tapping a station or the place draws its model sounding inside the pop-up (the button still
@@ -15218,6 +15222,39 @@ var HRMAP = (function () {
      back to the radar. The model points come from REGMAP (GribStream), once per view every fifteen minutes. ---- */
   var FUT_STOPS = [[5, '#04e9e7'], [10, '#019ff4'], [15, '#0300f4'], [20, '#02fd02'], [25, '#01c501'], [30, '#008e00'], [35, '#fdf802'], [40, '#e5bc00'], [45, '#fd9500'], [50, '#fd0000'], [55, '#d40000'], [60, '#bc0000'], [65, '#f800fd']];
   function futCol(c) { var col = null; for (var i = 0; i < FUT_STOPS.length; i++) if (c >= FUT_STOPS[i][0]) col = FUT_STOPS[i][1]; return col; }
+  /* v3.83.1: a forecast frame drawn as a field, the way radar is: the lattice values are interpolated (bilinear) at every
+     pixel, then coloured in the radar's 5 dBZ steps, so echoes have smooth edges at any zoom. It replaces squares softened
+     with a canvas blur, which Safari (the iPad) does not apply, so the frames showed as blocks. Points under 5 dBZ are not
+     returned (the request filters them) and count as 0. Drawn at half size and scaled up with smoothing: about 160,000
+     inverse projections, a few tens of milliseconds. */
+  var FUT_RGB = FUT_STOPS.map(function (x) { return [x[0], parseInt(x[1].slice(1, 3), 16), parseInt(x[1].slice(3, 5), 16), parseInt(x[1].slice(5, 7), 16)]; });
+  function futPaint(d, rows, V) {
+    var nx = d.nx, ny = d.ny, st = d.step, g = new Float32Array(nx * ny);
+    rows.forEach(function (r) {
+      var c = +r.c, i = Math.round((+r.lon - d.lon0) / st), j = Math.round((+r.lat - d.lat0) / st);
+      if (isFinite(c) && i >= 0 && i < nx && j >= 0 && j < ny && c > g[j * nx + i]) g[j * nx + i] = c;
+    });
+    var R = 2, cw = Math.ceil(W / R), ch = Math.ceil(H / R), small = document.createElement('canvas'); small.width = cw; small.height = ch;
+    var sx = small.getContext('2d'), id = sx.createImageData(cw, ch), px = id.data, ca = V.ca, sa = V.sa, m = V.mpp;
+    if (rows.length) for (var y = 0; y < ch; y++) {
+      var dy = (y + 0.5) * R - H / 2;
+      for (var x = 0; x < cw; x++) {
+        var dx = (x + 0.5) * R - W / 2, ll = invAlbers(V.cx + (ca * dx + sa * dy) * m, V.cy + (sa * dx - ca * dy) * m);   // V.proj run backwards
+        var fi = (ll[0] - d.lon0) / st, fj = (ll[1] - d.lat0) / st, i0 = Math.floor(fi), j0 = Math.floor(fj);
+        if (i0 < 0 || j0 < 0 || i0 >= nx - 1 || j0 >= ny - 1) continue;
+        var u = fi - i0, v = fj - j0, k = j0 * nx + i0;
+        var c = (g[k] * (1 - u) + g[k + 1] * u) * (1 - v) + (g[k + nx] * (1 - u) + g[k + nx + 1] * u) * v;
+        if (c < 5) continue;
+        var n = 0; while (n + 1 < FUT_RGB.length && c >= FUT_RGB[n + 1][0]) n++;
+        var o = (y * cw + x) * 4; px[o] = FUT_RGB[n][1]; px[o + 1] = FUT_RGB[n][2]; px[o + 2] = FUT_RGB[n][3]; px[o + 3] = 255;
+      }
+    }
+    sx.putImageData(id, 0, 0);
+    var out = document.createElement('canvas'); out.width = W; out.height = H; var o2 = out.getContext('2d');
+    o2.imageSmoothingEnabled = true; try { o2.imageSmoothingQuality = 'high'; } catch (x) { /* optional */ }
+    o2.drawImage(small, 0, 0, W, H);
+    return out;
+  }
   function futBox(V) {   // the frame's corners and edge midpoints, back to longitude and latitude
     var b = V.bbox, pts = [[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]], [(b[0] + b[2]) / 2, b[1]], [(b[0] + b[2]) / 2, b[3]], [b[0], (b[1] + b[3]) / 2], [b[2], (b[1] + b[3]) / 2]].map(function (q) { return invAlbers(q[0], q[1]); });
     var lo = pts.map(function (q) { return q[0]; }), la = pts.map(function (q) { return q[1]; });
@@ -15251,14 +15288,13 @@ var HRMAP = (function () {
     var want = s.fut, my = s.futD;
     my.p.then(function (d) {
       if (s.futD !== my || s.fut !== want || !e.stage.isConnected) return;
-      var t = d.times[want - 1], rows = d.by[t] || [], cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-      var ctx = cv.getContext('2d'), cell = Math.max(2, d.step * 111000 / V.mpp), half = cell / 2 + 0.5;
-      rows.forEach(function (r) { var col = futCol(+r.c); if (!col) return; var q = V.proj(+r.lon, +r.lat); if (q[0] < -cell || q[1] < -cell || q[0] > W + cell || q[1] > H + cell) return; ctx.fillStyle = col; ctx.fillRect(q[0] - half, q[1] - half, cell + 1, cell + 1); });
-      var out = document.createElement('canvas'); out.width = W; out.height = H; var o2 = out.getContext('2d');
-      try { o2.filter = 'blur(' + Math.max(1, Math.round(cell * 0.35)) + 'px)'; } catch (x) { /* older browsers draw it unsoftened */ }
-      o2.drawImage(cv, 0, 0);
-      var img = e.stage.querySelector('.hr-fut-img'); if (!img) { img = document.createElement('img'); img.className = 'hr-fut-img'; img.alt = ''; e.stage.appendChild(img); }
-      img.src = out.toDataURL('image/png');
+      var t = d.times[want - 1], rows = d.by[t] || [];
+      var img = e.stage.querySelector('.hr-fut-img');
+      if (!img) {   // v3.83.1: under the map overlay (labels, title, scale), as the radar itself is, not on top of it
+        img = document.createElement('img'); img.className = 'hr-fut-img'; img.alt = '';
+        var lay = e.stage.querySelector('.hr-layers'); if (lay) e.stage.insertBefore(img, lay.nextSibling); else e.stage.appendChild(img);
+      }
+      img.src = futPaint(d, rows, V).toDataURL('image/png');
       var lead = Math.round((t - Date.now()) / 6e4), when = new Date(t).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined });
       futBanner(k, '<b>Forecast, not radar.</b> HRRR simulated radar for ' + esc(when) + (d.run ? ', from the ' + esc(new Date(d.run).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: locTimezone || undefined })) + ' run' : '') + (rows.length ? '' : '. No echoes expected in view.'));
       if (e.time) e.time.textContent = when + ' \u00B7 ' + (lead >= 60 ? Math.floor(lead / 60) + ' h ' + (lead % 60 ? lead % 60 + ' min ' : '') : lead + ' min ') + 'ahead';
