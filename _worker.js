@@ -10,7 +10,7 @@
    - /api/health     liveness for uptime checks
    - /push/...       push alerts: key, sub, unsub, test (the app) and tick (the cron Worker); needs KV bound as PUSH */
 
-const VERSION = '3.84.0';
+const VERSION = '3.85.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -28,6 +28,8 @@ const ORIGINS = {
   geo: 'https://nominatim.openstreetmap.org',
   // CoCoRaHS volunteer rain and snow reports (v3.62.0): its public daily export, one state and one day at a time.
   cocorahs: 'https://data.cocorahs.org',
+  // The FAA's airport status for the Storm Zone (v3.85.0): one XML document, no CORS.
+  faa: 'https://nasstatus.faa.gov',
 };
 const GS_ORIGIN = 'https://gribstream.com';
 const UA = 'NWSTerminal/3.0 (NWS Terminal edge)';
@@ -61,6 +63,7 @@ function cacheFor(pathname) {
   if (pathname.includes('/md/') || pathname.includes('/watch/')) return 120;
   if (pathname.startsWith('/search')) return 86400;
   if (pathname.startsWith('/trade-api/')) return 30;      // market prices
+  if (pathname === '/api/airport-status-information') return 60;   // FAA delays change by the minute
   if (pathname.endsWith('/legend')) return 86400;
   if (pathname.endsWith('/ImageServer') || pathname.startsWith('/geoserver/')) return 120;   // newest-frame times must stay fresh
   return 300;
@@ -81,7 +84,7 @@ async function proxy(kind, rest, request) {
   if (kind === 'kalshi' && !/^trade-api\/v2\/markets$/.test(rest)) return new Response('Unsupported path', { status: 404 });
   if (kind === 'ndfd' && rest !== 'xml/sample_products/browser_interface/ndfdXMLclient.php') return new Response('Unsupported path', { status: 404 });
   if (kind === 'nwsmap' && !/^raster\/rest\/services\/obs\/rfc_qpe\/MapServer\/(export|legend)$/.test(rest) &&
-      !/^vector\/rest\/services\/(outlooks|precip)\/[A-Za-z0-9_]+\/MapServer\/\d+\/query$/.test(rest) &&
+      !/^vector\/rest\/services\/(outlooks|precip|hazards)\/[A-Za-z0-9_]+\/MapServer\/\d+\/query$/.test(rest) &&
       !/^vector\/rest\/services\/(outlooks\/wpc_wssi|outlooks\/wpc_wssi_p|precip\/wpc_prob_winter_precip)\/MapServer\/(export|legend|identify)$/.test(rest) &&
       !/^eventdriven\/rest\/services\/water\/riv_gauges\/MapServer\/(0|15)\/query$/.test(rest) &&
       !/^eventdriven\/rest\/services\/WWA\/watch_warn_adv\/MapServer\/0\/query$/.test(rest) &&
@@ -94,6 +97,7 @@ async function proxy(kind, rest, request) {
   if (kind === 'nowcoast' && rest !== 'geoserver/satellite/wms' && rest !== 'geoserver/observations/lightning_detection/ows') return new Response('Unsupported path', { status: 404 });
   if (kind === 'opengeo' && !/^geoserver\/[a-z]{4}\/ows$/.test(rest)) return new Response('Unsupported path', { status: 404 });
   if (kind === 'cocorahs' && rest !== 'export/exportreports.aspx') return new Response('Unsupported path', { status: 404 });
+  if (kind === 'faa' && rest !== 'api/airport-status-information') return new Response('Unsupported path', { status: 404 });
   const upstream = new URL(base + '/' + rest);
   // The path is appended to a fixed origin; refuse anything that resolved elsewhere.
   if (upstream.origin !== base) return new Response('Bad proxy path', { status: 400 });

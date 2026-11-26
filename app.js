@@ -137,11 +137,11 @@ async function geoSearch(params, query, limit) {
 }
 
 function px(url) {
-  var m = String(url).match(/^https?:\/\/(?:www\.)?(spc\.noaa\.gov|cpc\.ncep\.noaa\.gov|wpc\.ncep\.noaa\.gov|aviationweather\.gov|digital\.weather\.gov|mapservices\.weather\.noaa\.gov|api\.elections\.kalshi\.com|nowcoast\.noaa\.gov|opengeo\.ncep\.noaa\.gov|data\.cocorahs\.org)\/(.*)$/);
+  var m = String(url).match(/^https?:\/\/(?:www\.)?(spc\.noaa\.gov|cpc\.ncep\.noaa\.gov|wpc\.ncep\.noaa\.gov|aviationweather\.gov|digital\.weather\.gov|mapservices\.weather\.noaa\.gov|api\.elections\.kalshi\.com|nowcoast\.noaa\.gov|opengeo\.ncep\.noaa\.gov|data\.cocorahs\.org|nasstatus\.faa\.gov)\/(.*)$/);
   if (!m) return url;
   var kind = { 'spc.noaa.gov':'spc', 'cpc.ncep.noaa.gov':'cpc',
                'wpc.ncep.noaa.gov':'wpc', 'aviationweather.gov':'awc', 'digital.weather.gov':'ndfd',
-               'mapservices.weather.noaa.gov':'nwsmap', 'api.elections.kalshi.com':'kalshi', 'nowcoast.noaa.gov':'nowcoast', 'opengeo.ncep.noaa.gov':'opengeo', 'data.cocorahs.org':'cocorahs' }[m[1]];
+               'mapservices.weather.noaa.gov':'nwsmap', 'api.elections.kalshi.com':'kalshi', 'nowcoast.noaa.gov':'nowcoast', 'opengeo.ncep.noaa.gov':'opengeo', 'data.cocorahs.org':'cocorahs', 'nasstatus.faa.gov':'faa' }[m[1]];
   return '/p/' + kind + '/' + m[2];
 }
 
@@ -7366,7 +7366,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.84.0';
+var APP_VERSION = '3.85.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -16939,6 +16939,7 @@ var SCREEN = (function () {
     return { pics: out, missed: missed };
   }
   function root() {
+    if (typeof STORMZ !== 'undefined' && STORMZ.on()) return { name: 'storms', el: document.getElementById('stormEl') };   // v3.85.0: Ask reads the Storm Zone when it is up
     var name = getActiveSection(), sec = document.getElementById('section-' + name);
     return { name: name, el: sec };
   }
@@ -19151,6 +19152,18 @@ var KALV = (function () {
      the last 24 hours; the strongest gusts and lowest pressures reported now; WPC's storm summary; every alert in force.
    Sources (all free): api.weather.gov (alerts, WPC storm summaries, point forecasts), WPC coded surface bulletin (/p/wpc),
    NOAA MRMS radar (/p/nwsmap), Iowa Environmental Mesonet storm reports, Aviation Weather Center METARs (/p/awc).
+   v3.85.0, the build-out:
+   - The low's track: the last day of WPC analyses (IEM's text archive of CODSUS) walked back from the current low, and the
+     lows on WPC's national forecast chart for days 1 to 3 chained forward; its 24-hour pressure change, motion and a
+     bomb-pace flag (Sanders and Gyakum).
+   - A brief written from the page's own numbers, and a briefing written by Claude from the whole page on request.
+   - Forecast layers on the storm map (WPC 3-day rain, Winter Storm Severity, Excessive Rainfall, SPC day 1, WPC
+     forecast-chart hazards), a radar loop, SPC mesoscale discussion areas and tide gauges.
+   - City impacts from the NWS forecast grid (72-hour rain, snow, ice, peak gust, when precipitation is likely).
+   - Coast: NOAA tide gauges near coastal flood alerts against their flood levels, with the departure from the tide.
+     Rivers: NWS forecast points at action stage or higher. Travel: the FAA's airport status (/p/faa).
+   - Forecasters: WPC, SPC mesoscale discussions and the key messages of the NWS offices covering the most counties.
+   - A log of alerts, reports and summaries, with what is new since the last look marked.
    ══════════════════════════════════════════════════════════════════ */
 var STORMZ = (function () {
   var W = 1000, H = 640, R = Math.round, MIN = 60000, HOUR = 36e5, D2R = Math.PI / 180;
@@ -19158,7 +19171,7 @@ var STORMZ = (function () {
   var SFC = 'https://www.wpc.ncep.noaa.gov/discussions/codsus_hr';
   var RADAR = 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity_time/ImageServer';
   var LINK_KM = 150, MIN_SCORE = 25, MIN_WARN = 3;
-  var TTL = { alerts: 4 * MIN, sfc: 20 * MIN, scc: 15 * MIN, radar: 5 * MIN, lsr: 10 * MIN, obs: 10 * MIN, trend: 15 * MIN, fc: 30 * MIN };
+  var TTL = { alerts: 4 * MIN, sfc: 20 * MIN, scc: 15 * MIN, radar: 5 * MIN, lsr: 10 * MIN, obs: 10 * MIN, trend: 15 * MIN, fc: 30 * MIN, hist: 30 * MIN, chart: 60 * MIN, faa: 5 * MIN, tideSt: 24 * 60 * MIN, gauge: 10 * MIN, riv: 15 * MIN, mds: 10 * MIN, afd: 30 * MIN, ov: 30 * MIN };
 
   /* event -> [weight, family, colour]. Colours follow the NWS map where it has one. */
   var HZ = {
@@ -19187,7 +19200,7 @@ var STORMZ = (function () {
     [/WND|WIND|GUST/, 'wind', 'W', '#FBBF24', 'Wind'] ];
 
   var S = { on: false, key: '', prevCounties: null, d: {}, at: {}, err: {}, busy: {}, z: {}, storms: [], minor: [], base: null, baseP: null, ring: {}, cty: null,
-            lay: { alerts: true, radar: true, fronts: true, lsr: true, cities: true }, taps: [], openDet: {}, timer: null, badgeAt: 0 };
+            lay: { alerts: true, radar: true, fronts: true, track: true, lsr: true, cities: true }, ov: lsGet('stormz_ov', 'none') || 'none', loop: { on: false, i: 0, timer: null, frames: [] }, taps: [], openDet: {}, timer: null, badgeAt: 0 };
   try { var savedLay = JSON.parse(lsGet('stormz_layers', 'null')); if (savedLay) Object.keys(S.lay).forEach(function (k) { if (typeof savedLay[k] === 'boolean') S.lay[k] = savedLay[k]; }); } catch (e) { /* defaults */ }
 
   /* ---------- small pieces ---------- */
@@ -19225,7 +19238,7 @@ var STORMZ = (function () {
         return { id: id, ev: ev, w: HZ[ev] ? HZ[ev][0] : 0, fam: HZ[ev] ? HZ[ev][1] : 'marine', head: p.headline || '', nws: (p.parameters && p.parameters.NWSheadline && p.parameters.NWSheadline[0]) || '',
                  desc: p.description || '', instr: p.instruction || '', area: p.areaDesc || '', sender: p.senderName || '', sev: p.severity || '',
                  on: Date.parse(p.onset || p.effective || p.sent || '') || null, end: Date.parse(p.ends || '') || Date.parse(p.expires || '') || null, open: !p.ends,
-                 sent: Date.parse(p.sent || '') || null, fips: same.map(function (s) { return String(s).slice(1); }), ugc: ugc, marine: !!MARINE[ev] };
+                 sent: Date.parse(p.sent || '') || null, wfo: String((p.parameters && p.parameters.AWIPSidentifier && p.parameters.AWIPSidentifier[0]) || '').slice(-3).toUpperCase(), fips: same.map(function (s) { return String(s).slice(1); }), ugc: ugc, marine: !!MARINE[ev] };
       }).filter(Boolean);
     });
   }
@@ -19281,6 +19294,241 @@ var STORMZ = (function () {
   }
   function loadRadar() { return radarLatest(RADAR, function (u) { return getJ(u); }); }
 
+  /* ════════ v3.85.0: the build-out ════════ */
+  var MSV = 'https://mapservices.weather.noaa.gov/vector/rest/services/', CHART = MSV + 'outlooks/natl_fcst_wx_chart/MapServer/';
+  var RIV = 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/water/riv_gauges/MapServer/';
+  var COOPS = 'https://api.tidesandcurrents.noaa.gov', FAA = 'https://nasstatus.faa.gov/api/airport-status-information';
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function utc(s) { return Date.parse(String(s).replace(' ', 'T') + 'Z'); }
+
+  /* ---------- the low: where it has been and where WPC takes it ---------- */
+  /* The last day of WPC's coded surface analyses from the Iowa Environmental Mesonet's text archive. Each three hours comes in a
+     standard and a high-resolution copy; the high-resolution one (positions to a tenth of a degree) is kept. */
+  function loadHist() {
+    return getT(IEM + '/cgi-bin/afos/retrieve.py?pil=CODSUS&fmt=text&limit=48').then(function (txt) {
+      var by = {};
+      String(txt).split(/(?=^VALID\s+\d{6}Z)/m).forEach(function (p) {
+        if (!/^VALID/.test(p)) return; var a = USNOW._t.parseSfc(p); if (!isFinite(a.valid) || !a.lows.length) return;
+        var fine = /(^|\s)\d{7}(\s|$)/.test(p.split('\n').slice(1).join(' ')), cur = by[a.valid];
+        if (!cur || (fine && !cur.fine)) by[a.valid] = { t: a.valid, lows: a.lows, fine: fine };
+      });
+      var out = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return a.t - b.t; });
+      if (!out.length) throw new Error('no analyses in the archive');
+      return out;
+    });
+  }
+  /* WPC's national forecast chart: the lows it draws for days 1, 2 and 3 */
+  function loadChart() {
+    return Promise.all([1, 13, 25].map(function (id, d) {
+      return getJ(CHART + id + '/query?where=1%3D1&outFields=feat,popupconte&returnGeometry=true&outSR=4326&f=json').then(function (j) {
+        if (!j || j.error) throw new Error('the forecast chart did not answer');
+        return (j.features || []).filter(function (f) { return /^Low/i.test((f.attributes || {}).feat || '') && f.geometry && isFinite(f.geometry.x); }).map(function (f) {
+          var m = /Valid:\s*([A-Za-z]{3})/.exec(f.attributes.popupconte || ''); return { day: d + 1, la: f.geometry.y, lo: f.geometry.x, label: m ? m[1] : 'Day ' + (d + 1) }; });
+      });
+    })).then(function (a) { return a[0].concat(a[1], a[2]); });
+  }
+  function trackOf(st) {
+    if (!st.low) return null;
+    var hist = S.d.hist || [], cur = { t: st.low.valid, la: st.low.la, lo: st.low.lo, p: st.low.p }, past = [cur];
+    for (var i = hist.length - 1; i >= 0; i--) {   // walk back through the analyses, each time to the nearest low that could be this one
+      var h = hist[i]; if (!(h.t < cur.t - 30 * MIN)) continue; if (st.low.valid - h.t > 30 * HOUR) break;
+      var dt = (cur.t - h.t) / HOUR, reach = Math.min(1100, 120 + 90 * dt), best = null, bd = reach;
+      h.lows.forEach(function (l) { var d = km(cur.la, cur.lo, l.la, l.lo); if (d < bd && Math.abs(l.p - cur.p) <= 4 + 2.5 * dt) { bd = d; best = l; } });
+      if (!best) break;
+      cur = { t: h.t, la: best.la, lo: best.lo, p: best.p }; past.unshift(cur);
+    }
+    var fut = [], from = past[past.length - 1], ch = S.d.chart || [];
+    [1, 2, 3].forEach(function (d) { var best = null, bd = d === 1 ? 700 : 1500;
+      ch.forEach(function (l) { if (l.day !== d) return; var x = km(from.la, from.lo, l.la, l.lo); if (x < bd) { bd = x; best = l; } });
+      if (best) { if (!(d === 1 && km(best.la, best.lo, st.low.la, st.low.lo) < 150)) fut.push(best); from = best; } });
+    var last = past[past.length - 1], m6 = null, m24 = null;
+    past.forEach(function (p) { var dt = (last.t - p.t) / HOUR;
+      if (dt >= 3 && dt <= 9 && (!m6 || Math.abs(dt - 6) < Math.abs((last.t - m6.t) / HOUR - 6))) m6 = p;
+      if (dt >= 12 && dt <= 30 && (!m24 || Math.abs(dt - 24) < Math.abs((last.t - m24.t) / HOUR - 24))) m24 = p; });   // a young low: its change since it was first analysed, 12 hours at least
+    var mv = m6 ? { mph: km(m6.la, m6.lo, last.la, last.lo) / 1.609344 / ((last.t - m6.t) / HOUR), dir: compass(bearing(m6.la, m6.lo, last.la, last.lo)), h: (last.t - m6.t) / HOUR } : null;
+    var dp = m24 ? { d: last.p - m24.p, h: (last.t - m24.t) / HOUR } : null;
+    /* Sanders and Gyakum's "bomb": a fall of 24 mb in 24 hours at 60 degrees, scaled by the sine of the latitude */
+    var bomb = dp && dp.d < 0 ? (-dp.d * 24 / dp.h) >= 24 * Math.sin(Math.abs(last.la) * D2R) / Math.sin(60 * D2R) : false;
+    return { past: past, fut: fut, mv: mv, dp: dp, bomb: bomb };
+  }
+  function motionText(tr) {
+    if (!tr) return '';
+    var a = [];
+    if (tr.dp) a.push((tr.dp.d < 0 ? 'deepened ' + Math.abs(tr.dp.d) + ' mb' : tr.dp.d > 0 ? 'filled ' + tr.dp.d + ' mb' : 'steady') + ' in ' + R(tr.dp.h) + ' h' + (tr.bomb ? ' (bomb pace)' : ''));
+    if (tr.mv) a.push(tr.mv.mph < 4 ? 'nearly stationary' : 'moving ' + tr.mv.dir + ' at ' + R(tr.mv.mph / 5) * 5 + ' mph');
+    return a.join(', ');
+  }
+
+  /* ---------- forecast layers for the map ---------- */
+  var OVER = [['none', 'None'], ['qpf', 'WPC rain, 3 days'], ['wssi', 'Winter severity'], ['ero', 'Excessive rain'], ['spc', 'Severe risk'], ['wpchz', 'WPC hazards']];
+  var QPFC = [[0.01, '#9BE7A0'], [0.1, '#4FC46A'], [0.25, '#1F8F45'], [0.5, '#2E7BD1'], [0.75, '#2140A8'], [1, '#8A55D6'], [1.5, '#C440C7'], [2, '#E0457B'], [2.5, '#F0703C'], [3, '#F5A623'], [4, '#F7D23E'], [5, '#FFF08A'], [7, '#FFFFFF']];
+  var WSSIC = { 'WINTER WEATHER AREA': ['#9CC9F0', 0], LIMITED: ['#9CC9F0', 0], MINOR: ['#F2E34B', 1], MODERATE: ['#F2994A', 2], MAJOR: ['#E5484D', 3], EXTREME: ['#C026D3', 4] };
+  var EROC = [[/^Marginal/i, '#66A366', 1], [/^Slight/i, '#F6F67F', 2], [/^Moderate/i, '#E67F7F', 3], [/^High/i, '#FF66FF', 4]];
+  var HZC = [[/Heavy Rain/i, '#2E9E66', 'Heavy rain or flash flooding'], [/Heavy Snow/i, '#7FB3FF', 'Heavy snow'], [/Freezing Rain/i, '#F0ABFC', 'Freezing rain'], [/Severe/i, '#FFA500', 'Severe thunderstorms']];
+  function geoRings(g) { if (!g) return []; if (g.type === 'Polygon') return g.coordinates; if (g.type === 'MultiPolygon') { var r = []; g.coordinates.forEach(function (p) { r = r.concat(p); }); return r; } return []; }
+  function envOf(ll) { return 'geometry=' + [ll[0], ll[1], ll[2], ll[3]].map(function (v) { return v.toFixed(2); }).join(',') + '&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects'; }
+  function arcGeo(url, ll, fields) { return getJ(url + '/query?where=1%3D1&' + envOf(ll) + '&outFields=' + (fields || '*') + '&returnGeometry=true&outSR=4326&maxAllowableOffset=0.02&geometryPrecision=3&f=geojson').then(function (j) { if (!j || j.error) throw new Error('the map service answered with an error'); return j.features || []; }); }
+  function loadOverlay(kind, ll) {
+    if (kind === 'qpf') return arcGeo(MSV + 'precip/wpc_qpf/MapServer/9', ll, 'qpf,valid_time,issue_time').then(function (fs) {
+      var meta = fs[0] && fs[0].properties || {};
+      return { items: fs.map(function (f) { var v = +f.properties.qpf, c = QPFC[0][1]; QPFC.forEach(function (q) { if (v >= q[0]) c = q[1]; }); return { rings: geoRings(f.geometry), fill: c, order: v }; }).sort(function (a, b) { return a.order - b.order; }),
+               legend: QPFC.slice(0, 11).map(function (q) { return [q[1], q[0] + '"']; }), note: 'WPC rain and melted snow, ' + (meta.valid_time || 'next 72 hours') + (meta.issue_time ? '; issued ' + meta.issue_time + ' UTC' : ''), op: 0.62 };
+    });
+    if (kind === 'wssi') return arcGeo(MSV + 'outlooks/wpc_wssi/MapServer/4', ll, 'impact,valid_time,issue_time').then(function (fs) {
+      var meta = fs[0] && fs[0].properties || {};
+      return { items: fs.map(function (f) { var c = WSSIC[String(f.properties.impact || '').toUpperCase()] || ['#9CC9F0', 0]; return { rings: geoRings(f.geometry), fill: c[0], order: c[1] }; }).sort(function (a, b) { return a.order - b.order; }),
+               legend: [['#9CC9F0', 'Winter weather area'], ['#F2E34B', 'Minor'], ['#F2994A', 'Moderate'], ['#E5484D', 'Major'], ['#C026D3', 'Extreme']], note: 'WPC Winter Storm Severity Index, ' + (meta.valid_time || 'days 1 to 3') + (meta.issue_time ? '; issued ' + meta.issue_time : ''), op: 0.6 };
+    });
+    if (kind === 'ero') return arcGeo(MSV + 'hazards/wpc_precip_hazards/MapServer/0', ll, 'outlook,valid_time,issue_time').then(function (fs) {
+      var meta = fs[0] && fs[0].properties || {};
+      return { items: fs.map(function (f) { var c = null; EROC.forEach(function (e) { if (!c && e[0].test(f.properties.outlook || '')) c = e; }); return c ? { rings: geoRings(f.geometry), fill: c[1], order: c[2] } : null; }).filter(Boolean).sort(function (a, b) { return a.order - b.order; }),
+               legend: EROC.map(function (e) { return [e[1], ['Marginal', 'Slight', 'Moderate', 'High'][e[2] - 1]]; }), note: 'WPC Excessive Rainfall Outlook, day 1' + (meta.valid_time ? ', ' + meta.valid_time : '') + (meta.issue_time ? '; issued ' + meta.issue_time + ' UTC' : ''), op: 0.55 };
+    });
+    if (kind === 'spc') return getJ('https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson').then(function (j) {
+      var fs = (j && j.features) || [], ord = { TSTM: 0, MRGL: 1, SLGT: 2, ENH: 3, MDT: 4, HIGH: 5 };
+      return { items: fs.map(function (f) { var p = f.properties || {}; return { rings: geoRings(f.geometry), fill: p.fill || '#888', order: ord[p.LABEL] != null ? ord[p.LABEL] : 0, label: p.LABEL2 || p.LABEL }; }).sort(function (a, b) { return a.order - b.order; }),
+               legend: [['#C1E9C1', 'Thunder'], ['#66A366', 'Marginal'], ['#F6F67F', 'Slight'], ['#E6C27F', 'Enhanced'], ['#E67F7F', 'Moderate'], ['#FF66FF', 'High']], note: 'SPC day 1 convective outlook' + (fs[0] && fs[0].properties && fs[0].properties.ISSUE ? ', issued ' + fs[0].properties.ISSUE.replace(/^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)$/, '$4$5Z') : ''), op: 0.55 };
+    });
+    if (kind === 'wpchz') return Promise.all([7, 8, 10, 11, 19, 20, 22, 23].map(function (id) { return arcGeo(CHART + id, ll, 'feat,popupconte').then(function (fs) { return fs.map(function (f) { f.day = id < 12 ? 1 : 2; return f; }); }, function () { return []; }); })).then(function (sets) {
+      var items = []; sets.forEach(function (fs) { fs.forEach(function (f) { var t = (f.properties || {}).feat || '', c = null; HZC.forEach(function (h) { if (!c && h[0].test(t)) c = h; }); if (c) items.push({ rings: geoRings(f.geometry), fill: c[1], order: f.day === 1 ? 2 : 1, dash: f.day === 2 }); }); });
+      return { items: items.sort(function (a, b) { return a.order - b.order; }), legend: HZC.map(function (h) { return [h[1], h[2]]; }), note: 'WPC national forecast chart: day 1 areas solid, day 2 outlined with dashes', op: 0.5 };
+    });
+    return Promise.resolve(null);
+  }
+
+  /* ---------- the NWS grid forecast at each city: storm totals and timing for the next 72 hours ---------- */
+  function parseVT(vt) { var m = /^([^\/]+)\/P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?$/.exec(String(vt || '')); if (!m) return null; var t0 = Date.parse(m[1]); return [t0, t0 + ((+m[2] || 0) * 24 + (+m[3] || 0)) * HOUR + (+m[4] || 0) * MIN]; }
+  function sumOver(ser, a, b) {
+    var s = 0, any = false;
+    ((ser && ser.values) || []).forEach(function (v) { if (v.value == null) return; var w = parseVT(v.validTime); if (!w) return; var lo = Math.max(a, w[0]), hi = Math.min(b, w[1]); if (hi <= lo) return; any = true; s += v.value * (hi - lo) / (w[1] - w[0]); });
+    if (!any) return null; var u = (ser && ser.uom) || ''; return /mm$/.test(u) ? s / 25.4 : /:m$/.test(u) ? s / 0.0254 : /cm$/.test(u) ? s / 2.54 : s / 25.4;
+  }
+  function impacts(p) {
+    var a = Date.now(), b = a + 72 * HOUR, g = null, on = null, off = null;
+    ((p.windGust && p.windGust.values) || []).forEach(function (v) { var w = parseVT(v.validTime); if (!w || w[1] <= a || w[0] >= b || v.value == null) return; if (!g || v.value > g.v) g = { v: v.value, t: Math.max(w[0], a) }; });
+    var gu = (p.windGust && p.windGust.uom) || '', gm = g ? (/km_h/.test(gu) ? g.v / 1.609344 : /m_s/.test(gu) ? g.v * 2.236936 : /kt|knot/.test(gu) ? g.v * 1.15078 : g.v) : null;
+    ((p.probabilityOfPrecipitation && p.probabilityOfPrecipitation.values) || []).forEach(function (v) { var w = parseVT(v.validTime); if (!w || w[1] <= a || w[0] >= b || v.value == null) return; if (v.value >= 50) { if (on == null) on = Math.max(w[0], a); off = Math.min(w[1], b); } });
+    return { rain: sumOver(p.quantitativePrecipitation, a, b), snow: sumOver(p.snowfallAmount, a, b), ice: sumOver(p.iceAccumulation, a, b), gust: gm, gustT: g ? g.t : null, on: on, off: off, upd: Date.parse(p.updateTime || '') || null };
+  }
+
+  /* ---------- tide gauges (NOAA CO-OPS) ---------- */
+  function loadTideSt() {
+    return getJ(COOPS + '/mdapi/prod/webapi/stations.json?type=waterlevels&expand=floodlevels').then(function (j) {
+      var list = (j && j.stations) || []; if (!list.length) throw new Error('no tide stations listed');
+      return list.map(function (s) { var f = s.floodlevels || {}, pick = function (a, b) { return f[a] != null && isFinite(+f[a]) ? +f[a] : f[b] != null && isFinite(+f[b]) ? +f[b] : null; };
+        return { id: String(s.id), name: s.name, st: s.state || '', la: +s.lat, lo: +(s.lng != null ? s.lng : s.lon), gl: !!s.greatlakes, act: f.action != null && isFinite(+f.action) ? +f.action : null, minor: pick('nws_minor', 'nos_minor'), mod: pick('nws_moderate', 'nos_moderate'), major: pick('nws_major', 'nos_major') }; })
+        .filter(function (s) { return isFinite(s.la) && isFinite(s.lo); });
+    });
+  }
+  var COASTEV = /Coastal Flood|Lakeshore Flood|Storm Surge/;
+  function gaugesFor(st) {
+    var list = S.d.tideSt || [], cc = [];
+    st.counties.forEach(function (f) { var r = S.byC[f]; if (!r) return; var w = 0; r.al.forEach(function (a) { if (COASTEV.test(a.ev) && a.w > w) w = a.w; }); if (w) cc.push({ c: S.cty[f], w: w }); });
+    if (!cc.length) return [];
+    var cand = [];
+    list.forEach(function (g) { if (!inStormBox(st, g.la, g.lo, 0.6) || g.minor == null) return; var w = 0, d0 = 1e9; cc.forEach(function (x) { var d = km(g.la, g.lo, x.c.la, x.c.lo); if (d < 45 && x.w > w) w = x.w; if (d < d0) d0 = d; }); if (w) cand.push({ g: g, w: w, d: d0 }); });
+    cand.sort(function (a, b) { return (b.w - a.w) || (a.d - b.d); });
+    var out = []; cand.forEach(function (c) { if (out.length < 16 && !out.some(function (o) { return km(o.la, o.lo, c.g.la, c.g.lo) < 12; })) out.push(c.g); });
+    return out;
+  }
+  function catOf(v, g) { if (v == null) return null; return g.major != null && v >= g.major ? 'major' : g.mod != null && v >= g.mod ? 'moderate' : g.minor != null && v >= g.minor ? 'minor' : g.act != null && v >= g.act ? 'action' : 'none'; }
+  function loadGauge(g) {
+    var now = Date.now(), d = function (ms) { var x = new Date(ms); return x.getUTCFullYear() + pad(x.getUTCMonth() + 1) + pad(x.getUTCDate()) + ' ' + pad(x.getUTCHours()) + ':' + pad(x.getUTCMinutes()); };
+    var base = COOPS + '/api/prod/datagetter?station=' + g.id + '&datum=STND&units=english&time_zone=gmt&format=json&application=NWS_Terminal';
+    var obs = getJ(base + '&product=water_level&begin_date=' + encodeURIComponent(d(now - 24 * HOUR)) + '&range=25');
+    var pred = g.gl ? Promise.resolve(null) : getJ(base + '&product=predictions&interval=6&begin_date=' + encodeURIComponent(d(now - 24 * HOUR)) + '&range=62').catch(function () { return null; });
+    return Promise.all([obs, pred]).then(function (r) {
+      if (!r[0] || r[0].error || !r[0].data) throw new Error((r[0] && r[0].error && r[0].error.message) || 'no water levels');
+      var o = r[0].data.map(function (x) { return { t: utc(x.t), v: x.v === '' ? null : +x.v }; }).filter(function (x) { return x.v != null && isFinite(x.v); });
+      var p = r[1] && r[1].predictions ? r[1].predictions.map(function (x) { return { t: utc(x.t), v: +x.v }; }) : null;
+      if (!o.length) throw new Error('no recent water levels');
+      var last = o[o.length - 1], pAt = function (t) { if (!p) return null; var best = null; p.forEach(function (q) { if (Math.abs(q.t - t) <= 6 * MIN && (!best || Math.abs(q.t - t) < Math.abs(best.t - t))) best = q; }); return best ? best.v : null; };
+      var pl = pAt(last.t), surge = pl == null ? null : last.v - pl, mx = o.reduce(function (a, b) { return b.v > a.v ? b : a; });
+      var highs = []; if (p) for (var i = 1; i < p.length - 1; i++) if (p[i].t > now && p[i].t < now + 36 * HOUR && p[i].v >= p[i - 1].v && p[i].v > p[i + 1].v) highs.push(p[i]);
+      return { o: o, p: p, last: last, surge: surge, max: mx, highs: highs.slice(0, 2), stale: now - last.t > 2 * HOUR };
+    });
+  }
+
+  /* ---------- river and coastal gauges the NWS forecasts (NWPS) ---------- */
+  var RANK = { action: 1, minor: 2, moderate: 3, major: 4 };
+  function loadRivers(st) {
+    var ll = [st.b[0] - 0.3, st.b[1] - 0.3, st.b[2] + 0.3, st.b[3] + 0.3], w = encodeURIComponent("status in ('action','minor','moderate','major')");
+    var q = function (layer) { return getJ(RIV + layer + '/query?where=' + w + '&' + envOf(ll) + '&outFields=*&returnGeometry=false&f=json').then(function (j) { if (!j || j.error) throw new Error('the river gauge service answered with an error'); return (j.features || []).map(function (f) { return f.attributes || {}; }); }); };
+    return Promise.all([q(0), q(15).catch(function () { return []; })]).then(function (r) {
+      var by = {};
+      r[0].forEach(function (a) { by[a.gaugelid] = { id: a.gaugelid, loc: a.location || '', water: a.waterbody || '', st: a.state || '', la: +a.latitude, lo: +a.longitude, now: a.status, obs: a.observed, obsT: a.obstime ? utc(a.obstime) : null, units: a.units || 'ft', flood: a.flood, mod: a.moderate, major: a.major, url: a.url || '' }; });
+      r[1].forEach(function (a) { var x = by[a.gaugelid] || (by[a.gaugelid] = { id: a.gaugelid, loc: a.location || '', water: a.waterbody || '', st: a.state || '', la: +a.latitude, lo: +a.longitude, now: null, units: a.units || 'ft', flood: a.flood, mod: a.moderate, major: a.major, url: a.url || '' }); x.fc = a.status; x.fcv = a.forecast; x.fcT = a.fcsttime ? utc(a.fcsttime) : null; });
+      return Object.keys(by).map(function (k) { var x = by[k]; x.rank = Math.max(RANK[x.now] || 0, RANK[x.fc] || 0); x.coast = /MLLW|MHHW|tidal|ocean|bay|sound|coast|harbor|inlet/i.test(x.loc + ' ' + x.water); return x; })
+        .filter(function (x) { return x.rank > 0 && isFinite(x.la) && near(st, x.la, x.lo, 60); }).sort(function (a, b) { return (b.rank - a.rank) || String(a.st).localeCompare(b.st); });
+    });
+  }
+  function near(st, la, lo, kmMax) { if (!inStormBox(st, la, lo, 0.8)) return false; for (var i = 0; i < st.counties.length; i++) { var c = S.cty[st.counties[i]]; if (km(la, lo, c.la, c.lo) < kmMax) return true; } return false; }
+
+  /* ---------- the FAA's airport status ---------- */
+  function loadFaa() {
+    return getT(FAA).then(function (x) {
+      var doc = new DOMParser().parseFromString(x, 'application/xml'); if (doc.getElementsByTagName('parsererror').length) throw new Error('the FAA status could not be read');
+      var upd = doc.getElementsByTagName('Update_Time')[0], out = [];
+      Array.prototype.forEach.call(doc.getElementsByTagName('ARPT'), function (a) {
+        var item = a.parentNode, dt = item, f = {}; while (dt && dt.tagName !== 'Delay_type') dt = dt.parentNode;
+        var type = dt ? ((dt.getElementsByTagName('Name')[0] || {}).textContent || '') : '';
+        Array.prototype.forEach.call(item.children, function (c) { if (c.children.length) Array.prototype.forEach.call(c.children, function (cc) { f[c.tagName + '.' + cc.tagName] = cc.textContent.trim(); }); else f[c.tagName] = c.textContent.trim(); });
+        var dirEl = item.getElementsByTagName('Arrival_Departure')[0]; if (dirEl && dirEl.getAttribute('Type')) f.dir = dirEl.getAttribute('Type');
+        if (/Closure/i.test(type) && /NON SKED|TRANSIENT GA|VTOL|PPR\b/i.test(f.Reason || '')) return;   // notices about private flights, not the weather
+        out.push({ code: (a.textContent || '').trim(), type: type, f: f });
+      });
+      var um = upd ? /(\w{3}) (\d+) (\d\d):(\d\d):(\d\d) (\d{4})/.exec(upd.textContent) : null, MON = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+      return { at: um && MON[um[1]] != null ? Date.UTC(+um[6], MON[um[1]], +um[2], +um[3], +um[4], +um[5]) : null, list: out };
+    });
+  }
+  function airportXY(code, Z) {
+    var id = 'K' + code, o = (Z.d.obs || []).filter(function (x) { return x.id === id; })[0]; if (o) return [o.la, o.lo];
+    var s = (USNOW._t.STN || []).filter(function (x) { return x[0] === id; })[0]; return s ? [s[1], s[2]] : null;
+  }
+  function faaFor(st, Z) {
+    var F = S.d.faa; if (!F) return null;
+    return F.list.filter(function (x) { var p = airportXY(x.code, Z); return p && near(st, p[0], p[1], 50); });
+  }
+  function faaText(x) {
+    var f = x.f, t = x.type;
+    if (/Ground Stop/i.test(t)) return 'Ground stop' + (f.End_Time ? ' until ' + f.End_Time : '');
+    if (/Ground Delay/i.test(t)) return 'Ground delay program, average ' + (f.Avg || '?') + (f.Max ? ', up to ' + f.Max : '');
+    if (/Closure/i.test(t)) return 'Closed' + (f.Reopen ? ', reopening ' + f.Reopen : '');
+    if (/Arrival|Departure/i.test(t)) return (f.dir || 'Delays') + ' delays ' + (f['Arrival_Departure.Min'] || '') + (f['Arrival_Departure.Max'] ? ' to ' + f['Arrival_Departure.Max'] : '') + (f['Arrival_Departure.Trend'] ? ', ' + f['Arrival_Departure.Trend'].toLowerCase() : '');
+    return t;
+  }
+
+  /* ---------- the forecasters: SPC mesoscale discussions and the NWS offices covering the storm ---------- */
+  function loadMds(st) {
+    return arcGeo(MSV + 'outlooks/spc_mesoscale_discussion/MapServer/0', [st.b[0] - 1, st.b[1] - 1, st.b[2] + 1, st.b[3] + 1], 'name,popupinfo').then(function (fs) {
+      return fs.filter(function (f) { var n = (f.properties || {}).name || ''; return n && n !== 'NoArea'; }).map(function (f) { var n = f.properties.name, m = /(\d{3,4})/.exec(n); return { name: n, num: m ? m[1] : '', rings: geoRings(f.geometry) }; });
+    });
+  }
+  function officesOf(st) { return Object.keys(st.wfo || {}).sort(function (a, b) { return st.wfo[b] - st.wfo[a]; }).slice(0, 4); }
+  function loadAfds(st) {
+    return Promise.all(officesOf(st).map(function (o) {
+      return getJ(API + '/products/types/AFD/locations/' + o, 'application/ld+json').then(function (j) { var l = (j && j['@graph']) || []; if (!l.length) throw new Error('none'); return getJ(l[0]['@id'], 'application/ld+json'); }).then(function (pr) {
+        var parsed = parseAFD(pr.productText || ''), key = null, upd = null, syn = null;
+        parsed.sections.forEach(function (s) { if (!key && /KEY MESSAGES/i.test(s.key)) key = s; if (!upd && /^UPDATE/i.test(s.key)) upd = s; if (!syn && /SYNOPSIS|WHAT HAS CHANGED/i.test(s.key)) syn = s; });
+        var items = []; if (key) key.body.forEach(function (ln) { if (/^\s*[-*]\s+\S/.test(ln)) items.push([ln.replace(/^\s*[-*]\s+/, '')]); else if (/\S/.test(ln) && items.length) items[items.length - 1].push(ln); });
+        var para = function (sec) { if (!sec) return ''; var ps = [], cur = []; sec.body.forEach(function (ln) { if (/\S/.test(ln)) cur.push(ln); else if (cur.length) { ps.push(cur); cur = []; } }); if (cur.length) ps.push(cur); ps = ps.map(afdJoin).filter(function (t) { return !/^(Issued|Updated)\s+\d{3,4}\s+[AP]M\b/i.test(t) && t.split(' ').length > 3; }); return ps[0] || ''; };
+        var wfo = (parsed.preamble.join('\n').match(/National Weather Service\s+(.+)/) || [])[1];
+        return { office: o, name: wfo ? wfo.trim() : o, at: Date.parse(pr.issuanceTime) || null, km: items.slice(0, 4).map(afdJoin), text: items.length ? '' : (para(upd) || para(syn)).replace(/^[-*]\s*/, '') };
+      }, function () { return { office: o, err: true }; });
+    }));
+  }
+
+  /* ---------- the storm log: what is new since the last look ---------- */
+  function seenGet() { try { return JSON.parse(lsGet('stormz_seen', '{}')) || {}; } catch (e) { return {}; } }
+  function seenMark(key) { var s = seenGet(), now = Date.now(); Object.keys(s).forEach(function (k) { if (now - s[k] > 10 * 864e5) delete s[k]; }); s[key] = now; lsSet('stormz_seen', JSON.stringify(s)); }
+  function logItems(st, Z) {
+    var out = [];
+    st.alerts.forEach(function (a) { if (a.sent) out.push({ t: a.sent, kind: 'alert', col: colOf(a.ev), html: '<b>' + esc(a.ev) + '</b> · ' + esc(a.sender.replace(/^NWS /, '')) + (a.nws ? ' · ' + esc(a.nws.charAt(0) + a.nws.slice(1).toLowerCase()) : '') }); });
+    (Z.d.lsr || []).forEach(function (r) { out.push({ t: r.t, kind: 'report', col: r.k[3], html: '<b>' + esc(r.k[4]) + '</b> ' + (r.mag != null && r.mag > 0 ? esc(String(r.magnitude)) + ' ' + esc(String(r.unit).toLowerCase().replace('inch', 'in')) + ' ' : '') + '· ' + esc([r.city, r.st].filter(Boolean).join(', ')) + (r.remark ? ' · <span class="dim">' + esc(r.remark.slice(0, 140)) + '</span>' : '') }); });
+    if (st.scc) out.push({ t: st.scc.at, kind: 'wpc', col: '#7CC0EE', html: '<b>WPC storm summary #' + esc(st.scc.num) + '</b> · ' + esc(st.scc.lead.slice(0, 160)) });
+    return out.filter(function (x) { return isFinite(x.t); }).sort(function (a, b) { return b.t - a.t; });
+  }
+
   /* ---------- geography ---------- */
   function base() {
     if (S.base) return Promise.resolve(S.base);
@@ -19330,7 +19578,7 @@ var STORMZ = (function () {
     var groups = {}; ids.forEach(function (i) { var r = find(i); (groups[r] || (groups[r] = [])).push(i); });
     var storms = [], minor = [];
     Object.keys(groups).forEach(function (g) {
-      var list = groups[g], st = { counties: list, cset: {}, alerts: [], ev: {}, fam: {}, score: 0, warn: 0, watch: 0, adv: 0, states: {}, b: [180, 90, -180, -90], sw: 0, la: 0, lo: 0, senders: {}, marine: {} };
+      var list = groups[g], st = { counties: list, cset: {}, alerts: [], ev: {}, fam: {}, score: 0, warn: 0, watch: 0, adv: 0, states: {}, b: [180, 90, -180, -90], sw: 0, la: 0, lo: 0, senders: {}, marine: {}, wfo: {} };
       var aseen = {};
       list.forEach(function (f) {
         var r = byC[f], c = cty[f]; st.cset[f] = 1; st.score += r.w; st.states[c.st] = (st.states[c.st] || 0) + 1;
@@ -19338,6 +19586,7 @@ var STORMZ = (function () {
         st.la += c.la * r.w; st.lo += c.lo * r.w; st.sw += r.w;
         var b = c.sh.b; if (b[0] < st.b[0]) st.b[0] = b[0]; if (b[1] < st.b[1]) st.b[1] = b[1]; if (b[2] > st.b[2]) st.b[2] = b[2]; if (b[3] > st.b[3]) st.b[3] = b[3];
         Object.keys(r.fam).forEach(function (k) { st.fam[k] = (st.fam[k] || 0) + r.fam[k]; });
+        var wseen = {}; r.al.forEach(function (a) { if (a.wfo && !wseen[a.wfo]) { wseen[a.wfo] = 1; st.wfo[a.wfo] = (st.wfo[a.wfo] || 0) + 1; } });
         r.al.forEach(function (a) {
           var e = st.ev[a.ev] || (st.ev[a.ev] = { ev: a.ev, n: 0, cset: {}, alerts: 0, on: null, end: null, open: false });
           if (!e.cset[f]) { e.cset[f] = 1; e.n++; }
@@ -19375,6 +19624,7 @@ var STORMZ = (function () {
         st.counties.forEach(function (f) { var c = cty[f], x = km(l.la, l.lo, c.la, c.lo); if (x < d) d = x; }); if (d <= reach && d < bk) { bk = d; best = st; } });
       if (best && (!best.low || l.p < best.low.p)) best.low = { p: l.p, la: l.la, lo: l.lo, km: bk, valid: sfc.valid };
     });
+    storms.forEach(function (st) { st.track = trackOf(st); });
     var keys = {}; storms.forEach(function (st) { if (keys[st.key]) st.key += '-' + (++keys[st.key]); else keys[st.key] = 1; });
     /* saved places inside a storm */
     var xy = {}; try { xy = JSON.parse(lsGet('usnow_xy', '{}')) || {}; } catch (e) { xy = {}; }
@@ -19406,7 +19656,7 @@ var STORMZ = (function () {
     return { proj: function (lon, lat) { var q = G.albers(lon, lat); return [W / 2 + (q[0] - cx) / mpp, H / 2 - (q[1] - cy) / mpp]; }, bbox: bbox, ll: ll, mpp: mpp };
   }
   function inLL(b, ll) { return !(b[2] < ll[0] || b[0] > ll[2] || b[3] < ll[1] || b[1] > ll[3]); }
-  function radarHref(V) { var t = S.d.radar; return t ? px(RADAR + '/exportImage?bbox=' + V.bbox.join(',') + '&bboxSR=5070&imageSR=5070&size=' + (V.us ? '1600,1024' : '1400,896') + '&format=png32&transparent=true&time=' + t + '&f=image') : ''; }
+  function radarHref(V, at) { var t = at || S.d.radar; return t ? px(RADAR + '/exportImage?bbox=' + V.bbox.join(',') + '&bboxSR=5070&imageSR=5070&size=' + (V.us ? '1600,1024' : '1400,896') + '&format=png32&transparent=true&time=' + t + '&f=image') : ''; }
   function drawMap(stage, V, st) {
     var B = S.base, geo = B.geo, proj = V.proj, cssW = stage.clientWidth || 900, u = Math.max(1, Math.min(2.6, 1000 / cssW)), NP = ';pointer-events:none';
     var HALO = ';paint-order:stroke;stroke:rgba(7,11,20,0.92);stroke-width:' + (3 * u).toFixed(1) + 'px;stroke-linejoin:round', FONT = 'Inter, system-ui, sans-serif';
@@ -19414,19 +19664,29 @@ var STORMZ = (function () {
     var o = ['<svg class="regmap-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(st ? 'Map of ' + st.name : 'Map of the storms in the country') + '">'];
     o.push('<rect x="0" y="0" width="' + W + '" height="' + H + '" style="fill:' + (bm ? bm.water : '#0B2239') + '"></rect>' + (bm ? BASEMAP.under(bm) : ''));
     o.push('<path d="' + OLMAP.path(geo, geo.states, proj, inView) + '" style="fill:#18222F;stroke:none' + NP + '"></path>' + (bm ? BASEMAP.top(bm) : ''));
+    var Z = st ? S.z[st.key] : null, ovd = st && S.ov !== 'none' && Z ? Z.d['ov_' + S.ov] : null, ovOn = !!(ovd && ovd.items.length);
     /* alerts by county: the strongest alert's colour; on the national map each storm in its own colour */
     if (S.lay.alerts) {
       var groups = {}, list = st ? st.counties : [];
       if (!st) S.storms.forEach(function (s2, n) { s2.counties.forEach(function (f) { list.push(f); }); });
       list.forEach(function (f) {
         var c = S.cty[f], r = S.byC[f]; if (!c || !r || !inView(c.sh)) return;
-        var a = topAlert(r.al), fill = colOf(a.ev), op = a.w >= 3 ? 0.62 : a.w === 2 ? 0.48 : 0.34, k = fill + '|' + op;
+        var a = topAlert(r.al), fill = colOf(a.ev), op = (a.w >= 3 ? 0.62 : a.w === 2 ? 0.48 : 0.34) * (ovOn ? 0.35 : 1), k = fill + '|' + op.toFixed(2);
         (groups[k] || (groups[k] = [])).push(c.sh);
       });
       Object.keys(groups).forEach(function (k) { var p = k.split('|'); o.push('<path d="' + OLMAP.path(geo, groups[k], proj) + '" style="fill:' + p[0] + ';fill-opacity:' + p[1] + ';stroke:none' + NP + '"></path>'); });
     }
-    if (S.lay.radar && S.d.radar && (V.us || V.ll[0] > -130 && V.ll[2] < -60 && V.ll[1] > 20 && V.ll[3] < 53))
-      o.push('<image href="' + esc(radarHref(V)) + '" x="0" y="0" width="' + W + '" height="' + H + '" preserveAspectRatio="none" style="opacity:0.85' + NP + '"></image>');
+    /* the forecast layer, under the radar (v3.85.0) */
+    if (ovOn) {
+      var og = '';
+      ovd.items.forEach(function (it) { var d = ''; it.rings.forEach(function (ring) { var first = true; ring.forEach(function (pt) { var q = proj(pt[0], pt[1]); d += (first ? 'M' : 'L') + q[0].toFixed(1) + ',' + q[1].toFixed(1); first = false; }); d += 'Z'; });
+        og += it.dash ? '<path d="' + d + '" style="fill:none;stroke:' + it.fill + ';stroke-width:' + (2.2 * u).toFixed(1) + ';stroke-dasharray:' + (7 * u).toFixed(0) + ' ' + (4 * u).toFixed(0) + '"></path>' : '<path d="' + d + '" style="fill:' + it.fill + ';fill-rule:evenodd;stroke:' + it.fill + ';stroke-width:0.6"></path>'; });
+      o.push('<g style="opacity:' + ovd.op + NP + '">' + og + '</g>');
+    }
+    var radarOk = S.lay.radar && S.d.radar && (V.us || V.ll[2] > -127 && V.ll[0] < -66 && V.ll[3] > 24 && V.ll[1] < 50);   // the mosaic covers the lower 48; outside it the picture is clear
+    if (radarOk && st && S.loop.on && S.loop.frames.length) {   // the loop: every frame in place, one shown at a time
+      S.loop.frames.forEach(function (t, i) { o.push('<image class="sz-rf" data-f="' + i + '" href="' + esc(radarHref(V, t)) + '" x="0" y="0" width="' + W + '" height="' + H + '" preserveAspectRatio="none" style="opacity:0.85;visibility:' + (i === S.loop.i ? 'visible' : 'hidden') + NP + '"></image>'); });
+    } else if (radarOk) o.push('<image href="' + esc(radarHref(V)) + '" x="0" y="0" width="' + W + '" height="' + H + '" preserveAspectRatio="none" style="opacity:0.85' + NP + '"></image>');
     if (st && V.mpp < 2600) o.push('<path d="' + OLMAP.path(geo, geo.counties, proj, inView) + '" style="fill:none;stroke:rgba(255,255,255,0.13);stroke-width:' + (0.5 * u).toFixed(2) + NP + '"></path>');
     o.push('<path d="' + OLMAP.path(geo, geo.states, proj, inView) + '" style="fill:none;stroke:rgba(255,255,255,0.55);stroke-width:' + (0.9 * u).toFixed(2) + ';stroke-linejoin:round' + NP + '"></path>');
     /* a storm's counties tap through to their alerts (under the report dots, which tap through to the report) */
@@ -19445,8 +19705,23 @@ var STORMZ = (function () {
       [['L', sfc.lows, '#F87171'], ['H', sfc.highs, '#60A5FA']].forEach(function (g) { g[1].forEach(function (c) { var q = proj(c.lo, c.la); if (!inF(q, 20 * u)) return; var bx = [q[0] - 14 * u, q[1] - 16 * u, q[0] + 14 * u, q[1] + 18 * u]; if (hit(bx)) return; boxes.push(bx);
         o.push('<text x="' + q[0].toFixed(1) + '" y="' + (q[1] + 6 * u).toFixed(1) + '" style="font:800 ' + (24 * u).toFixed(0) + 'px ' + FONT + ';fill:' + g[2] + ';text-anchor:middle' + HALO + NP + '">' + g[0] + '</text><text x="' + q[0].toFixed(1) + '" y="' + (q[1] + 17 * u).toFixed(1) + '" style="font:600 ' + (9.5 * u).toFixed(1) + 'px ' + FONT + ';fill:#E5E7EB;text-anchor:middle' + HALO + NP + '">' + c.p + '</text>'); }); });
     }
+    /* SPC mesoscale discussion areas */
+    if (st && Z && Z.d.mds) Z.d.mds.forEach(function (m) { var d = '', c = [0, 0, 0]; m.rings.forEach(function (ring) { ring.forEach(function (pt, i) { var q = proj(pt[0], pt[1]); d += (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); c[0] += q[0]; c[1] += q[1]; c[2]++; }); d += 'Z'; });
+      if (!c[2]) return; o.push('<path d="' + d + '" style="fill:rgba(96,165,250,0.08);stroke:#60A5FA;stroke-width:' + (2 * u).toFixed(1) + ';stroke-dasharray:' + (6 * u).toFixed(0) + ' ' + (3 * u).toFixed(0) + NP + '"></path><text x="' + (c[0] / c[2]).toFixed(1) + '" y="' + (c[1] / c[2]).toFixed(1) + '" style="font:700 ' + (11 * u).toFixed(1) + 'px ' + FONT + ';fill:#93C5FD;text-anchor:middle' + HALO + NP + '">' + esc(m.name) + '</text>'); });
+    /* the low's track: where it has been (solid, a dot every analysis) and where WPC's chart takes it (dashed, by day) */
+    if (S.lay.track) (st ? [st] : S.storms).forEach(function (s2) {
+      var tr = s2.track; if (!tr || tr.past.length + tr.fut.length < 2) return;
+      var pp = tr.past.map(function (p) { return proj(p.lo, p.la); }), fp = [pp[pp.length - 1]].concat(tr.fut.map(function (p) { return proj(p.lo, p.la); })), line = function (a) { return a.map(function (q, i) { return (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(''); };
+      var g = '<g style="pointer-events:none">';
+      if (pp.length > 1) g += '<path d="' + line(pp) + '" style="fill:none;stroke:rgba(7,11,20,0.8);stroke-width:' + (4.6 * u).toFixed(1) + ';stroke-linecap:round;stroke-linejoin:round"></path><path d="' + line(pp) + '" style="fill:none;stroke:#FCA5A5;stroke-width:' + (2.4 * u).toFixed(1) + ';stroke-linecap:round;stroke-linejoin:round"></path>';
+      if (fp.length > 1) g += '<path d="' + line(fp) + '" style="fill:none;stroke:rgba(7,11,20,0.8);stroke-width:' + (4.2 * u).toFixed(1) + ';stroke-dasharray:' + (8 * u).toFixed(0) + ' ' + (5 * u).toFixed(0) + '"></path><path d="' + line(fp) + '" style="fill:none;stroke:#FDE68A;stroke-width:' + (2.2 * u).toFixed(1) + ';stroke-dasharray:' + (8 * u).toFixed(0) + ' ' + (5 * u).toFixed(0) + '"></path>';
+      tr.past.forEach(function (p, i) { if (i === tr.past.length - 1) return; var q = pp[i]; g += '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + (2.8 * u).toFixed(1) + '" style="fill:#FCA5A5;stroke:#0B1220;stroke-width:' + u.toFixed(1) + '"></circle>'; });
+      if (st && tr.past.length > 1) { var q0 = pp[0], t0 = tr.past[0]; g += '<text x="' + (q0[0]).toFixed(1) + '" y="' + (q0[1] - 8 * u).toFixed(1) + '" style="font:600 ' + (10 * u).toFixed(1) + 'px ' + FONT + ';fill:#FCA5A5;text-anchor:middle' + HALO + '">' + esc(new Date(t0.t).toLocaleString('en-US', { weekday: 'short', hour: 'numeric' }) + ' ' + t0.p) + '</text>'; }
+      tr.fut.forEach(function (p, i) { var q = fp[i + 1]; if (!inF(q, 6)) return; g += '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + (5 * u).toFixed(1) + '" style="fill:#FDE68A;stroke:#0B1220;stroke-width:' + (1.2 * u).toFixed(1) + '"></circle><text x="' + q[0].toFixed(1) + '" y="' + (q[1] - 9 * u).toFixed(1) + '" style="font:700 ' + (11 * u).toFixed(1) + 'px ' + FONT + ';fill:#FDE68A;text-anchor:middle' + HALO + '">' + esc(p.label) + '</text>'; });
+      o.push(g + '</g>');
+    });
     /* storm reports */
-    var Z = st ? S.z[st.key] : null, lsr = Z && Z.d.lsr;
+    var lsr = Z && Z.d.lsr;
     if (st && S.lay.lsr && lsr) {
       lsr.slice().sort(function (a, b) { return a.rank - b.rank; }).forEach(function (r) {
         var q = proj(r.lon, r.lat); if (!inF(q, 4)) return; var s = 6.5 * Math.min(u, 1.8);
@@ -19454,6 +19729,12 @@ var STORMZ = (function () {
         o.push('<g class="regmap-stn" data-t="' + (taps.length - 1) + '" tabindex="0" role="button" aria-label="' + esc(r.typetext + ' report, ' + (r.city || '')) + '"><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + (s + 2 * u).toFixed(1) + '" style="fill:transparent"></circle><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + s.toFixed(1) + '" style="fill:' + r.k[3] + ';stroke:#0B1220;stroke-width:' + (1.2 * u).toFixed(1) + '"></circle><text x="' + q[0].toFixed(1) + '" y="' + (q[1] + 3.4 * Math.min(u, 1.8)).toFixed(1) + '" style="font:800 ' + (8.5 * Math.min(u, 1.8)).toFixed(1) + 'px ' + FONT + ';fill:#0B1220;text-anchor:middle' + NP + '">' + r.k[2] + '</text></g>');
       });
     }
+    /* tide gauges, as diamonds in their flood colour */
+    if (st && S.lay.lsr && Z && Z.gauges) Z.gauges.forEach(function (gg) {
+      if (!gg.r) return; var q = proj(gg.lo, gg.la); if (!inF(q, 6)) return; var c = catOf(gg.r.last.v, gg), s = 7 * Math.min(u, 1.8);
+      taps.push({ html: '<b>' + esc(gg.name) + ', ' + esc(gg.st) + '</b> · tide gauge <span class="sz-cat" style="background:' + CATC[c] + '">' + esc(CATW[c]) + '</span><div class="rg-note">' + ((gg.r.last.v - gg.minor) >= 0 ? '+' : '\u2212') + Math.abs(gg.r.last.v - gg.minor).toFixed(1) + ' ft against minor flood' + (gg.r.surge != null ? '; ' + (gg.r.surge >= 0 ? '+' : '\u2212') + Math.abs(gg.r.surge).toFixed(1) + ' ft against the tide' : '') + ' · ' + esc(tf(gg.r.last.t)) + '</div>' });
+      o.push('<g class="regmap-stn" data-t="' + (taps.length - 1) + '" tabindex="0" role="button" aria-label="' + esc('Tide gauge ' + gg.name) + '"><path d="M' + q[0].toFixed(1) + ',' + (q[1] - s - 2 * u).toFixed(1) + 'l' + (s + 2 * u).toFixed(1) + ',' + (s + 2 * u).toFixed(1) + 'l-' + (s + 2 * u).toFixed(1) + ',' + (s + 2 * u).toFixed(1) + 'l-' + (s + 2 * u).toFixed(1) + ',-' + (s + 2 * u).toFixed(1) + 'Z" style="fill:transparent"></path><path d="M' + q[0].toFixed(1) + ',' + (q[1] - s).toFixed(1) + 'l' + s.toFixed(1) + ',' + s.toFixed(1) + 'l-' + s.toFixed(1) + ',' + s.toFixed(1) + 'l-' + s.toFixed(1) + ',-' + s.toFixed(1) + 'Z" style="fill:' + CATC[c] + ';stroke:#0B1220;stroke-width:' + (1.3 * u).toFixed(1) + '"></path></g>');
+    });
     /* cities: the storm's own list on its map, the largest on the national one */
     if (S.lay.cities) {
       var cl = st ? ((Z && Z.cities) || []) : [];
@@ -19470,6 +19751,7 @@ var STORMZ = (function () {
       o.push('<g style="pointer-events:none"><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + r.toFixed(1) + '" style="fill:' + FAM[s2.kind][1] + ';stroke:#0B1220;stroke-width:' + (2 * u).toFixed(1) + '"></circle><text x="' + q[0].toFixed(1) + '" y="' + (q[1] + r * 0.38).toFixed(1) + '" style="font:800 ' + (r * 1.05).toFixed(1) + 'px ' + FONT + ';fill:#0B1220;text-anchor:middle">' + (n + 1) + '</text></g>');
     });
     if (bm) o.push('<g style="pointer-events:none">' + BASEMAP.labels(bm, W, H, boxes, FONT, true) + '</g>');
+    if (st && S.loop.on && S.loop.frames.length && radarOk) o.push('<text id="szLoopT" x="14" y="' + (H - 14) + '" style="font:700 ' + (13 * u).toFixed(1) + 'px ' + FONT + ';fill:#F8FAFC' + HALO + NP + '">Radar ' + esc(tf(S.loop.frames[S.loop.i])) + '</text>');
     o.push('</svg>');
     stage.innerHTML = o.join('');
     stage.classList.remove('is-loading');
@@ -19541,11 +19823,14 @@ var STORMZ = (function () {
     }
     return out;
   }
-  function loadCityFc(c) {
+  function loadCityFc(c) {   // v3.85.0: the forecast grid too, for the storm totals
     return getJ(API + '/points/' + c.la.toFixed(4) + ',' + c.lo.toFixed(4), 'application/geo+json').then(function (j) {
-      var u = j && j.properties && j.properties.forecast; if (!u) throw new Error('no forecast for this point');
-      return getJ(u, 'application/geo+json');
-    }).then(function (j) { var p = (j && j.properties && j.properties.periods) || []; if (!p.length) throw new Error('the forecast came back empty'); return { periods: p.slice(0, 2), at: Date.parse(j.properties.updateTime || j.properties.generatedAt || '') || null }; });
+      var pr = (j && j.properties) || {}; if (!pr.forecast) throw new Error('no forecast for this point');
+      return Promise.all([getJ(pr.forecast, 'application/geo+json').catch(function () { return null; }), pr.forecastGridData ? getJ(pr.forecastGridData, 'application/geo+json').catch(function () { return null; }) : null]);
+    }).then(function (r) {
+      var p = (r[0] && r[0].properties && r[0].properties.periods) || []; if (!p.length && !r[1]) throw new Error('the forecast came back empty');
+      return { periods: p.slice(0, 2), at: r[0] ? Date.parse(r[0].properties.updateTime || r[0].properties.generatedAt || '') || null : null, imp: r[1] && r[1].properties ? impacts(r[1].properties) : null };
+    });
   }
 
   /* ---------- screens ---------- */
@@ -19566,7 +19851,25 @@ var STORMZ = (function () {
     setHash(); render(true); window.scrollTo(0, 0); refresh(false);
     if (!S.timer) S.timer = setInterval(function () { if (S.on && !document.hidden) refresh(false); }, 60000);
   }
-  function off() { if (!S.on) return; S.on = false; root().classList.add('hidden'); navMark(false); if (S.timer) { clearInterval(S.timer); S.timer = null; } }
+  function loopStop() { if (S.loop.timer) clearInterval(S.loop.timer); S.loop.timer = null; S.loop.on = false; }
+  function loopToggle() {
+    var st = stormBy(S.key); if (!st) return;
+    if (S.loop.on) { loopStop(); } else {
+      if (!S.d.radar) return; var t1 = +S.d.radar; S.loop.frames = [50, 40, 30, 20, 10, 0].map(function (m) { return t1 - m * MIN; }); S.loop.i = S.loop.frames.length - 1; S.loop.on = true;
+      if (!S.lay.radar) { S.lay.radar = true; lsSet('stormz_layers', JSON.stringify(S.lay)); }
+      var wait = 0;
+      S.loop.timer = setInterval(function () {   // a frame every 0.65 s, holding the newest for two beats
+        var imgs = root().querySelectorAll('#szStage .sz-rf'); if (!S.on || !imgs.length) return;
+        if (S.loop.i === S.loop.frames.length - 1 && wait < 2) { wait++; return; } wait = 0;
+        S.loop.i = (S.loop.i + 1) % S.loop.frames.length;
+        Array.prototype.forEach.call(imgs, function (im) { im.style.visibility = +im.getAttribute('data-f') === S.loop.i ? 'visible' : 'hidden'; });
+        var lab = document.getElementById('szLoopT'); if (lab) lab.textContent = 'Radar ' + tf(S.loop.frames[S.loop.i]);
+      }, 650);
+    }
+    Array.prototype.forEach.call(root().querySelectorAll('[data-loop]'), function (x) { x.setAttribute('aria-pressed', S.loop.on ? 'true' : 'false'); x.textContent = S.loop.on ? '\u275A\u275A Stop radar' : '\u25B6 Radar loop'; });
+    drawZoneMap(st);
+  }
+  function off() { if (!S.on) return; loopStop(); S.on = false; root().classList.add('hidden'); navMark(false); if (S.timer) { clearInterval(S.timer); S.timer = null; } }
   function leaveFor(name) {
     if (_lastLoc) { off(); show('resultsEl'); return true; }
     off();
@@ -19575,30 +19878,53 @@ var STORMZ = (function () {
     if (typeof HOME !== 'undefined') HOME.open();
     return false;
   }
-  function select(key) { S.key = key || ''; S.prevCounties = null; S.openDet = {}; setHash(); render(true); window.scrollTo(0, 0); refresh(false); }
+  function select(key) { loopStop(); S.key = key || ''; S.prevCounties = null; S.openDet = {}; setHash(); render(true); window.scrollTo(0, 0); refresh(false); }
 
   var pending = null;
   function refresh(force) {
     if (pending && !force) return pending;
-    var jobs = [base(), need('alerts', TTL.alerts, loadAlerts, force), need('sfc', TTL.sfc, loadSfc, force), need('scc', TTL.scc, loadScc, force), need('radar', TTL.radar, loadRadar, force)];
+    var jobs = [base(), need('alerts', TTL.alerts, loadAlerts, force), need('sfc', TTL.sfc, loadSfc, force), need('scc', TTL.scc, loadScc, force), need('radar', TTL.radar, loadRadar, force),
+                need('hist', TTL.hist, loadHist, force), need('chart', TTL.chart, loadChart, force)];
     pending = Promise.all(jobs.map(function (p) { return p.catch(function () {}); })).then(function () {
       pending = null;
       if (!S.base) { render(false); return; }
       if (S.d.alerts) { if (S.key) { var cur = stormBy(S.key); if (cur) S.prevCounties = cur.counties.slice(); } detect(); follow(); badge(); }
       render(false);
       var st = S.key ? stormBy(S.key) : null; if (!S.on || !st) return;
-      var Z = zone(st);
+      var Z = zone(st), mine = function () { return S.on && S.key === st.key; }, paint = function (map) { if (mine()) schedule(st, map); };
+      if (Z.seenPrev === undefined) { Z.seenPrev = seenGet()[st.key] || 0; seenMark(st.key); }
       Promise.all([need('lsr', TTL.lsr, function () { return loadLsr(st); }, force, Z), need('obs', TTL.obs, function () { return loadObs(st); }, force, Z).then(function () {
-        return need('trend', TTL.trend, function () { return loadTrend(Z); }, force, Z); })]).then(function () { if (S.on && S.key === st.key) { fillZone(st); drawZoneMap(st); } });
+        return need('trend', TTL.trend, function () { return loadTrend(Z); }, force, Z); })]).then(function () { paint(true); });
       cityForecasts(st, Z);
+      need('faa', TTL.faa, loadFaa, force).then(function () { paint(false); });
+      if (hasWater(st)) need('riv', TTL.riv, function () { return loadRivers(st); }, force, Z).then(function () { paint(false); });
+      need('mds', TTL.mds, function () { return loadMds(st); }, force, Z).then(function () { paint(true); });
+      need('afd', TTL.afd, function () { return loadAfds(st); }, force, Z).then(function () { paint(false); });
+      if (S.ov !== 'none') overlay(st, force);
+      if (hasCoast(st)) need('tideSt', TTL.tideSt, loadTideSt, false).then(function () { gauges(st, Z, force); });
     });
     return pending;
+  }
+  var paintT = null, paintMap = false;
+  function schedule(st, map) { paintMap = paintMap || map; clearTimeout(paintT); paintT = setTimeout(function () { var m = paintMap; paintMap = false; if (!S.on || S.key !== st.key) return; fillZone(st); if (m) drawZoneMap(st); }, 120); }
+  function overlay(st, force) {
+    var Z = zone(st), k = S.ov, key = 'ov_' + k; if (k === 'none') return;
+    need(key, TTL.ov, function () { return loadOverlay(k, viewFor(st).ll); }, force, Z).then(function () { if (S.on && S.key === st.key) schedule(st, true); });
+  }
+  function gauges(st, Z, force) {
+    if (!S.d.tideSt) { schedule(st, false); return; }
+    if (!Z.gauges || Z.gaugesAt !== S.at.alerts) { var old = {}; (Z.gauges || []).forEach(function (g) { old[g.id] = g; }); Z.gauges = gaugesFor(st).map(function (g) { var o = old[g.id]; return o || Object.assign({}, g); }); Z.gaugesAt = S.at.alerts; }
+    var list = Z.gauges.filter(function (g) { return force || !g.at || (!g.busy && Date.now() - g.at > TTL.gauge); }), i = 0;
+    schedule(st, true);
+    var next = function () { if (i >= list.length || !S.on || S.key !== st.key) return Promise.resolve(); var g = list[i++]; g.busy = true;
+      return loadGauge(g).then(function (r) { g.r = r; g.err = ''; }, function (e) { g.err = (e && e.message) || 'no answer'; }).then(function () { g.busy = false; g.at = Date.now(); schedule(st, true); return next(); }); };
+    return Promise.all([next(), next(), next(), next()]);
   }
   function cityForecasts(st, Z) {
     var list = (Z.cities || []).filter(function (c) { var k = c.la.toFixed(3) + ',' + c.lo.toFixed(3), f = Z.fc[k]; return !f || (!f.busy && Date.now() - f.at > TTL.fc); }), i = 0;
     var next = function () { if (i >= list.length || !S.on || S.key !== st.key) return Promise.resolve(); var c = list[i++], k = c.la.toFixed(3) + ',' + c.lo.toFixed(3);
       Z.fc[k] = Z.fc[k] || {}; Z.fc[k].busy = true;
-      return loadCityFc(c).then(function (v) { Z.fc[k] = { v: v, at: Date.now() }; }, function (e) { Z.fc[k] = { err: (e && e.message) || 'no answer', at: Date.now() }; }).then(function () { if (S.on && S.key === st.key) fillCities(st); return next(); }); };
+      return loadCityFc(c).then(function (v) { Z.fc[k] = { v: v, at: Date.now() }; }, function (e) { Z.fc[k] = { err: (e && e.message) || 'no answer', at: Date.now() }; }).then(function () { if (S.on && S.key === st.key) schedule(st, false); return next(); }); };
     return Promise.all([next(), next(), next()]);
   }
 
@@ -19617,9 +19943,12 @@ var STORMZ = (function () {
     if (S.err.radar) e.push('Radar did not load (' + esc(S.err.radar) + ').');
     return e.length ? '<div class="sz-err" role="status">' + e.join(' ') + '</div>' : '';
   }
-  function layerBar() {
-    var L = [['alerts', 'Alerts'], ['radar', 'Radar'], ['fronts', 'Fronts and lows'], ['lsr', 'Storm reports'], ['cities', 'Cities']];
-    return '<div class="cpc-nav sz-layers" role="group" aria-label="What the map shows">' + L.map(function (l) { return '<button type="button" class="cpc-nav-btn' + (S.lay[l[0]] ? ' active' : '') + '" aria-pressed="' + (S.lay[l[0]] ? 'true' : 'false') + '" data-lay="' + l[0] + '">' + l[1] + '</button>'; }).join('') + '</div>';
+  function layerBar(zoneMap) {
+    var L = [['alerts', 'Alerts'], ['radar', 'Radar'], ['fronts', 'Fronts and lows'], ['track', 'Low track']].concat(zoneMap ? [['lsr', 'Reports and gauges'], ['cities', 'Cities']] : []);
+    var h = '<div class="cpc-nav sz-layers" role="group" aria-label="What the map shows">' + L.map(function (l) { return '<button type="button" class="cpc-nav-btn' + (S.lay[l[0]] ? ' active' : '') + '" aria-pressed="' + (S.lay[l[0]] ? 'true' : 'false') + '" data-lay="' + l[0] + '">' + l[1] + '</button>'; }).join('') + '</div>';
+    if (!zoneMap) return h;
+    return h + '<button type="button" class="cpc-nav-btn sz-play" data-loop="1" aria-pressed="' + (S.loop.on ? 'true' : 'false') + '">' + (S.loop.on ? '\u275A\u275A Stop radar' : '\u25B6 Radar loop') + '</button>' +
+      '<div class="cpc-nav sz-ovs" role="group" aria-label="Forecast layer"><span class="sz-ovl">Forecast</span>' + OVER.map(function (o) { return '<button type="button" class="cpc-nav-btn' + (S.ov === o[0] ? ' active' : '') + '" aria-pressed="' + (S.ov === o[0] ? 'true' : 'false') + '" data-ov="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>';
   }
   function render(fresh) {
     var r = root(); if (!r) return;
@@ -19641,7 +19970,7 @@ var STORMZ = (function () {
     h.push('<h2 class="section-label">Storm Zone<span class="sec-age">' + esc(ageText()) + '</span><button type="button" class="gs-refresh-btn" data-refresh="1">Refresh</button></h2>');
     h.push(errs());
     h.push('<p class="sz-lede">' + (n ? '<b>' + plural(n, 'storm') + '</b> with warnings in force. Tap one to follow it.' : 'No storm has warnings across several counties right now.') + '</p>');
-    h.push('<div class="card regmap-card"><div class="sz-bar">' + layerBar() + '</div><div class="regmap-stage sz-stage is-loading" style="aspect-ratio:1000 / 640"></div><div class="regmap-detail" aria-live="polite">Tap a storm’s area on the map, or a card below.</div></div>');
+    h.push('<div class="card regmap-card"><div class="sz-bar">' + layerBar(false) + '</div><div class="regmap-stage sz-stage is-loading" style="aspect-ratio:1000 / 640"></div><div class="regmap-detail" aria-live="polite">Tap a storm’s area on the map, or a card below.</div></div>');
     if (n) h.push('<div class="sz-cards">' + S.storms.map(function (st, i) { return card(st, i); }).join('') + '</div>');
     (S.sccLeft || []).forEach(function (s) { h.push('<div class="card sz-note"><b>WPC storm summary ' + esc(s.num) + ': ' + esc(s.title) + '</b><div class="rg-note">' + esc(tf(s.at, true)) + '. No alerts of the kinds followed here match it now.</div>' + (s.lead ? '<p>' + esc(s.lead) + '</p>' : '') + '</div>'); });
     if (S.minor.length) h.push('<p class="sz-minor"><b>Smaller alert areas:</b> ' + S.minor.slice(0, 12).map(function (m) { var e = Object.keys(m.ev).sort(function (a, b) { return HZ[b][0] - HZ[a][0]; })[0]; return esc(e) + ' (' + esc(Object.keys(m.states).join(', ')) + ')'; }).join(' · ') + (S.minor.length > 12 ? ' · and ' + (S.minor.length - 12) + ' more' : '') + '.</p>');
@@ -19661,7 +19990,7 @@ var STORMZ = (function () {
       '<span class="sz-chips">' + chipsFor(st, 4) + '</span>' +
       '<span class="sz-card-facts">' +
         '<span><b>' + st.warn + '</b> counties under warnings</span>' + (st.watch ? '<span><b>' + st.watch + '</b> under watches</span>' : '') + '<span><b>' + st.adv + '</b> under advisories</span>' +
-        (st.low ? '<span>' + esc(lowText(st)) + '</span>' : '') +
+        (st.low ? '<span>' + esc(lowText(st)) + (st.track && motionText(st.track) ? ', ' + esc(motionText(st.track)) : '') + '</span>' : '') +
         (mar.length ? '<span>Offshore: ' + mar.slice(0, 2).map(function (m) { return st.marine[m] + ' ' + esc(m.replace(/ Warning$/, '').toLowerCase()) + (st.marine[m] === 1 ? ' warning' : ' warnings'); }).join(', ') + '</span>' : '') +
       '</span>' +
       (st.scc ? '<span class="sz-card-wpc">WPC storm summary #' + esc(st.scc.num) + ' · ' + esc(tf(st.scc.at, true)) + '</span>' : '') +
@@ -19675,18 +20004,25 @@ var STORMZ = (function () {
       '<h2 class="sz-title">' + esc(st.name) + '</h2>' +
       '<div class="sz-sub" id="szSub"></div>' +
       '<div id="szErr"></div>' +
+      '<div id="szJump">' + jumpHtml(st) + '</div>' +
       '<div class="sz-tiles" id="szTiles"></div>' +
-      '<div class="card regmap-card"><div class="sz-bar">' + layerBar() + '</div><div class="regmap-stage sz-stage is-loading" id="szStage" style="aspect-ratio:1000 / 640"></div><div class="usn-key" id="szKey"></div><div class="regmap-detail" id="szDetail" aria-live="polite">Tap a county for its alerts, or a lettered dot for the storm report.</div></div>' +
       '<div class="sz-grid">' +
-        '<section class="card sz-panel sz-wide" aria-labelledby="szWhenH"><h3 id="szWhenH">When</h3><div id="szWhen"></div></section>' +
-        '<section class="card sz-panel sz-wide" aria-labelledby="szCityH"><h3 id="szCityH">Cities in the storm</h3><div id="szCities"></div></section>' +
-        '<section class="card sz-panel" aria-labelledby="szNowH"><h3 id="szNowH">Reported now</h3><div id="szNow"></div></section>' +
-        '<section class="card sz-panel" aria-labelledby="szLsrH"><h3 id="szLsrH">Storm reports, last 24 hours</h3><div id="szLsr"></div></section>' +
-        '<section class="card sz-panel sz-wide" aria-labelledby="szWpcH"><h3 id="szWpcH">From the Weather Prediction Center</h3><div id="szWpc"></div></section>' +
-        '<section class="card sz-panel sz-wide" aria-labelledby="szAlH"><h3 id="szAlH">Every alert in the storm</h3><div id="szAlerts"></div></section>' +
+        sec('szBriefP', 'The storm in brief', 'szBrief', true) +
+        '<section class="card regmap-card sz-wide sz-mapcard" id="szMapP"><div class="sz-bar">' + layerBar(true) + '</div><div class="regmap-stage sz-stage is-loading" id="szStage" style="aspect-ratio:1000 / 640"></div><div class="usn-key" id="szKey"></div><div class="rg-note" id="szOvNote"></div><div class="regmap-detail" id="szDetail" aria-live="polite">Tap a county for its alerts, a lettered dot for a storm report or a diamond for a tide gauge.</div></section>' +
+        sec('szWhenP', 'When', 'szWhen', true) +
+        sec('szCityP', 'Impacts in the largest cities', 'szCities', true) +
+        sec('szCoastP', 'Coast: tide gauges', 'szCoast', true) +
+        sec('szRivP', 'River and coastal forecast points', 'szRiv', false) +
+        sec('szTravP', 'Travel: airports', 'szTrav', false) +
+        sec('szNowP', 'Reported now', 'szNow', false) +
+        sec('szLsrP', 'Storm reports, last 24 hours', 'szLsr', false) +
+        sec('szFcstP', 'From the forecasters', 'szFcst', true) +
+        sec('szAlP', 'Every alert in the storm', 'szAlerts', true) +
+        sec('szLogP', 'Storm log', 'szLog', true) +
       '</div>' + sources(true) + '</div>';
     fillZone(st);
   }
+  function sec(pid, title, bid, wide) { return '<section class="card sz-panel' + (wide ? ' sz-wide' : '') + '" id="' + pid + '" aria-labelledby="' + pid + 'H"><h3 id="' + pid + 'H">' + title + '</h3><div id="' + bid + '"></div></section>'; }
   function setHtml(id, h) { var x = el(id); if (x && x.getAttribute('data-h') !== h) { x.setAttribute('data-h', h); x.innerHTML = h; restoreOpen(x); } }
   function fillZone(st) {
     var Z = zone(st);
@@ -19700,7 +20036,15 @@ var STORMZ = (function () {
     fillCities(st);
     setHtml('szNow', nowHtml(st, Z));
     setHtml('szLsr', lsrHtml(st, Z));
-    setHtml('szWpc', wpcHtml(st));
+    panels(st).forEach(function (p) { var x = el(p[0]); if (x) x.hidden = !p[2]; });
+    if (!(Z.ai && Z.ai.busy)) setHtml('szBrief', briefHtml(st, Z));
+    if (hasCoast(st)) setHtml('szCoast', coastHtml(st, Z));
+    if (hasWater(st)) setHtml('szRiv', riversHtml(st, Z));
+    setHtml('szTrav', travelHtml(st, Z));
+    setHtml('szFcst', forecastersHtml(st, Z));
+    setHtml('szLog', logHtml(st, Z));
+    var ovd = S.ov !== 'none' ? Z.d['ov_' + S.ov] : null;
+    setHtml('szOvNote', S.ov === 'none' ? '' : ovd ? '<span class="sz-ovkey">' + ovd.legend.map(function (l) { return '<span><i class="usn-sw" style="background:' + l[0] + '"></i>' + esc(l[1]) + '</span>'; }).join('') + '</span>' + esc(ovd.note) + (ovd.items.length ? '' : '. Nothing in this area.') : Z.err['ov_' + S.ov] ? 'The forecast layer did not load (' + esc(Z.err['ov_' + S.ov]) + ').' : 'Loading the forecast layer\u2026');
     var al = el('szAlerts'); if (al && al.getAttribute('data-sig') !== st.key + '|' + S.at.alerts) { al.setAttribute('data-sig', st.key + '|' + S.at.alerts); al.innerHTML = alertsHtml(st); restoreOpen(al); }
   }
   function drawZoneMap(st) { var stage = el('szStage'); if (stage && S.base) drawMap(stage, viewFor(st), st); }
@@ -19709,7 +20053,7 @@ var STORMZ = (function () {
     var t = [], obs = Z.d.obs || [], lsr = Z.d.lsr || [], fresh = Date.now() - 90 * MIN;
     t.push(tile('Under warnings', st.warn + ' <small>counties</small>', st.evOrder.filter(function (e) { return kind(e) === 'warn'; }).slice(0, 2).map(esc).join(', ') || 'none', 'warn'));
     t.push(tile('Watches · advisories', st.watch + ' · ' + st.adv, 'counties'));
-    t.push(st.low ? tile('Surface low', st.low.p + ' <small>mb</small>', esc(placeText(st.low.la, st.low.lo)) + '<br>WPC analysis, ' + esc(tf(st.low.valid))) : tile('Surface low', '—', S.d.sfc ? 'no low on WPC’s analysis near this storm' : 'analysis not loaded'));
+    t.push(st.low ? tile('Surface low', st.low.p + ' <small>mb</small>', esc(placeText(st.low.la, st.low.lo)) + (st.track && motionText(st.track) ? '<br>' + esc(motionText(st.track)) : '') + '<br>WPC analysis, ' + esc(tf(st.low.valid)), st.track && st.track.bomb ? 'warn' : '') : tile('Surface low', '—', S.d.sfc ? 'no low on WPC’s analysis near this storm' : 'analysis not loaded'));
     var lowObs = obs.filter(function (o) { return o.slp != null && o.t > fresh; }).sort(function (a, b) { return a.slp - b.slp; })[0];
     if (lowObs) { var tr = Z.d.trend && Z.d.trend[lowObs.id]; t.push(tile('Lowest pressure reported', lowObs.slp.toFixed(1) + ' <small>mb</small>', esc(lowObs.name) + ' (' + esc(lowObs.id) + '), ' + esc(tf(lowObs.t)) + (tr ? '<br>' + (tr.d3 < 0 ? 'falling ' : tr.d3 > 0 ? 'rising ' : 'steady ') + Math.abs(tr.d3).toFixed(1) + ' mb in ' + R(tr.h) + ' h' : ''), tr && tr.d3 <= -3 ? 'warn' : '')); }
     else t.push(tile('Lowest pressure reported', '—', Z.err.obs ? 'airport reports did not load' : Z.d.obs ? 'no sea-level pressure in the reports' : 'loading…'));
@@ -19747,7 +20091,7 @@ var STORMZ = (function () {
   function fillCities(st) {
     var Z = zone(st), list = Z.cities || [], obs = Z.d.obs || [];
     if (!list.length) { setHtml('szCities', '<div class="state-empty">No city of 20,000 people or more is inside the alert area.</div>'); return; }
-    setHtml('szCities', '<div class="sz-cities">' + list.map(function (c) {
+    setHtml('szCities', impactsHtml(st, Z) + '<details class="sz-det" data-k="city-cards"><summary>Each city now and its next two forecast periods</summary><div class="sz-cities">' + list.map(function (c) {
       var a = c.al[0], k = c.la.toFixed(3) + ',' + c.lo.toFixed(3), f = Z.fc[k], ob = null, bd = 25;
       obs.forEach(function (o) { var d = miles(c.la, c.lo, o.la, o.lo); if (d < bd && Date.now() - o.t < 90 * MIN) { bd = d; ob = o; } });
       var obT = ob ? (ob.tf != null ? R(ob.tf) + '°' : '') + (ob.kt != null ? ' · ' + (ob.kt < 1 ? 'calm' : (typeof degToCompass === 'function' && isFinite(+ob.dir) ? degToCompass(+ob.dir) + ' ' : '') + R(ob.kt * 1.15078) + (ob.gust ? ' g ' + R(ob.gust * 1.15078) : '') + ' mph') : '') + (ob.wx ? ' · ' + esc(ob.wx) : '') + ' <span class="dim">' + esc(ob.id) + ' ' + esc(tf(ob.t)) + '</span>' : '<span class="dim">' + (Z.d.obs ? 'no report within 25 miles' : 'loading…') + '</span>';
@@ -19755,7 +20099,7 @@ var STORMZ = (function () {
       return '<div class="sz-city"><div class="sz-city-h"><button type="button" class="btn-link sz-city-n" data-q="' + esc(c.name + ', ' + c.st) + '">' + esc(c.name) + ', ' + esc(c.st) + '</button>' +
         (a ? '<span class="sz-chip ' + kind(a.ev) + '"><i style="background:' + colOf(a.ev) + '"></i>' + esc(a.ev) + (a.end ? ' <span class="dim">until ' + esc(tf(a.end, true)) + '</span>' : '') + '</span>' : '') + (c.al.length > 1 ? '<span class="dim">+' + (c.al.length - 1) + ' more</span>' : '') + '</div>' +
         '<div class="sz-ob">Now: ' + obT + '</div>' + fc + '</div>';
-    }).join('') + '</div><div class="rg-note">Cities of 20,000 or more inside the alert area, largest first. Tap a name to open its full forecast.</div>');
+    }).join('') + '</div></details><div class="rg-note">Cities of 20,000 or more inside the alert area, largest first. Tap a name to open its full forecast.</div>');
   }
   function nowHtml(st, Z) {
     if (Z.err.obs && !Z.d.obs) return '<div class="state-empty">Airport reports did not load (' + esc(Z.err.obs) + ').</div>';
@@ -19809,9 +20153,168 @@ var STORMZ = (function () {
     }).join('') + '<div class="rg-note">Alerts are the NWS’s own, from api.weather.gov. A product can cover counties in more than one storm.</div>';
   }
   function restoreOpen(scope) { Array.prototype.forEach.call(scope.querySelectorAll('details[data-k]'), function (d) { var k = d.getAttribute('data-k'); if (S.openDet[k] != null) d.open = S.openDet[k]; }); }
+  /* ---------- v3.85.0 panels ---------- */
+  var CATC = { none: '#60A5FA', action: '#A3B1C6', minor: '#F2E34B', moderate: '#F2994A', major: '#E5484D' };
+  var CATW = { none: 'below flood', action: 'action stage', minor: 'minor flooding', moderate: 'moderate flooding', major: 'major flooding' };
+  function hasCoast(st) { return st.evOrder.some(function (e) { return COASTEV.test(e); }); }
+  function hasWater(st) { return st.evOrder.some(function (e) { return /Flood|Surge/.test(e); }); }
+  function panels(st) {
+    return [['szBriefP', 'Brief', true], ['szMapP', 'Map', true], ['szWhenP', 'When', true], ['szCityP', 'Impacts', true], ['szCoastP', 'Coast', hasCoast(st)], ['szRivP', 'Rivers', hasWater(st)],
+            ['szTravP', 'Travel', true], ['szNowP', 'Reported now', true], ['szLsrP', 'Storm reports', true], ['szFcstP', 'Forecasters', true], ['szAlP', 'Alerts', true], ['szLogP', 'Log', true]];
+  }
+  function jumpHtml(st) { return '<nav class="sz-jump" aria-label="Parts of this storm’s page">' + panels(st).filter(function (p) { return p[2]; }).map(function (p) { return '<button type="button" class="sz-jb" data-jump="' + p[0] + '">' + p[1] + '</button>'; }).join('') + '</nav>'; }
+  function sft(v) { var a = Math.abs(v); return (a < 0.05 ? '' : v > 0 ? '+' : '\u2212') + a.toFixed(1) + ' ft'; }
+  function fmtIn(v, unit) { if (v == null) return '—'; if (v < 0.005) return '0'; return (v < 0.1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : String(R(v))) + (unit === undefined ? '"' : unit); }
+
+  /* a plain summary written from the numbers on the page; every figure in it is shown somewhere below */
+  function briefText(st, Z) {
+    var s = [], nst = Object.keys(st.states).length;
+    var warns = st.evOrder.filter(function (e) { return kind(e) === 'warn'; }).sort(function (a, b) { return st.ev[b].n - st.ev[a].n; });
+    s.push(plural(st.warn, 'county', 'counties') + ' in ' + plural(nst, 'state') + ' ' + (st.warn === 1 ? 'is' : 'are') + ' under warnings, ' + st.watch + ' under watches and ' + st.adv + ' under advisories' + (warns.length ? ', led by ' + listText(warns.slice(0, 3).map(function (e) { return e.toLowerCase() + 's (' + st.ev[e].n + ')'; })) : '') + '.');
+    if (st.low) {
+      var tr = st.track, mt = motionText(tr), fut = tr && tr.fut.length ? tr.fut : null;
+      s.push('WPC’s ' + tf(st.low.valid) + ' analysis puts the ' + st.low.p + ' mb low ' + placeText(st.low.la, st.low.lo) + (mt ? '; it has ' + mt.replace(/^moving/, 'been moving').replace(/^nearly/, 'been nearly') : '') + '.' +
+        (fut ? ' WPC’s forecast chart takes it ' + fut.map(function (f) { return placeText(f.la, f.lo) + ' by ' + f.label; }).join(', then ') + '.' : ''));
+    }
+    var obs = (Z.d.obs || []).filter(function (o) { return Date.now() - o.t < 90 * MIN; });
+    var lp = obs.filter(function (o) { return o.slp != null; }).sort(function (a, b) { return a.slp - b.slp; })[0], gs = obs.map(function (o) { return { o: o, v: Math.max(o.gust || 0, o.pk || 0) * 1.15078 }; }).filter(function (x) { return x.v > 0; }).sort(function (a, b) { return b.v - a.v; })[0];
+    if (lp || gs) s.push((lp ? 'The lowest pressure reported is ' + lp.slp.toFixed(1) + ' mb at ' + lp.name + (gs ? '; the' : '.') : 'The') + (gs ? ' strongest gust in the last 90 minutes is ' + R(gs.v) + ' mph at ' + gs.o.name + '.' : ''));
+    var L = Z.d.lsr || []; if (L.length) { var by = {}; L.forEach(function (r) { (by[r.k[4]] || (by[r.k[4]] = [])).push(r); }); var ks = Object.keys(by).sort(function (a, b) { return by[b].length - by[a].length; }).slice(0, 3);
+      s.push('Storm reports in the last 24 hours: ' + listText(ks.map(function (k) { var m = by[k].filter(function (r) { return r.mag != null && r.mag > 0; }).sort(function (a, b) { return b.mag - a.mag; })[0]; return by[k].length + ' ' + k.toLowerCase() + (m ? ' (top ' + m.magnitude + ' ' + String(m.unit).toLowerCase().replace('inch', 'in') + ', ' + m.city + ', ' + m.st + ')' : ''); })) + '.'); }
+    var G = Z.gauges; if (G && G.length) { var got = G.filter(function (g) { return g.r && !g.r.stale; }), fl = got.filter(function (g) { return /minor|moderate|major/.test(catOf(g.r.last.v, g)); }), mj = fl.filter(function (g) { return catOf(g.r.last.v, g) === 'major'; });
+      if (got.length) { var worst = got.slice().sort(function (a, b) { return (b.r.last.v - b.minor) - (a.r.last.v - a.minor); })[0];
+        s.push(fl.length ? plural(fl.length, 'tide gauge') + ' of ' + got.length + ' checked ' + (fl.length === 1 ? 'is' : 'are') + ' at flood stage' + (mj.length ? ', ' + mj.length + ' at major' : '') + '; ' + worst.name + ' is ' + Math.abs(worst.r.last.v - worst.minor).toFixed(1) + ' ft ' + (worst.r.last.v >= worst.minor ? 'above' : 'below') + ' its minor flood level' + (worst.r.surge != null ? ', with the water ' + worst.r.surge.toFixed(1) + ' ft above the tide' : '') + '.' : 'None of the ' + got.length + ' tide gauges checked is at flood stage right now.'); } }
+    var rv = Z.d.riv; if (rv && rv.length) { var mj2 = rv.filter(function (x) { return x.rank >= 4; }).length; s.push(plural(rv.length, 'NWS-forecast gauge') + ' in and near the storm ' + (rv.length === 1 ? 'is' : 'are') + ' at or forecast to reach action stage or higher' + (mj2 ? ', ' + mj2 + ' at major flood' : '') + '.'); }
+    var fa = faaFor(st, Z); if (fa && fa.length) s.push('The FAA reports ' + listText(fa.slice(0, 4).map(function (x) { return faaText(x).split(',')[0].toLowerCase() + ' at ' + x.code; })) + '.');
+    var imp = (Z.cities || []).map(function (c) { var f = Z.fc[c.la.toFixed(3) + ',' + c.lo.toFixed(3)]; return f && f.v && f.v.imp ? { c: c, i: f.v.imp } : null; }).filter(Boolean);
+    if (imp.length) { var top = function (k) { return imp.filter(function (x) { return x.i[k] != null; }).sort(function (a, b) { return b.i[k] - a.i[k]; })[0]; }, tr2 = top('rain'), ts = top('snow'), tg = top('gust'), bits = [];
+      if (tr2 && tr2.i.rain >= 0.1) bits.push(fmtIn(tr2.i.rain, ' in') + ' of rain and melted snow at ' + tr2.c.name); if (ts && ts.i.snow >= 0.5) bits.push(fmtIn(ts.i.snow, ' in') + ' of snow at ' + ts.c.name); if (tg && tg.i.gust >= 30) bits.push('gusts to ' + R(tg.i.gust) + ' mph at ' + tg.c.name);
+      if (bits.length) s.push('Over the next 72 hours the NWS forecasts up to ' + listText(bits) + ' among the largest cities.'); }
+    var endW = null; st.alerts.forEach(function (a) { if (a.w >= 3 && a.end && (!endW || a.end > endW)) endW = a.end; });
+    if (endW) s.push('The last of the warnings now in force runs until ' + tf(endW, true) + '.');
+    return s;
+  }
+  function briefHtml(st, Z) {
+    var Ai = Z.ai || {}, can = !!(typeof claudeServerKey !== 'undefined' && claudeServerKey) || !!(typeof getClaudeKey === 'function' && getClaudeKey());
+    return '<div class="sz-brief">' + briefText(st, Z).map(function (t) { return '<p>' + esc(t) + '</p>'; }).join('') + '</div>' +
+      '<div class="sz-ai-bar"><button type="button" class="sz-ai-btn" data-brief="1"' + (Ai.busy ? ' disabled' : '') + '>' + (Ai.busy ? 'Writing…' : Ai.text ? 'Write it again' : 'Write the briefing with Claude') + '</button>' +
+      '<span class="dim">' + (Ai.at ? 'Written ' + esc(ago(Ai.at)) + ' from what is on this page' : can ? 'A forecaster-style briefing from everything on this page' : 'Needs the assistant set up in Settings') + '</span></div>' +
+      '<div class="sz-ai" id="szAi"' + (Ai.text || Ai.err ? '' : ' hidden') + '>' + (Ai.err ? '<div class="sz-err">' + esc(Ai.err) + '</div>' : Ai.text ? chatFormat(Ai.text) : '') + '</div>';
+  }
+  function describe(st) {
+    var r = root(); if (!r) return '';
+    var t = (r.innerText || '').replace(/\n{3,}/g, '\n\n');
+    return t.length > 45000 ? t.slice(0, 45000) + '\n[cut off]' : t;
+  }
+  function writeBrief(st) {
+    var Z = zone(st); if (Z.ai && Z.ai.busy) return;
+    var key = typeof getClaudeKey === 'function' ? getClaudeKey() : '';
+    if (!(typeof claudeServerKey !== 'undefined' && claudeServerKey) && !key) { Z.ai = { err: 'The assistant is not set up. Add it under Settings, then try again.' }; setHtml('szBrief', briefHtml(st, Z)); return; }
+    Z.ai = { busy: true, text: '' }; setHtml('szBrief', briefHtml(st, Z));
+    var sys = 'You are an operational meteorologist writing a storm briefing inside NWS Terminal, for a reader who knows weather. Use only the data you are given and say when something is missing. ' +
+      'Lead with the most dangerous hazard. Structure: a one-line headline; Right now (with the observed numbers, places and times); What comes next, region by region with timing; Impacts (coast, wind and power, flooding, snow and ice, travel), only those that apply; What could change (uncertainty, where the forecasters disagree); Bottom line. ' +
+      'Keep the categories apart: an observation, a forecast, an outlook and model output are different things. Give times as they appear in the data, with the zone. Never play a risk down. About 350 to 450 words. Use short paragraphs and - bullets, and <b> for the key numbers.';
+    var onT = function (txt) { Z.ai.text = txt; var x = el('szAi'); if (x) { x.hidden = false; x.innerHTML = chatFormat(txt); } };
+    Promise.resolve().then(function () { return chatCall(key, sys, [{ role: 'user', content: 'STORM ZONE PAGE FOR ' + st.name.toUpperCase() + ' (as the reader sees it, ' + new Date().toISOString() + '):\n\n' + describe(st) + '\n\nWrite the briefing.' }], false, null, onT); })
+      .then(function (out) { var txt = (out && out.text) || Z.ai.text || ((out && out.content) || []).filter(function (b) { return b.type === 'text'; }).map(function (b) { return b.text; }).join(''); Z.ai = { text: txt, at: Date.now() }; },
+            function (e) { Z.ai = { err: 'The briefing could not be written: ' + ((e && e.message) || 'no answer') + '.', text: Z.ai.text }; })
+      .then(function () { if (S.on && S.key === st.key) setHtml('szBrief', briefHtml(st, Z)); });
+  }
+
+  /* impacts by city: the NWS grid forecast for the next 72 hours */
+  function impactsHtml(st, Z) {
+    var list = Z.cities || []; if (!list.length) return '';
+    var rows = list.map(function (c) { var f = Z.fc[c.la.toFixed(3) + ',' + c.lo.toFixed(3)]; return { c: c, i: f && f.v && f.v.imp, err: f && f.err, wait: !f || f.busy }; });
+    var any = rows.some(function (r) { return r.i; }), snowAny = rows.some(function (r) { return r.i && r.i.snow >= 0.1; }), iceAny = rows.some(function (r) { return r.i && r.i.ice >= 0.01; });
+    var win = function (i) { if (!i.on) return '<span class="dim">no 50% chance</span>'; var s = new Date(i.on), e = new Date(i.off), same = s.toDateString() === e.toDateString();
+      var f = function (d, day) { return d.toLocaleString('en-US', day ? { weekday: 'short', hour: 'numeric' } : { hour: 'numeric' }); }; return esc(f(s, true) + ' – ' + f(e, !same)); };
+    return '<div class="sz-scroll"><table class="data-table sz-imp"><thead><tr><th>City</th><th>Strongest alert</th><th>Rain + melted snow</th>' + (snowAny ? '<th>Snow</th>' : '') + (iceAny ? '<th>Ice</th>' : '') + '<th>Peak gust</th><th>Rain or snow likely</th></tr></thead><tbody>' +
+      rows.map(function (r) { var c = r.c, a = c.al[0], i = r.i;
+        return '<tr><th><button type="button" class="btn-link" data-q="' + esc(c.name + ', ' + c.st) + '">' + esc(c.name) + '</button><span class="dim">, ' + esc(c.st) + '</span></th><td>' + (a ? '<span class="sz-sw" style="background:' + colOf(a.ev) + '"></span> ' + esc(a.ev) : '') + '</td>' +
+          (i ? '<td class="' + (i.rain >= 1 ? 'sz-hot' : '') + '">' + fmtIn(i.rain) + '</td>' + (snowAny ? '<td class="' + (i.snow >= 4 ? 'sz-hot' : '') + '">' + fmtIn(i.snow) + '</td>' : '') + (iceAny ? '<td class="' + (i.ice >= 0.25 ? 'sz-hot' : '') + '">' + fmtIn(i.ice) + '</td>' : '') +
+            '<td class="' + (i.gust >= 50 ? 'sz-hot' : '') + '">' + (i.gust != null ? R(i.gust) + ' mph' : '—') + '</td><td>' + win(i) + '</td>'
+            : '<td colspan="' + (3 + (snowAny ? 1 : 0) + (iceAny ? 1 : 0)) + '" class="dim">' + (r.err ? 'forecast did not load' : 'loading…') + '</td>') + '</tr>'; }).join('') +
+      '</tbody></table></div><div class="rg-note">' + (any ? 'Totals for the next 72 hours from each city’s NWS forecast grid; “rain + melted snow” is the liquid total. The last column is when the chance of rain or snow is 50% or more, in this device’s time.' : 'Loading each city’s NWS forecast grid…') + '</div>';
+  }
+
+  /* tide gauges */
+  function gaugeSvg(g, r) {
+    var now = Date.now(), t0 = now - 24 * HOUR, t1 = now + 36 * HOUR, Wd = 320, Ht = 96, vals = r.o.map(function (x) { return x.v; });
+    if (r.p) r.p.forEach(function (x) { if (x.t >= t0 && x.t <= t1) vals.push(x.v + (r.surge != null && x.t > now ? r.surge : 0)); });
+    [g.minor, g.mod, g.major].forEach(function (v) { if (v != null) vals.push(v); });
+    var lo = Math.min.apply(null, vals) - 0.3, hi = Math.max.apply(null, vals) + 0.3, X = function (t) { return 4 + (Wd - 8) * (t - t0) / (t1 - t0); }, Y = function (v) { return 4 + (Ht - 8) * (hi - v) / (hi - lo); };
+    var path = function (pts) { return pts.map(function (q, i) { return (i ? 'L' : 'M') + X(q.t).toFixed(1) + ',' + Y(q.v).toFixed(1); }).join(''); };
+    var o = '<svg class="sz-tide" viewBox="0 0 ' + Wd + ' ' + Ht + '" role="img" aria-label="Water level at ' + esc(g.name) + ', the last 24 hours, with the tide forecast">';
+    var lastY = 1e9;
+    [['minor', g.minor], ['moderate', g.mod], ['major', g.major]].forEach(function (f) { if (f[1] == null || f[1] < lo || f[1] > hi) return; var y = Y(f[1]).toFixed(1), room = lastY - +y >= 10; if (room) lastY = +y; o += '<line x1="4" x2="' + (Wd - 4) + '" y1="' + y + '" y2="' + y + '" style="stroke:' + CATC[f[0]] + ';stroke-width:1;stroke-dasharray:3 3;opacity:.85"></line>' + (room ? '<text x="' + (Wd - 6) + '" y="' + (+y - 3) + '" class="sz-tide-l" text-anchor="end" style="fill:' + CATC[f[0]] + '">' + f[0] + '</text>' : ''); });
+    if (r.p) { var pp = r.p.filter(function (x) { return x.t >= t0 && x.t <= t1; }); o += '<path d="' + path(pp) + '" class="sz-tide-p"></path>';
+      if (r.surge != null) o += '<path d="' + path(pp.filter(function (x) { return x.t >= r.last.t; }).map(function (x) { return { t: x.t, v: x.v + r.surge }; })) + '" class="sz-tide-s"></path>'; }
+    o += '<path d="' + path(r.o) + '" style="fill:none;stroke:' + CATC[catOf(r.last.v, g) || 'none'] + ';stroke-width:2.2;stroke-linejoin:round"></path>';
+    o += '<line x1="' + X(now).toFixed(1) + '" x2="' + X(now).toFixed(1) + '" y1="2" y2="' + (Ht - 2) + '" class="sz-g-now"></line></svg>';
+    return o;
+  }
+  function coastHtml(st, Z) {
+    if (S.err.tideSt && !S.d.tideSt) return '<div class="state-empty">The list of NOAA tide gauges did not load (' + esc(S.err.tideSt) + ').</div>';
+    var G = Z.gauges; if (!G) return '<div class="state-load">Finding tide gauges near the coastal flood alerts…</div>';
+    if (!G.length) return '<div class="state-empty">No NOAA tide gauge with flood levels sits near this storm’s coastal flood alerts.</div>';
+    var rank = function (g) { return g.r ? (RANK[catOf(g.r.last.v, g)] || 0) * 100 + (g.r.last.v - g.minor) : -1e9; };
+    var projOf = function (g) { var r = g.r, nh = r && r.highs[0]; return nh && r.surge != null ? nh.v + r.surge : null; };
+    var big = function (g) { if (!g.r) return true; var c = catOf(g.r.last.v, g), pc = projOf(g) != null ? catOf(projOf(g), g) : null; return (RANK[c] || 0) >= 1 || (RANK[pc] || 0) >= 2 || (RANK[catOf(g.r.max.v, g)] || 0) >= 2; };
+    var sorted = G.slice().sort(function (a, b) { return rank(b) - rank(a); }), cards = sorted.filter(big), rest = sorted.filter(function (g) { return !big(g); });
+    return '<div class="sz-gauges">' + cards.map(function (g) {
+      var r = g.r;
+      if (!r) return '<div class="sz-gauge"><div class="sz-gauge-h"><span><b>' + esc(g.name) + '</b>, ' + esc(g.st) + '</span></div><div class="dim">' + (g.err ? 'Water levels did not load (' + esc(g.err) + ').' : 'Loading\u2026') + '</div></div>';
+      var c = catOf(r.last.v, g), rel = r.last.v - g.minor, nh = r.highs[0], proj = projOf(g), pc = proj != null ? catOf(proj, g) : null;
+      return '<div class="sz-gauge" style="--cat:' + CATC[c] + '"><div class="sz-gauge-h"><span><b>' + esc(g.name) + '</b>, ' + esc(g.st) + '</span> <span class="sz-cat" style="background:' + CATC[c] + '">' + esc(CATW[c]) + '</span></div>' +
+        '<div class="sz-gauge-n"><b>' + sft(rel) + '</b> against minor flood' + (r.surge != null ? ' · water ' + sft(r.surge) + ' against the tide' : '') + ' · <span class="dim">' + esc(tf(r.last.t)) + (r.stale ? ', old' : '') + '</span></div>' +
+        gaugeSvg(g, r) +
+        '<div class="sz-gauge-f">24 h high ' + sft(r.max.v - g.minor) + ' at ' + esc(tf(r.max.t)) +
+        (nh ? ' · next high tide ' + esc(tf(nh.t, true)) + (proj != null ? ': about ' + sft(proj - g.minor) + ' (' + esc(CATW[pc]) + ') if the water stays ' + sft(r.surge) + ' against the tide' : '') : '') + '</div>' +
+        '<a class="dim sz-src" href="https://tidesandcurrents.noaa.gov/waterlevels.html?id=' + esc(g.id) + '" target="_blank" rel="noopener">NOAA ' + esc(g.id) + '</a></div>';
+    }).join('') + '</div>' + (rest.length ? '<details class="sz-det" data-k="tide-rest"><summary>Below flood stage <span class="dim">' + rest.length + ' gauge' + (rest.length === 1 ? '' : 's') + ', none forecast to reach minor flooding at the next high tide</span></summary><table class="data-table sz-t"><thead><tr><th>Gauge</th><th>Against minor flood</th><th>Against the tide</th><th>Next high tide, if it holds</th></tr></thead><tbody>' +
+      rest.map(function (g) { var r = g.r, p = projOf(g); return '<tr><th>' + esc(g.name) + ', ' + esc(g.st) + '</th><td>' + sft(r.last.v - g.minor) + '</td><td>' + (r.surge != null ? sft(r.surge) : '\u2014') + '</td><td>' + (p != null ? sft(p - g.minor) : '\u2014') + '</td></tr>'; }).join('') + '</tbody></table></details>' : '') +
+      '<div class="rg-note">NOAA tide gauges near the coastal flood alerts, worst first. Heights are against each gauge’s own minor flood level (NWS levels where set, else NOAA’s). Solid line: observed, last 24 hours. Dashed: the astronomical tide. Dotted: the tide plus today’s departure, a simple guide, not an NWS forecast.</div>';
+  }
+  function riversHtml(st, Z) {
+    if (Z.err.riv && !Z.d.riv) return '<div class="state-empty">River gauges did not load (' + esc(Z.err.riv) + ').</div>';
+    var L = Z.d.riv; if (!L) return '<div class="state-load">Loading river gauges…</div>';
+    if (!L.length) return '<div class="state-empty">No NWS-forecast gauge in or near the storm is at or forecast to reach action stage.</div>';
+    var nm = ['', 'action', 'minor', 'moderate', 'major'];
+    var row = function (x) { return '<tr><th>' + (/^https:\/\//.test(x.url) ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.water || x.id) + '</a>' : esc(x.water || x.id)) + '<div class="dim">' + esc(x.loc.replace(/\s*\(IN [A-Z0-9]+\)\s*$/, '')) + ', ' + esc(x.st) + '</div></th>' +
+      '<td>' + (x.now ? '<span class="sz-cat" style="background:' + CATC[x.now] + '">' + esc(x.now) + '</span> ' + esc(x.obs || '') + ' ' + esc(x.units) : '<span class="dim">below action</span>') + '</td>' +
+      '<td>' + (x.fc ? '<span class="sz-cat" style="background:' + CATC[x.fc] + '">' + esc(x.fc) + '</span> ' + esc(x.fcv || '') + ' ' + esc(x.units) + (x.fcT ? '<div class="dim">' + esc(tf(x.fcT, true)) + '</div>' : '') : '<span class="dim">—</span>') + '</td></tr>'; };
+    var coast = L.filter(function (x) { return x.coast; }), riv = L.filter(function (x) { return !x.coast; });
+    var tbl = function (list, h) { return list.length ? '<details class="sz-det" data-k="riv-' + h + '"' + (list === L || list.length <= 8 ? ' open' : '') + '><summary>' + h + ' <span class="dim">' + list.length + (list.filter(function (x) { return x.rank >= 4; }).length ? ', ' + list.filter(function (x) { return x.rank >= 4; }).length + ' major' : '') + '</span></summary><table class="data-table sz-t"><thead><tr><th>Gauge</th><th>Now</th><th>Highest forecast</th></tr></thead><tbody>' + list.slice(0, 25).map(row).join('') + '</tbody></table></details>' : ''; };
+    return tbl(coast, 'Coastal and tidal gauges') + tbl(riv, 'Rivers and streams') + '<div class="rg-note">NWS river and coastal forecast points (National Water Prediction Service) at or forecast to reach action stage or higher, in and near the storm.</div>';
+  }
+  function travelHtml(st, Z) {
+    if (S.err.faa && !S.d.faa) return '<div class="state-empty">The FAA’s airport status did not load (' + esc(S.err.faa) + ').</div>';
+    if (!S.d.faa) return '<div class="state-load">Loading the FAA’s airport status…</div>';
+    var L = faaFor(st, Z) || [];
+    var h = L.length ? '<table class="data-table sz-t"><tbody>' + L.map(function (x) { return '<tr><th>' + esc(x.code) + '</th><td><b>' + esc(faaText(x)) + '</b>' + (x.f.Reason ? '<div class="dim">' + esc(x.f.Reason.replace(/^!\S+\s+\S+\s+/, '').slice(0, 160)) + '</div>' : '') + '</td></tr>'; }).join('') + '</tbody></table>'
+      : '<div class="state-empty">No ground stops, delay programs or delays at airports in the storm.</div>';
+    return h + '<div class="rg-note">FAA National Airspace System status' + (S.d.faa.at ? ', ' + esc(tf(S.d.faa.at)) : '') + '. Airline cancellations are not part of it.</div>';
+  }
+  function forecastersHtml(st, Z) {
+    var h = '<h4 class="sz-h4">Weather Prediction Center</h4>' + wpcHtml(st);
+    var M = Z.d.mds; h += '<h4 class="sz-h4">SPC mesoscale discussions</h4>' + (M ? (M.length ? M.map(function (m) { return '<div class="sz-md">' + (m.num ? '<a href="https://www.spc.noaa.gov/products/md/md' + esc(('000' + m.num).slice(-4)) + '.html" target="_blank" rel="noopener">' + esc(m.name) + '</a>' : esc(m.name)) + '</div>'; }).join('') : '<div class="state-empty">None in force over this storm.</div>') : Z.err.mds ? '<div class="state-empty">Did not load.</div>' : '<div class="state-load">Loading…</div>');
+    var A = Z.d.afd; h += '<h4 class="sz-h4">The NWS offices covering the most counties</h4>' + (A ? A.map(function (a) {
+      if (a.err) return '<div class="sz-off"><b>' + esc(a.office) + '</b> <span class="dim">discussion did not load</span></div>';
+      return '<div class="sz-off"><div><b>NWS ' + esc(a.name) + '</b> <span class="dim">' + esc(st.wfo[a.office] || '') + ' counties · ' + esc(tf(a.at, true)) + '</span></div>' + (a.km.length ? '<ul>' + a.km.map(function (k) { return '<li>' + esc(k) + '</li>'; }).join('') + '</ul>' : a.text ? '<p>' + esc(a.text.length > 600 ? a.text.slice(0, a.text.lastIndexOf('. ', 600) + 1 || 600) : a.text) + '</p>' : '<p class="dim">No key messages in the latest discussion.</p>') + '</div>';
+    }).join('') : Z.err.afd ? '<div class="state-empty">Did not load.</div>' : '<div class="state-load">Loading the area forecast discussions…</div>');
+    return h;
+  }
+  function logHtml(st, Z) {
+    var items = logItems(st, Z), seen = Z.seenPrev || 0, n = seen ? items.filter(function (x) { return x.t > seen; }).length : 0;
+    if (!items.length) return '<div class="state-empty">Nothing yet.</div>';
+    return (seen ? '<p class="sz-lede"><b>' + plural(n, 'new item') + '</b> since you last looked at this storm ' + esc(ago(seen)) + '.</p>' : '<p class="sz-lede">The newest alerts, storm reports and WPC summaries first. The next time you open this storm, what is new since now is marked.</p>') +
+      '<ol class="sz-log">' + items.slice(0, 40).map(function (x) { return '<li class="' + (seen && x.t > seen ? 'new' : '') + '"><i style="background:' + x.col + '"></i><span class="sz-log-t">' + esc(tf(x.t, true)) + '</span><span>' + x.html + '</span></li>'; }).join('') + '</ol>' +
+      (items.length > 40 ? '<div class="rg-note">The newest 40 of ' + items.length + '.</div>' : '');
+  }
+
   function sources(z) {
     return '<details class="src-fold"><summary>Sources</summary><div class="source-note">Storms are found from the NWS alerts in force (api.weather.gov): winter, wind, coastal and lakeshore flood, flood, severe storm and tropical warnings, watches and advisories, placed on their counties. Counties under such alerts within 150 km of each other make one storm; a storm is listed when its alerts score 25 or more (warning 3 to 5, watch 2 or 3, advisory 1 per county) with three or more counties under warnings. Storm names and summaries: WPC storm summaries (api.weather.gov, product SCC). Lows and fronts: WPC’s coded surface analysis. Radar: NOAA MRMS base reflectivity mosaic.' +
-      (z ? ' Storm reports: NWS local storm reports through the Iowa Environmental Mesonet. Gusts and pressure: Aviation Weather Center METARs; the 3-hour change compares each station’s newest report with one about three hours earlier. City forecasts: the NWS point forecast for each city. Cities: GeoNames (CC BY 4.0).' : '') + '</div></details>';
+      (z ? ' Storm reports: NWS local storm reports through the Iowa Environmental Mesonet. Gusts and pressure: Aviation Weather Center METARs; the 3-hour change compares each station’s newest report with one about three hours earlier. City forecasts: the NWS point forecast for each city. Cities: GeoNames (CC BY 4.0). Low track: WPC coded surface analyses from the Iowa Environmental Mesonet text archive, and the lows on WPC\u2019s national forecast chart. City impacts: each city\u2019s NWS forecast grid. Tide gauges: NOAA CO-OPS (api.tidesandcurrents.noaa.gov). River and coastal forecast points: NWS National Water Prediction Service. Airports: FAA National Airspace System status. Forecast layers: WPC QPF, WSSI and Excessive Rainfall Outlook and the national forecast chart (mapservices.weather.noaa.gov), SPC day 1 outlook. Mesoscale discussions: SPC. Office discussions: api.weather.gov.' : '') + '</div></details>';
   }
 
   /* ---------- taps and buttons ---------- */
@@ -19821,6 +20324,11 @@ var STORMZ = (function () {
     if ((b = t.closest('[data-back]'))) { select(''); return; }
     if ((b = t.closest('[data-refresh]'))) { refresh(true); return; }
     if ((b = t.closest('[data-storm]'))) { select(b.getAttribute('data-storm')); return; }
+    if ((b = t.closest('[data-jump]'))) { var tgt = el(b.getAttribute('data-jump')); if (tgt) { try { tgt.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e2) { tgt.scrollIntoView(); } } return; }
+    if ((b = t.closest('[data-brief]'))) { var stb = stormBy(S.key); if (stb) writeBrief(stb); return; }
+    if ((b = t.closest('[data-ov]'))) { S.ov = b.getAttribute('data-ov'); lsSet('stormz_ov', S.ov); Array.prototype.forEach.call(root().querySelectorAll('[data-ov]'), function (x) { var on = x.getAttribute('data-ov') === S.ov; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+      var sto = stormBy(S.key); if (sto) { overlay(sto, false); schedule(sto, true); } return; }
+    if ((b = t.closest('[data-loop]'))) { loopToggle(); return; }
     if ((b = t.closest('[data-lay]'))) { var k = b.getAttribute('data-lay'); S.lay[k] = !S.lay[k]; lsSet('stormz_layers', JSON.stringify(S.lay)); Array.prototype.forEach.call(root().querySelectorAll('[data-lay="' + k + '"]'), function (x) { x.classList.toggle('active', S.lay[k]); x.setAttribute('aria-pressed', S.lay[k] ? 'true' : 'false'); });
       var st = S.key ? stormBy(S.key) : null; if (st) { drawZoneMap(st); fillZone(st); } else { var sg = root().querySelector('.sz-stage'); if (sg) drawMap(sg, viewFor(null), null); } return; }
     if ((b = t.closest('[data-q]'))) { el('locationInput').value = b.getAttribute('data-q'); off(); doFetch(); return; }
@@ -19857,5 +20365,5 @@ var STORMZ = (function () {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
   function bootKey() { var h = location.hash; return /^#storms(=|$)/.test(h) ? decodeURIComponent(h.slice(8).replace(/^=/, '')) : null; }
-  return { open: open, off: off, on: function () { return S.on; }, leaveFor: leaveFor, refresh: refresh, bootKey: bootKey, _S: S, _detect: detect, _parseScc: parseScc };
+  return { open: open, off: off, on: function () { return S.on; }, leaveFor: leaveFor, refresh: refresh, bootKey: bootKey, describe: function () { var st = S.key ? stormBy(S.key) : null; return st ? describe(st) : (root() ? root().innerText : ''); }, _S: S, _detect: detect, _parseScc: parseScc };
 })();
