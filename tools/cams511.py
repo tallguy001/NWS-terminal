@@ -11,12 +11,14 @@ Two kinds of site, both read the way the site's own map reads them, with no key,
   - the older Castle Rock 511 sites: GET /List/GetData/Cameras, a paged list, 100 cameras a page;
   - the newer ones: POST /api/graphql with the site's own two queries (its map's camera layer for the places, its camera
     list for the views). These servers answer only the exact query text their website sends, so the text is kept as sent.
+  - v3.88.0: agencies with one camera file of their own (Virginia, South Carolina, Arkansas, New Mexico, Mississippi,
+    Delaware, Maryland, Missouri), see FEED_SITES. Mississippi lists sites, then one panel per site: the slowest crawl.
 Video is kept only where the site says no sign-in is needed, the stream is HLS and the address carries no token.
 
 Run from the repository root:  python3 tools/cams511.py            (every state)
                                python3 tools/cams511.py GA FL      (just these)
 """
-import json, os, sys, time, urllib.parse, urllib.request
+import json, os, re, sys, time, urllib.parse, urllib.request
 
 UA = 'NWS-Terminal camera inventory (personal weather app; a few requests a day)'
 OUT = os.path.join('geo', 'cams511')
@@ -143,9 +145,158 @@ def read_gql_site(host):
         out.append([v.get('uri', '').split('/')[-1] or str(len(out)), round(at[1], 5), round(at[0], 5), clip(v.get('title') or pc.get('title'), 140), road, '', url, vid])
     return out
 
+# ---- v3.88.0: agencies that publish one camera file of their own (not a 511 list) ----
+# Each is read the way the agency's own map reads it, with no key, no login and no faked header. Where a camera has no
+# still picture (Delaware, Maryland, Missouri stream video only) the img field is left empty and the app shows a
+# play-on-tap card; such cameras are kept only when the stream is HTTPS HLS with no token.
+
+def get_text(url, body=None):
+    for i in range(4):
+        try:
+            req = urllib.request.Request(url, data=body, headers={'User-Agent': UA, **({'Content-Type': 'application/json'} if body else {})})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.read().decode('utf-8', 'replace')
+        except Exception as e:
+            if i == 3:
+                raise RuntimeError(f'{url[:80]}: {e}')
+            time.sleep(PAUSE * 3 * (i + 1))
+
+
+def inside(lat, lon, box):
+    return isinstance(lat, (int, float)) and isinstance(lon, (int, float)) and box[0] <= lon <= box[2] and box[1] <= lat <= box[3]
+
+
+def no_dir(d):
+    d = clip(d, 20)
+    return '' if d.lower() in ('', 'unknown', 'none', 'both directions', 'all directions', 'n/a') else d
+
+
+def read_va():   # 511 Virginia (VDOT): its map's camera array
+    j = get('https://511.vdot.virginia.gov/services/511/map/array/cameras')
+    out = []
+    for f in j.get('data') or []:
+        p, xy = f.get('properties') or {}, (f.get('geometry') or {}).get('coordinates') or []
+        if p.get('active') is False or not str(p.get('image_url') or '').startswith('https://') or len(xy) < 2 or not inside(xy[1], xy[0], (-84.0, 36.3, -74.9, 39.8)):
+            continue
+        title = clip(p.get('description'), 140) or 'Road camera'
+        out.append([str(p.get('id')), round(xy[1], 5), round(xy[0], 5), title, clip(p.get('route'), 40), no_dir(p.get('direction')), p['image_url'], video_ok(p.get('https_url'), False)])
+    return out
+
+
+def read_sc():   # 511SC (SCDOT): its map's camera layer
+    j = get('https://sc.cdn.iteris-atis.com/geojson/icons/metadata/icons.cameras.geojson')
+    out = []
+    for f in j.get('features') or []:
+        p, xy = f.get('properties') or {}, (f.get('geometry') or {}).get('coordinates') or []
+        if p.get('active') is False or not str(p.get('image_url') or '').startswith('https://') or len(xy) < 2 or not inside(xy[1], xy[0], (-83.6, 31.8, -78.3, 35.5)):
+            continue
+        out.append([str(p.get('name') or p.get('id')), round(xy[1], 5), round(xy[0], 5), clip(p.get('description'), 140) or 'Road camera', clip(p.get('route'), 40), no_dir(p.get('direction')),
+                    p['image_url'], video_ok(p.get('https_url'), False)])
+    return out
+
+
+def read_ar():   # IDriveArkansas (ARDOT): its camera layer; the still is cameras/<id>.jpg. Its video needs a site token: not kept.
+    j = get('https://layers.idrivearkansas.com/cameras.geojson')
+    out = []
+    for f in j.get('features') or []:
+        p, xy = f.get('properties') or {}, (f.get('geometry') or {}).get('coordinates') or []
+        if p.get('status') != 'online' or p.get('id') is None or len(xy) < 2 or not inside(xy[1], xy[0], (-94.9, 32.8, -89.4, 36.7)):
+            continue
+        rt = clip(p.get('route'), 20)
+        road = ('I-' + rt if p.get('route_type') == 'Interstate' else ('US ' + rt if p.get('route_type') == 'US Highway' else ('AR ' + rt if p.get('route_type') == 'State Highway' else rt))) if rt else ''
+        out.append([str(p['id']), round(xy[1], 5), round(xy[0], 5), clip(p.get('name'), 140) or 'Road camera', road, no_dir(p.get('direction_name')),
+                    f'https://layers.idrivearkansas.com/cameras/{int(p["id"])}.jpg', ''])
+    return out
+
+
+def read_nm():   # NMRoads (NMDOT): its camera list. The stills are served over http only; the app relays them through /p/nmss/.
+    j = get('https://servicev5.nmroads.com/RealMapWAR/GetCameraInfo')
+    out = []
+    for c in j.get('cameraInfo') or []:
+        snap = str(c.get('snapshotFile') or '')
+        if not c.get('enabled') or c.get('demo') or not re.match(r'^https?://ss\.nmroads\.com/snapshots/[A-Za-z0-9_.-]+\.jpg$', snap) or not inside(c.get('lat'), c.get('lon'), (-109.3, 31.1, -102.8, 37.2)):
+            continue
+        out.append([clip(c.get('name'), 60), round(c['lat'], 5), round(c['lon'], 5), clip(c.get('title') or c.get('name'), 140), clip(c.get('grouping'), 40), '', snap.replace('https://', 'http://'), ''])
+    return out
+
+
+MS_SWITCH = re.compile(r"switchImage\('([^']+)',\s*'(\d+)',\s*'([^']*)'")
+def read_ms():   # MDOTtraffic (MDOT): its site list, then each site's own camera panel (one request every two seconds)
+    sites = json.loads(get_text('https://www.mdottraffic.com/default.aspx/LoadCameraData', b'{}')).get('d') or []
+    out, seen = [], set()
+    for s in sites:
+        m = re.search(r'site=(\d+)', s.get('framehtml') or '')
+        if not m or not inside(s.get('lat'), s.get('lon'), (-91.7, 30.0, -88.0, 35.1)):
+            continue
+        time.sleep(PAUSE)
+        try:
+            html = get_text(f'https://www.mdottraffic.com/mapbubbles/camerasite.aspx?site={m.group(1)}')
+        except Exception as e:
+            print('  ms site', m.group(1), 'skipped:', e)
+            continue
+        views = []
+        for t in MS_SWITCH.finditer(html):
+            thumb, cam, label = t.group(1), t.group(2), t.group(3)
+            h = re.match(r'https://(streaming\w+)\.mdottraffic\.com/', thumb)
+            if not h or cam in seen:
+                continue   # novideo.jpg: the site says the view is off right now
+            seen.add(cam)
+            views.append((cam, h.group(1), clip(label, 70)))
+        place = clip(s.get('tooltip'), 120)
+        for cam, h, label in views:
+            title = place + (' · ' + label if label and label.lower() != place.lower() and len(views) > 1 else '')
+            out.append([cam, round(s['lat'], 5), round(s['lon'], 5), title, '', '',
+                        f'https://{h}.mdottraffic.com/thumbnail?application=rtplive&streamname={cam}.stream&size=640x480&format=jpg&fitmode=stretch',
+                        f'https://{h}.mdottraffic.com/rtplive/{cam}.stream/playlist.m3u8'])
+    return out
+
+
+def read_de():   # DelDOT: its video camera list (video only)
+    j = get('https://tmc.deldot.gov/json/videocamera.json?id=4yte')
+    out = []
+    for c in j.get('videoCameras') or []:
+        v = video_ok((c.get('urls') or {}).get('m3u8s', '').replace(':443/', '/'), False)
+        if not c.get('enabled') or c.get('status') != 'Active' or not v or not inside(c.get('lat'), c.get('lon'), (-75.9, 38.3, -74.9, 39.9)):
+            continue
+        out.append([clip(c.get('id'), 40), round(c['lat'], 5), round(c['lon'], 5), clip(c.get('title'), 140).title(), '', '', '', v])
+    return out
+
+
+def read_md():   # Maryland CHART (MDOT SHA): its camera export (video only)
+    j = get('https://chartexp1.sha.maryland.gov/CHARTExportClientService/getCameraMapDataJSON.do')
+    out = []
+    for c in j.get('data') or []:
+        ip, cid = str(c.get('cctvIp') or ''), str(c.get('id') or '')
+        if c.get('commMode') != 'ONLINE' or not re.match(r'^[a-z0-9.-]+\.maryland\.gov$', ip) or not re.match(r'^[0-9a-f]{16,40}$', cid) or not inside(c.get('lat'), c.get('lon'), (-79.6, 37.8, -74.9, 39.8)):
+            continue
+        rp = {'IS': 'I-', 'US': 'US ', 'MD': 'MD '}.get(c.get('routePrefix'), '')
+        road = (rp + str(c.get('routeNumber'))) if rp and c.get('routeNumber') else ''
+        out.append([cid, round(c['lat'], 5), round(c['lon'], 5), clip(c.get('description') or c.get('name'), 140), road, '', '', f'https://{ip}/rtplive/{cid}/playlist.m3u8'])
+    return out
+
+
+def read_mo():   # MoDOT Traveler Information: its streaming camera list (video only)
+    j = get('https://traveler.modot.org/timconfig/feed/desktop/StreamingCams2.json')
+    out = []
+    for c in j if isinstance(j, list) else []:
+        v = video_ok(c.get('html'), False)
+        if not re.match(r'^https://sfs\d+-traveler\.modot\.mo\.gov/rtplive/[A-Za-z0-9_]+/playlist\.m3u8$', v) or not inside(c.get('y'), c.get('x'), (-95.9, 35.9, -89.0, 40.7)):
+            continue
+        cid = v.split('/rtplive/')[1].split('/')[0]
+        out.append([cid, round(c['y'], 5), round(c['x'], 5), clip(c.get('location'), 140), '', '', '', v])
+    return out
+
+
+FEED_SITES = {   # state code: (reader, credit, the agency page that hosts the cameras)
+    'va': (read_va, '511 Virginia (VDOT)', '511.vdot.virginia.gov'), 'sc': (read_sc, '511SC (SCDOT)', 'www.511sc.org'),
+    'ar': (read_ar, 'IDriveArkansas (ARDOT)', 'www.idrivearkansas.com'), 'nm': (read_nm, 'NMRoads (NMDOT)', 'nmroads.com'),
+    'ms': (read_ms, 'MDOTtraffic (MDOT)', 'www.mdottraffic.com'), 'de': (read_de, 'DelDOT', 'deldot.gov'),
+    'md': (read_md, 'Maryland CHART (MDOT SHA)', 'chart.maryland.gov'), 'mo': (read_mo, 'MoDOT Traveler Information', 'traveler.modot.org'),
+}
+
 
 def main():
-    want = [a.lower() for a in sys.argv[1:]] or list(LIST_SITES) + list(GQL_SITES)
+    want = [a.lower() for a in sys.argv[1:]] or list(LIST_SITES) + list(GQL_SITES) + list(FEED_SITES)
     os.makedirs(OUT, exist_ok=True)
     ipath = os.path.join(OUT, 'index.json')
     index = json.load(open(ipath)) if os.path.exists(ipath) else {}
@@ -160,6 +311,9 @@ def main():
             elif st in GQL_SITES:
                 host, credit = GQL_SITES[st]
                 rows = read_gql_site(host)
+            elif st in FEED_SITES:
+                fn, credit, host = FEED_SITES[st]
+                rows = fn()
             else:
                 print('unknown state', st)
                 continue

@@ -3202,3 +3202,10 @@ body.snd-open #chatPanel { z-index: 9600; }
 .cam-card.cam-dead .cam-shot img { visibility: hidden; }
 .cam-card.cam-dead .cam-shot::after { content: "No image from this camera right now"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: var(--text-3); }
 .cam-card.cam-dead .cam-shot { position: relative; }
+
+/* v3.88.0: road cameras that stream live video only (Delaware, Maryland, Missouri): no still picture, a play card instead */
+.cam-shot .cam-vonly { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: linear-gradient(160deg, #141a22, #0b0f14); color: #e6edf5; font-size: 13px; font-weight: 600; letter-spacing: .01em; }
+.cam-shot .cam-vonly small { font-size: 11px; font-weight: 400; color: #9aa7b6; }
+.cam-shot .cam-vonly-play { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 1.5px solid rgba(230,237,245,.7); font-size: 15px; padding-left: 3px; margin-bottom: 2px; }
+.cam-shot:hover .cam-vonly-play { background: rgba(230,237,245,.12); }

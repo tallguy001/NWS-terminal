@@ -10,7 +10,7 @@
    - /api/health     liveness for uptime checks
    - /push/...       push alerts: key, sub, unsub, test (the app) and tick (the cron Worker); needs KV bound as PUSH */
 
-const VERSION = '3.87.0';
+const VERSION = '3.88.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -30,6 +30,8 @@ const ORIGINS = {
   cocorahs: 'https://data.cocorahs.org',
   // The FAA's airport status for the Storm Zone (v3.85.0): one XML document, no CORS.
   faa: 'https://nasstatus.faa.gov',
+  // New Mexico DOT's road-camera stills (v3.88.0): served over http only, which an https page cannot show. Snapshot files only.
+  nmss: 'http://ss.nmroads.com',
 };
 const GS_ORIGIN = 'https://gribstream.com';
 const UA = 'NWSTerminal/3.0 (NWS Terminal edge)';
@@ -60,6 +62,7 @@ const CSP = [
 ].join('; ');
 
 function cacheFor(pathname) {
+  if (pathname.startsWith('/snapshots/')) return 60;   // a road camera's newest picture
   if (/\.(png|gif|jpg|jpeg|webp)$/i.test(pathname)) return 600;
   if (pathname.includes('/md/') || pathname.includes('/watch/')) return 120;
   if (pathname.startsWith('/search')) return 86400;
@@ -99,6 +102,7 @@ async function proxy(kind, rest, request) {
   if (kind === 'opengeo' && !/^geoserver\/[a-z]{4}\/ows$/.test(rest)) return new Response('Unsupported path', { status: 404 });
   if (kind === 'cocorahs' && rest !== 'export/exportreports.aspx') return new Response('Unsupported path', { status: 404 });
   if (kind === 'faa' && rest !== 'api/airport-status-information') return new Response('Unsupported path', { status: 404 });
+  if (kind === 'nmss' && !/^snapshots\/[A-Za-z0-9_.-]+\.jpg$/.test(rest)) return new Response('Unsupported path', { status: 404 });
   const upstream = new URL(base + '/' + rest);
   // The path is appended to a fixed origin; refuse anything that resolved elsewhere.
   if (upstream.origin !== base) return new Response('Bad proxy path', { status: 400 });
@@ -481,23 +485,49 @@ const DOT_SRC = {
       for (const c of p.cameras || []) out.push({ id: f.id + '-' + c.id, title: String(c.description || p.name || '').trim(), road: String(p.route || '').trim(), img: c.image || '', lat: +xy[1], lon: +xy[0] });
     }
     return out;
+  } },
+  /* v3.88.0 Montana DOT: its device list (places) and its camera page (the newest picture of each view). The pictures carry
+     their time in the file name and change about every 15 minutes, so this list is kept only 10 minutes. */
+  mt: { urls: ['https://app.mdt.mt.gov/atms/public/listDeviceLocations', 'https://app.mdt.mt.gov/atms/public/cameras'], text: [false, true], keep: 10 * 60000,
+        attr: 'Montana DOT', page: 'https://www.mdt.mt.gov/travinfo/', trim: (raw) => {
+    let dev = raw[0]; const html = String(raw[1] || '');
+    if (dev && !Array.isArray(dev)) dev = Object.values(dev).find((v) => Array.isArray(v)) || [];
+    const views = {}, re = /https:\/\/mdt\.mt\.gov\/other\/WebAppData\/External\/RRS\/[A-Za-z]+\/[^\s"'<>]+\.jpg/g;
+    for (const u of new Set(html.match(re) || [])) {
+      const m = /-(\d{4,7})-(\d{2})-(\d{1,2})-(\d{1,2})-(\d{4})-(\d{1,2})-(\d{1,2})-\d+\.jpg$/.exec(u); if (!m) continue;
+      const t = Date.UTC(+m[5], +m[3] - 1, +m[4], +m[6], +m[7]), v = (views[m[1]] = views[m[1]] || {});
+      if (!v[m[2]] || t > v[m[2]].t) v[m[2]] = { u, t };   // the newest file of each view
+    }
+    const out = [];
+    for (const d of Array.isArray(dev) ? dev : []) {
+      const site = String((d && d.rwisRpu && d.rwisRpu.siteId) || (d && d.camera && d.camera.siteId) || ''), vs = views[site]; if (!vs) continue;
+      const keys = Object.keys(vs).sort();
+      keys.forEach((k, i) => out.push({ id: site + '-' + k, title: String(d.locationName || '').trim() + (keys.length > 1 ? ' · view ' + (i + 1) : ''), road: String(d.signRte || '').trim(),
+        dir: '', county: '', img: vs[k].u, lat: +d.lat, lon: +d.lon }));
+    }
+    return out;
   } }
 };
 async function dotList(st, ctx) {
-  const S = DOT_SRC[st], now = Date.now(), m = dotMem[st];
-  if (m && now - m.at < DOT_KEEP_MS) return m.list;
+  const S = DOT_SRC[st], now = Date.now(), m = dotMem[st], keep = S.keep || DOT_KEEP_MS;
+  if (m && now - m.at < keep) return m.list;
   const cache = typeof caches !== 'undefined' && caches.default ? caches.default : null, cacheKey = new Request('https://nws-terminal.internal/dotcams/' + st);
   const hit = cache ? await cache.match(cacheKey) : null;
-  if (hit) { const at = Number(hit.headers.get('X-Fetched-At')) || 0; if (now - at < DOT_KEEP_MS) { try { const list = await hit.json(); dotMem[st] = { at, list }; return list; } catch { /* read it fresh */ } } }
-  let res;
-  try { res = await fetch(S.url, { headers: { Accept: S.text ? '*/*' : 'application/json', 'User-Agent': UA }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) }); }
-  catch (err) { if (m) return m.list; throw Object.assign(new Error('no answer'), { status: err && err.name === 'TimeoutError' ? 504 : 502 }); }
-  if (!res.ok) { if (m) return m.list; throw Object.assign(new Error('refused'), { status: res.status }); }
-  let raw; try { raw = S.text ? await res.text() : await res.json(); } catch { raw = null; }
+  if (hit) { const at = Number(hit.headers.get('X-Fetched-At')) || 0; if (now - at < keep) { try { const list = await hit.json(); dotMem[st] = { at, list }; return list; } catch { /* read it fresh */ } } }
+  const one = async (url, text) => {
+    let res;
+    try { res = await fetch(url, { headers: { Accept: text ? '*/*' : 'application/json', 'User-Agent': UA }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) }); }
+    catch (err) { throw Object.assign(new Error('no answer'), { status: err && err.name === 'TimeoutError' ? 504 : 502 }); }
+    if (!res.ok) throw Object.assign(new Error('refused'), { status: res.status });
+    try { return text ? await res.text() : await res.json(); } catch { return null; }
+  };
+  let raw;
+  try { raw = S.urls ? await Promise.all(S.urls.map((url, i) => one(url, S.text && S.text[i]))) : await one(S.url, S.text); }   // v3.88.0: a source may need two files
+  catch (err) { if (m) return m.list; throw err; }
   const list = (S.trim(raw) || []).filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lon) && Math.abs(c.lat) <= 90 && Math.abs(c.lon) <= 180 && !(c.lat === 0 && c.lon === 0) && /^https?:\/\//i.test(c.img));
   if (!list.length) { if (m) return m.list; throw Object.assign(new Error('no list'), { status: 502 }); }
   dotMem[st] = { at: now, list };
-  if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(list), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=1800', 'X-Fetched-At': String(now) } })));
+  if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(list), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=' + Math.round(keep / 1000), 'X-Fetched-At': String(now) } })));
   return list;
 }
 async function dotcams(request, env, ctx) {

@@ -7366,7 +7366,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.87.0';
+var APP_VERSION = '3.88.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -9752,9 +9752,10 @@ var CAMS = (function () {
         var rsub = [x.d < 10 ? x.d.toFixed(1) + ' mi ' + x.b : Math.round(x.d) + ' mi ' + x.b, c.dir || '', c.county ? c.county + ' County' : ''].filter(Boolean).map(esc).join(' \u00B7 ');
         return '<article class="cam-card">' +
           '<button type="button" class="cam-shot is-road" data-cam="' + esc(c.id) + '" aria-label="Open road camera: ' + esc(c.title) + '">' +
-            '<img loading="lazy" decoding="async" alt="" src="' + esc(bust(c.img, stamp)) + '" onerror="var k=this.closest(\'.cam-card\');if(k)k.classList.add(\'cam-dead\')"></button>' +
+            (c.vonly ? '<span class="cam-vonly"><span class="cam-vonly-play" aria-hidden="true">\u25B6</span>Live video<small>No still picture; tap to play</small></span>'
+                     : '<img loading="lazy" decoding="async" alt="" src="' + esc(bust(c.img, stamp)) + '" onerror="var k=this.closest(\'.cam-card\');if(k)k.classList.add(\'cam-dead\')">') + '</button>' +
           '<div class="cam-meta"><div class="cam-title">' + esc(c.title) + '</div><div class="cam-sub">' + rsub + '</div>' +
-          '<div class="cam-sub">Road camera \u00B7 ' + esc(credit(c)) + (c.video && HLS ? ' \u00B7 live video' : '') + (c.old ? ' \u00B7 image may be old' : '') + '</div></div></article>';
+          '<div class="cam-sub">Road camera \u00B7 ' + esc(credit(c)) + (c.vonly ? ' \u00B7 video only' : (c.video && HLS ? ' \u00B7 live video' : '')) + (c.old ? ' \u00B7 image may be old' : '') + (c.slow ? ' \u00B7 new picture about every 15 min' : '') + '</div></div></article>';
       }
       var upd = c.updated ? Date.parse(c.updated) : NaN, old = !isNaN(upd) && Date.now() - upd > OLD_IMAGE_MS;
       var place = [c.city, c.region].filter(Boolean).join(', ');
@@ -9816,7 +9817,10 @@ var CAMS = (function () {
   function dotJob(o) {
     return DOTCAMS.near(o.lat, o.lon, radius, 36).then(function (r) {
       if (!r.list.length && r.notes.length && !r.states.length) return { ok: false, needsKey: false, err: r.notes.join(' ') };
-      return { ok: true, more: r.more, list: r.list, notes: r.notes };
+      var list = r.list, notes = r.notes, vo = 0;
+      if (!HLS) { list = list.filter(function (c) { if (c.vonly) { vo++; return false; } return true; }); }   // v3.88.0: video-only cameras need a browser that plays HLS (Safari, every iPad browser)
+      if (vo) notes = notes.concat([vo + ' nearby camera' + (vo === 1 ? ' streams' : 's stream') + ' live video only, which this browser cannot play; Safari and iPad browsers can.']);
+      return { ok: true, more: r.more, list: list, notes: notes };
     }, function (e) { return { ok: false, needsKey: false, err: offlineOr('Road cameras could not be loaded (' + ((e && e.message) || 'network error') + ').') }; });
   }
   function load(force) {
@@ -9858,6 +9862,7 @@ var CAMS = (function () {
     if (!openCam) return;
     clearInterval(stillTimer); stillTimer = null;
     if (kind === 'video' && !(openCam.video && HLS)) kind = 'still';
+    if (kind === 'still' && openCam.vonly) kind = 'video';
     document.querySelectorAll('#camModalTabs .cpc-nav-btn').forEach(function (b) {
       var on = b.getAttribute('data-p') === kind; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
@@ -9868,7 +9873,7 @@ var CAMS = (function () {
       v.controls = true; v.autoplay = true; v.muted = true; v.setAttribute('playsinline', ''); v.setAttribute('aria-label', 'Live video: ' + cam.title);
       v.addEventListener('error', function () {
         if (openCam !== cam || !v.parentNode) return;
-        stage.innerHTML = '<div class="cam-novid">Live video is not coming from this camera right now. <button type="button" class="btn-link" data-p="still">Show the latest image</button></div>';
+        stage.innerHTML = '<div class="cam-novid">Live video is not coming from this camera right now.' + (cam.vonly ? ' This camera has no still picture; try again in a few minutes.' : ' <button type="button" class="btn-link" data-p="still">Show the latest image</button>') + '</div>';
       });
       v.src = cam.video; stage.appendChild(v);
       return;
@@ -9885,16 +9890,17 @@ var CAMS = (function () {
   function openRoad(c) {
     openCam = c; _opener = document.activeElement;
     document.getElementById('camModalTitle').textContent = c.title;
-    var kinds = [['still', 'Latest image']].concat(c.video && HLS ? [['video', 'Live video']] : []);
+    var kinds = (c.vonly ? [] : [['still', 'Latest image']]).concat(c.video && HLS ? [['video', 'Live video']] : []);
     document.getElementById('camModalTabs').innerHTML = kinds.map(function (k) {
       return '<button type="button" class="cpc-nav-btn" aria-pressed="false" data-p="' + k[0] + '">' + k[1] + '</button>'; }).join('');
     document.getElementById('camModalFoot').innerHTML = [c.road, c.dir, c.county ? c.county + ' County' : ''].filter(Boolean).map(esc).join(' · ') + (c.road || c.dir || c.county ? '<br>' : '') +
-      (c.src === 'dot' ? 'Camera: ' + esc(c.attr || 'State DOT') + (c.page ? ', <a href="' + esc(c.page) + '" target="_blank" rel="noopener">the agency\u2019s camera page</a>' : '') + '. The image is re-read every 30 seconds.'
+      (c.src === 'dot' ? 'Camera: ' + esc(c.attr || 'State DOT') + (c.page ? ', <a href="' + esc(c.page) + '" target="_blank" rel="noopener">the agency\u2019s camera page</a>' : '') +
+        (c.vonly ? '. This camera streams live video only.' : c.slow ? '. The agency posts a new picture about every 15 minutes; reload the cameras for the newest.' : '. The image is re-read every 30 seconds.')
                        : 'Camera: Wisconsin Department of Transportation (WisDOT), <a href="https://511wi.gov/" target="_blank" rel="noopener">511wi.gov</a>. &copy; WisDOT. The image is re-read every 30 seconds.') +
       (c.video && !HLS ? ' This browser cannot play the camera’s live video; Safari can.' : '');
     document.getElementById('camPlayer').classList.add('is-road');
     document.getElementById('camModal').classList.add('open');
-    setRoad('still');
+    setRoad(c.vonly ? 'video' : 'still');
     var cb = document.getElementById('camModalClose'); if (cb) cb.focus();
   }
   function setPlayer(kind) {
@@ -20417,8 +20423,8 @@ var DOTCAMS = (function () {
   /* where each source can have cameras: [west, south, east, north], a little past the state line (border cameras) */
   var BOX = { ca: [-124.6, 32.4, -114.1, 42.1], ny: [-79.9, 40.4, -71.7, 45.1], co: [-109.2, 36.9, -101.9, 41.1], ia: [-96.8, 40.3, -90.0, 43.6],
              ky: [-89.7, 36.4, -81.8, 39.3], wa: [-124.9, 45.4, -116.8, 49.1], nd: [-104.1, 45.9, -96.5, 49.1], mi: [-90.5, 41.6, -82.1, 48.4], al: [-88.6, 30.1, -84.8, 35.1],
-             or: [-124.7, 41.9, -116.4, 46.4], sd: [-104.1, 42.4, -96.4, 46.0], mn: [-97.4, 43.3, -89.4, 49.5] };
-  var NAME = { ca: 'Caltrans', ny: 'New York 511', co: 'Colorado DOT', ia: 'Iowa DOT', ky: 'Kentucky', wa: 'WSDOT', nd: 'North Dakota DOT', mi: 'Michigan DOT', al: 'ALDOT', or: 'Oregon DOT', sd: 'South Dakota DOT', mn: 'MnDOT' };
+             or: [-124.7, 41.9, -116.4, 46.4], sd: [-104.1, 42.4, -96.4, 46.0], mn: [-97.4, 43.3, -89.4, 49.5], mt: [-116.2, 44.3, -104.0, 49.1] };
+  var NAME = { ca: 'Caltrans', ny: 'New York 511', co: 'Colorado DOT', ia: 'Iowa DOT', ky: 'Kentucky', wa: 'WSDOT', nd: 'North Dakota DOT', mi: 'Michigan DOT', al: 'ALDOT', or: 'Oregon DOT', sd: 'South Dakota DOT', mn: 'MnDOT', mt: 'Montana DOT' };
   var mem = {};   // whole lists kept for KEEP: { at, list } or { p }
 
   function km(la1, lo1, la2, lo2) { var a = Math.sin((la2 - la1) * R2D / 2), b = Math.sin((lo2 - lo1) * R2D / 2), h = a * a + Math.cos(la1 * R2D) * Math.cos(la2 * R2D) * b * b; return 12742 * Math.asin(Math.min(1, Math.sqrt(h))); }
@@ -20427,17 +20433,19 @@ var DOTCAMS = (function () {
   /* https only; the two Kentucky hosts that still answer on http have https twins */
   function https(u) {
     u = String(u || '').trim(); if (!u) return '';
+    var nm = /^https?:\/\/ss\.nmroads\.com\/(snapshots\/[A-Za-z0-9_.-]+\.jpg)$/i.exec(u);   // v3.88.0: New Mexico's stills are http only; the app's own server relays them
+    if (nm) return location.origin + '/p/nmss/' + nm[1];
     u = u.replace(/^http:\/\/www\.trimarc\.org\//i, 'https://www.trimarc.org/').replace(/^http:\/\/pws\.trafficwise\.org\//i, 'https://511in.org/');
     return /^https:\/\/[^\s"'<>]+$/i.test(u) ? u : '';
   }
   function hls(u) { u = https(u); return u && /\.m3u8(\?|$)/i.test(u) ? u : ''; }
   function clean(s, n) { return String(s == null ? '' : s).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n || 120); }
   function cam(src, o, attr, page) {
-    var lat = +o.lat, lon = +o.lon, img = https(o.img);
-    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0) || !img) return null;
+    var lat = +o.lat, lon = +o.lon, img = https(o.img), vid = hls(o.video);
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0) || !(img || vid)) return null;   // v3.88.0: a camera that only streams video has no picture
     var dir = clean(o.dir, 24); if (/^(b|none|unknown|n\/a|both directions?)$/i.test(dir)) dir = '';
     return { src: 'dot', st: src, id: 'dot-' + src + '-' + String(o.id).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 60), title: clean(o.title, 140) || 'Road camera', road: clean(o.road, 40), dir: dir, county: clean(o.county, 40),
-             lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5, img: img, video: hls(o.video), attr: clean(o.attr || attr, 60), page: https(o.page) || page || '', old: !!o.old };
+             lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5, img: img, video: vid, vonly: !img, attr: clean(o.attr || attr, 60), page: https(o.page) || page || '', old: !!o.old, slow: !!o.slow };
   }
   function getJ(u, again) { return netFetch(u, { headers: { Accept: 'application/json' } }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .catch(function (e) { if (again === false) throw e; return new Promise(function (res) { setTimeout(res, 1500); }).then(function () { return getJ(u, false); }); }); }   // one more try: a busy feed often answers the second time
@@ -20479,7 +20487,7 @@ var DOTCAMS = (function () {
   }
   function server(st, lat, lon, r) {
     return getJ('/api/dotcams?st=' + st + '&lat=' + lat.toFixed(4) + '&lon=' + lon.toFixed(4) + '&r=' + Math.round(r) + '&limit=60').then(function (j) {
-      return ((j && j.cams) || []).map(function (o) { return cam(st, o, o.attr, o.page); }).filter(Boolean);
+      return ((j && j.cams) || []).map(function (o) { if (st === 'mt') o.slow = true; return cam(st, o, o.attr, o.page); }).filter(Boolean);
     });
   }
 
@@ -20510,7 +20518,7 @@ var DOTCAMS = (function () {
       res.forEach(function (x) {
         if (x.err) { notes.push(NAME[x.st] + ' cameras could not be loaded (' + x.err + ').'); return; }
         states.push(x.st);
-        x.list.forEach(function (c) { var d = km(lat, lon, c.lat, c.lon); if (d > r) return; var k = c.img; if (seen[k]) return; seen[k] = 1; c._km = d; all.push(c); });
+        x.list.forEach(function (c) { var d = km(lat, lon, c.lat, c.lon); if (d > r) return; var k = c.img || c.video; if (seen[k]) return; seen[k] = 1; c._km = d; all.push(c); });
       });
       all.sort(function (a, b) { return a._km - b._km; });
       return { list: all.slice(0, limit || 36), more: all.length > (limit || 36), notes: notes, states: states, total: all.length };
@@ -20519,7 +20527,7 @@ var DOTCAMS = (function () {
   function inventory() { return kept('inv-index', function () { return getJ('/geo/cams511/index.json'); }); }
   function invState(st, meta) {
     return kept('inv-' + st, function () { return getJ('/geo/cams511/' + st + '.json?v=' + (meta.at || 0)).then(function (j) {
-      var host = 'https://' + (j.host || '') + '/', page = { fl: 'https://fl511.com/', ga: 'https://511ga.org/', ma: 'https://mass511.com/' }[st] || host;
+      var host = 'https://' + (j.host || '') + '/', page = { fl: 'https://fl511.com/', ga: 'https://511ga.org/', ma: 'https://mass511.com/', de: 'https://deldot.gov/map/', mo: 'https://traveler.modot.org/map/' }[st] || host;
       return (j.cams || []).map(function (r) { return cam(st, { id: r[0], lat: r[1], lon: r[2], title: r[3], road: r[4], dir: r[5], img: r[6], video: r[7] }, j.credit, page); }).filter(Boolean);
     }); });
   }
