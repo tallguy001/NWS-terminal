@@ -10,7 +10,7 @@
    - /api/health     liveness for uptime checks
    - /push/...       push alerts: key, sub, unsub, test (the app) and tick (the cron Worker); needs KV bound as PUSH */
 
-const VERSION = '3.89.0';
+const VERSION = '3.89.1';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',

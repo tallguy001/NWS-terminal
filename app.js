@@ -7367,7 +7367,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.89.0';
+var APP_VERSION = '3.89.1';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -19764,14 +19764,15 @@ var STORMZ = (function () {
       o.push(g + '</g>');
     });
     /* road cameras under the alerts (v3.89.0), under the report dots */
-    if (st && S.lay.cams && Z && Z.cams && Z.cams.list.length) {
-      var cr = 4.2 * Math.min(u, 1.8), many = Z.cams.list.length > 150, cg = '', cell = {}, CS = 2.6 * cr;
+    var camSet = st ? (Z && Z.cams) : S.usCams, usCamG = '';
+    if (S.lay.cams && camSet && camSet.list.length) {
+      var cr = (st ? 4.2 : 3.2) * Math.min(u, 1.8), many = camSet.list.length > 150, cg = '', cell = {}, CS = (st ? 2.6 : 2.2) * cr;
       /* a storm can cover thousands of cameras: one dot per few pixels (a still-picture camera first), so the map stays readable and quick */
-      Z.cams.list.slice().sort(function (a, b) { return (a.vonly ? 1 : 0) - (b.vonly ? 1 : 0); }).forEach(function (c) {
+      camSet.list.slice().sort(function (a, b) { return (a.vonly ? 1 : 0) - (b.vonly ? 1 : 0); }).forEach(function (c) {
         var q = proj(c.lon, c.lat); if (!inF(q, 4)) return; var ck = Math.floor(q[0] / CS) + ':' + Math.floor(q[1] / CS); if (cell[ck]) return; cell[ck] = 1; taps.push({ cam: c.id });
         cg += '<g class="regmap-stn sz-cam" data-t="' + (taps.length - 1) + '"' + (many ? '' : ' tabindex="0"') + ' role="button" aria-label="' + esc('Road camera: ' + c.title) + '"><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + (cr + 5 * u).toFixed(1) + '" style="fill:transparent"></circle><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + cr.toFixed(1) + '" style="fill:' + (c.vonly ? CAMMAP.EDGE : CAMMAP.FILL) + ';stroke:' + (c.vonly ? CAMMAP.FILL : CAMMAP.EDGE) + ';stroke-width:' + ((c.vonly ? 1.7 : 1.2) * u).toFixed(1) + '"></circle></g>';
       });
-      o.push(cg);
+      if (st) o.push(cg); else usCamG = cg;   // the national map's cameras go above the storm areas, which tap through to the storm
     }
     /* storm reports */
     var lsr = Z && Z.d.lsr;
@@ -19799,6 +19800,7 @@ var STORMZ = (function () {
       taps.push({ storm: s2.key });
       o.push('<path class="regmap-stn" data-t="' + (taps.length - 1) + '" tabindex="0" role="button" aria-label="' + esc('Open ' + s2.name) + '" d="' + OLMAP.path(geo, s2.counties.map(function (f) { return S.cty[f].sh; }), proj, inView) + '" style="fill:transparent;stroke:none"></path>');
     });
+    if (usCamG) o.push(usCamG);
     if (!st) S.storms.forEach(function (s2, n) {
       var q = proj(s2.lo, s2.la); if (!inF(q, 14)) return; var r = 13 * Math.min(u, 1.8);
       o.push('<g style="pointer-events:none"><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + r.toFixed(1) + '" style="fill:' + FAM[s2.kind][1] + ';stroke:#0B1220;stroke-width:' + (2 * u).toFixed(1) + '"></circle><text x="' + q[0].toFixed(1) + '" y="' + (q[1] + r * 0.38).toFixed(1) + '" style="font:800 ' + (r * 1.05).toFixed(1) + 'px ' + FONT + ';fill:#0B1220;text-anchor:middle">' + (n + 1) + '</text></g>');
@@ -19965,6 +19967,25 @@ var STORMZ = (function () {
     var Z = zone(st), k = S.ov, key = 'ov_' + k; if (k === 'none') return;
     need(key, TTL.ov, function () { return loadOverlay(k, viewFor(st).ll); }, force, Z).then(function () { if (S.on && S.key === st.key) schedule(st, true); });
   }
+  /* v3.89.1: the national map's cameras: those under every storm's alerts, one storm at a time */
+  function usCams(force) {
+    if (typeof CAMMAP === 'undefined' || S.usCamsBusy || !S.storms.length) return;
+    var key = S.storms.map(function (x) { return x.key; }).join(',') + '|' + S.at.alerts;
+    if (!force && S.usCams && S.usCams.key === key && Date.now() - S.usCams.at < 30 * MIN) return;
+    S.usCamsBusy = true;
+    var out = [], notes = [], hidden = 0, storms = S.storms.slice(), i = 0;
+    var next = function () {
+      if (i >= storms.length) return Promise.resolve();
+      var st = storms[i++];
+      return CAMMAP.inBox([st.b[0] - 0.05, st.b[1] - 0.05, st.b[2] + 0.05, st.b[3] + 0.05]).then(function (r) {
+        r.list.forEach(function (c) { if (countyAt(st, c.lon, c.lat)) out.push(c); }); hidden += r.hidden || 0; notes = notes.concat(r.notes);
+      }, function () {}).then(next);
+    };
+    next().then(function () {
+      S.usCams = { list: out, notes: notes, hidden: hidden, key: key, at: Date.now() }; S.usCamsBusy = false;
+      if (S.on && !S.key && S.lay.cams) { var sg = root() && root().querySelector('.sz-stage'); if (sg && S.base) drawMap(sg, viewFor(null), null); }
+    });
+  }
   /* v3.89.0: the road cameras inside the storm's alerted counties */
   function camsFor(st, Z, force) {
     if (typeof CAMMAP === 'undefined' || Z.camsBusy) return;
@@ -20009,7 +20030,7 @@ var STORMZ = (function () {
     return e.length ? '<div class="sz-err" role="status">' + e.join(' ') + '</div>' : '';
   }
   function layerBar(zoneMap) {
-    var L = [['alerts', 'Alerts'], ['radar', 'Radar'], ['fronts', 'Fronts and lows'], ['track', 'Low track']].concat(zoneMap ? [['lsr', 'Reports and gauges'], ['cams', 'Road cameras'], ['cities', 'Cities']] : []);
+    var L = [['alerts', 'Alerts'], ['radar', 'Radar'], ['fronts', 'Fronts and lows'], ['track', 'Low track']].concat(zoneMap ? [['lsr', 'Reports and gauges'], ['cams', 'Road cameras'], ['cities', 'Cities']] : [['cams', 'Road cameras']]);
     var h = '<div class="cpc-nav sz-layers" role="group" aria-label="What the map shows">' + L.map(function (l) { return '<button type="button" class="cpc-nav-btn' + (S.lay[l[0]] ? ' active' : '') + '" aria-pressed="' + (S.lay[l[0]] ? 'true' : 'false') + '" data-lay="' + l[0] + '">' + l[1] + '</button>'; }).join('') + '</div>';
     if (!zoneMap) return h;
     return h + '<button type="button" class="cpc-nav-btn sz-play" data-loop="1" aria-pressed="' + (S.loop.on ? 'true' : 'false') + '">' + (S.loop.on ? '\u275A\u275A Stop radar' : '\u25B6 Radar loop') + '</button>' +
@@ -20035,13 +20056,14 @@ var STORMZ = (function () {
     h.push('<h2 class="section-label">Storm Zone<span class="sec-age">' + esc(ageText()) + '</span><button type="button" class="gs-refresh-btn" data-refresh="1">Refresh</button></h2>');
     h.push(errs());
     h.push('<p class="sz-lede">' + (n ? '<b>' + plural(n, 'storm') + '</b> with warnings in force. Tap one to follow it.' : 'No storm has warnings across several counties right now.') + '</p>');
-    h.push('<div class="card regmap-card"><div class="sz-bar">' + layerBar(false) + '</div><div class="regmap-stage sz-stage is-loading" style="aspect-ratio:1000 / 640"></div><div class="regmap-detail" aria-live="polite">Tap a storm’s area on the map, or a card below.</div></div>');
+    h.push('<div class="card regmap-card"><div class="sz-bar">' + layerBar(false) + '</div><div class="regmap-stage sz-stage is-loading" style="aspect-ratio:1000 / 640"></div><div class="regmap-detail" aria-live="polite">Tap a storm’s area on the map, or a card below. With Road cameras on, a white dot is a camera under a storm’s alerts: tap it for its picture.</div></div>');
     if (n) h.push('<div class="sz-cards">' + S.storms.map(function (st, i) { return card(st, i); }).join('') + '</div>');
     (S.sccLeft || []).forEach(function (s) { h.push('<div class="card sz-note"><b>WPC storm summary ' + esc(s.num) + ': ' + esc(s.title) + '</b><div class="rg-note">' + esc(tf(s.at, true)) + '. No alerts of the kinds followed here match it now.</div>' + (s.lead ? '<p>' + esc(s.lead) + '</p>' : '') + '</div>'); });
     if (S.minor.length) h.push('<p class="sz-minor"><b>Smaller alert areas:</b> ' + S.minor.slice(0, 12).map(function (m) { var e = Object.keys(m.ev).sort(function (a, b) { return HZ[b][0] - HZ[a][0]; })[0]; return esc(e) + ' (' + esc(Object.keys(m.states).join(', ')) + ')'; }).join(' · ') + (S.minor.length > 12 ? ' · and ' + (S.minor.length - 12) + ' more' : '') + '.</p>');
     h.push(sources(false) + '</div>');
     r.innerHTML = h.join('');
     var stage = r.querySelector('.sz-stage'); if (stage) drawMap(stage, viewFor(null), null);
+    if (S.lay.cams) usCams(false);
   }
   function chipsFor(st, max) {
     return st.evOrder.slice(0, max).map(function (ev) { var e = st.ev[ev]; return '<span class="sz-chip ' + kind(ev) + '"><i style="background:' + colOf(ev) + '"></i>' + esc(ev) + ' <b>' + e.n + '</b></span>'; }).join('');
@@ -20395,7 +20417,7 @@ var STORMZ = (function () {
       var sto = stormBy(S.key); if (sto) { overlay(sto, false); schedule(sto, true); } return; }
     if ((b = t.closest('[data-loop]'))) { loopToggle(); return; }
     if ((b = t.closest('[data-lay]'))) { var k = b.getAttribute('data-lay'); S.lay[k] = !S.lay[k]; lsSet('stormz_layers', JSON.stringify(S.lay)); Array.prototype.forEach.call(root().querySelectorAll('[data-lay="' + k + '"]'), function (x) { x.classList.toggle('active', S.lay[k]); x.setAttribute('aria-pressed', S.lay[k] ? 'true' : 'false'); });
-      var st = S.key ? stormBy(S.key) : null; if (st && k === 'cams' && S.lay.cams) camsFor(st, zone(st), false); if (st) { drawZoneMap(st); fillZone(st); } else { var sg = root().querySelector('.sz-stage'); if (sg) drawMap(sg, viewFor(null), null); } return; }
+      var st = S.key ? stormBy(S.key) : null; if (k === 'cams' && S.lay.cams) { if (st) camsFor(st, zone(st), false); else usCams(false); } if (st) { drawZoneMap(st); fillZone(st); } else { var sg = root().querySelector('.sz-stage'); if (sg) drawMap(sg, viewFor(null), null); } return; }
     if ((b = t.closest('[data-q]'))) { el('locationInput').value = b.getAttribute('data-q'); off(); doFetch(); return; }
     if ((b = t.closest('[data-open]'))) { el('locationInput').value = b.getAttribute('data-open'); off(); doFetch(); return; }
     if ((b = t.closest('[data-t]'))) {
