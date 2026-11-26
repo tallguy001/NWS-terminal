@@ -7366,7 +7366,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.86.0';
+var APP_VERSION = '3.87.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -20394,6 +20394,11 @@ var STORMZ = (function () {
    - Read through the app's server, which keeps a trimmed copy for 30 minutes (their servers do not allow a browser):
        Michigan DOT MiDrive, ALDOT ALGO Traffic, ODOT TripCheck, South Dakota DOT (/api/dotcams)
    A list is kept on this device for 30 minutes; the pictures themselves are always the agency's newest.
+   v3.87.0: Minnesota (MnDOT, now on the CARS 511 feed, read from this device), and 18 states whose cameras are listed only
+   by their 511 website: Florida, Georgia, Utah, Pennsylvania, North Carolina, Nevada, Arizona, Idaho, Connecticut,
+   Louisiana, Alaska, Maine, New Hampshire, Vermont (the older 511 sites) and Nebraska, Indiana, Kansas, Massachusetts (the
+   newer ones). Their camera lists change slowly, so tools/cams511.py reads each one now and then, politely, into
+   /geo/cams511/<st>.json; the pictures come live from each site's snapshot address.
    Left out on purpose: Illinois DOT's open camera layer, because its picture server refuses pictures shown on another site
    (a Referer check), and sources that would need a header faked, a token copied or a guest login (see the v3.86.0 notes).
    ══════════════════════════════════════════════════════════════════ */
@@ -20412,8 +20417,8 @@ var DOTCAMS = (function () {
   /* where each source can have cameras: [west, south, east, north], a little past the state line (border cameras) */
   var BOX = { ca: [-124.6, 32.4, -114.1, 42.1], ny: [-79.9, 40.4, -71.7, 45.1], co: [-109.2, 36.9, -101.9, 41.1], ia: [-96.8, 40.3, -90.0, 43.6],
              ky: [-89.7, 36.4, -81.8, 39.3], wa: [-124.9, 45.4, -116.8, 49.1], nd: [-104.1, 45.9, -96.5, 49.1], mi: [-90.5, 41.6, -82.1, 48.4], al: [-88.6, 30.1, -84.8, 35.1],
-             or: [-124.7, 41.9, -116.4, 46.4], sd: [-104.1, 42.4, -96.4, 46.0] };
-  var NAME = { ca: 'Caltrans', ny: 'New York 511', co: 'Colorado DOT', ia: 'Iowa DOT', ky: 'Kentucky', wa: 'WSDOT', nd: 'North Dakota DOT', mi: 'Michigan DOT', al: 'ALDOT', or: 'Oregon DOT', sd: 'South Dakota DOT' };
+             or: [-124.7, 41.9, -116.4, 46.4], sd: [-104.1, 42.4, -96.4, 46.0], mn: [-97.4, 43.3, -89.4, 49.5] };
+  var NAME = { ca: 'Caltrans', ny: 'New York 511', co: 'Colorado DOT', ia: 'Iowa DOT', ky: 'Kentucky', wa: 'WSDOT', nd: 'North Dakota DOT', mi: 'Michigan DOT', al: 'ALDOT', or: 'Oregon DOT', sd: 'South Dakota DOT', mn: 'MnDOT' };
   var mem = {};   // whole lists kept for KEEP: { at, list } or { p }
 
   function km(la1, lo1, la2, lo2) { var a = Math.sin((la2 - la1) * R2D / 2), b = Math.sin((lo2 - lo1) * R2D / 2), h = a * a + Math.cos(la1 * R2D) * Math.cos(la2 * R2D) * b * b; return 12742 * Math.asin(Math.min(1, Math.sqrt(h))); }
@@ -20456,7 +20461,7 @@ var DOTCAMS = (function () {
       ((j && j.features) || []).forEach(function (f) { var p = f.properties || {}, g = f.geometry || {}, xy = g.coordinates || []; if (p.public === false) return;
         var vs = (p.views || []).filter(function (v) { return v && !v.broken; });
         vs.forEach(function (v, i) { var c = cam(st, { id: p.id + '-' + i, title: (p.name || p.tooltip || '') + (vs.length > 1 && v.name && v.name !== p.name ? ' · ' + v.name : ''), road: p.route && p.route !== p.name ? p.route : '', img: v.type === 'STILL_IMAGE' ? v.url : v.videoPreviewUrl,
-          video: v.type === 'WMP' ? v.url : '', lat: xy[1], lon: xy[0], attr: p.cameraOwner || attr }, attr, page); if (c) out.push(c); }); });
+          video: v.type === 'WMP' ? v.url : '', lat: xy[1], lon: xy[0], attr: /DOT|Department|Transportation/i.test(p.cameraOwner || '') ? p.cameraOwner.replace(/\s+Cellular$/i, '') : attr }, attr, page); if (c) out.push(c); }); });
       return out;
     }); });
   }
@@ -20487,13 +20492,20 @@ var DOTCAMS = (function () {
       if (st === 'ca') p = Promise.all(Object.keys(CA_D).filter(function (d) { var b = CA_D[d]; return meets(bx, [b[0] - 0.2, b[1] - 0.2, b[2] + 0.2, b[3] + 0.2]); }).map(function (d) { return caltrans(+d); })).then(function (a) { return [].concat.apply([], a); });
       else if (st === 'ny') p = cars('ny', 'api-511x-nysdot.carsprogram.org', 'NYSDOT', 'https://511ny.org/');
       else if (st === 'co') p = cars('co', 'api-511x-co.carsprogram.org', 'CDOT', 'https://www.cotrip.org/');
+      else if (st === 'mn') p = cars('mn', 'api-511x-mn.carsprogram.org', 'MnDOT', 'https://511mn.org/');
       else if (ARC[st]) p = arc(st, bx);
       else if (st === 'nd') p = northDakota();
       else p = server(st, lat, lon, r);
       jobs.push(p.then(function (list) { return { st: st, list: list }; }, function (e) { return { st: st, err: (e && e.message) || 'no answer' }; }));
     });
-    if (!jobs.length) return Promise.resolve({ list: [], more: false, notes: [], states: [] });
-    return Promise.all(jobs).then(function (res) {
+    var inv = inventory().then(function (ix) {   // v3.87.0: the 511-website states, from the app's own inventory files
+      return Promise.all(Object.keys(ix).filter(function (st) { return meets(bx, ix[st].box); }).map(function (st) {
+        NAME[st] = ix[st].credit;
+        return invState(st, ix[st]).then(function (list) { return { st: st, list: list }; }, function (e) { return { st: st, err: (e && e.message) || 'no answer' }; });
+      }));
+    }, function () { return []; });
+    return Promise.all([Promise.all(jobs), inv]).then(function (two) { return two[0].concat(two[1]); }).then(function (res) {
+      if (!res.length) return { list: [], more: false, notes: [], states: [] };
       var all = [], seen = {}, notes = [], states = [];
       res.forEach(function (x) {
         if (x.err) { notes.push(NAME[x.st] + ' cameras could not be loaded (' + x.err + ').'); return; }
@@ -20504,6 +20516,14 @@ var DOTCAMS = (function () {
       return { list: all.slice(0, limit || 36), more: all.length > (limit || 36), notes: notes, states: states, total: all.length };
     });
   }
-  function reaches(lat, lon, r) { var bx = boxOf(lat, lon, r); return Object.keys(BOX).some(function (st) { return meets(bx, BOX[st]); }); }
+  function inventory() { return kept('inv-index', function () { return getJ('/geo/cams511/index.json'); }); }
+  function invState(st, meta) {
+    return kept('inv-' + st, function () { return getJ('/geo/cams511/' + st + '.json?v=' + (meta.at || 0)).then(function (j) {
+      var host = 'https://' + (j.host || '') + '/', page = { fl: 'https://fl511.com/', ga: 'https://511ga.org/', ma: 'https://mass511.com/' }[st] || host;
+      return (j.cams || []).map(function (r) { return cam(st, { id: r[0], lat: r[1], lon: r[2], title: r[3], road: r[4], dir: r[5], img: r[6], video: r[7] }, j.credit, page); }).filter(Boolean);
+    }); });
+  }
+  var BOX511 = [[-180, 24, -66, 72]];   // the inventory covers these states only; the quick test below just says whether any source could
+  function reaches(lat, lon, r) { var bx = boxOf(lat, lon, r); return Object.keys(BOX).some(function (st) { return meets(bx, BOX[st]); }) || meets(bx, BOX511[0]); }
   return { near: near, reaches: reaches, names: NAME };
 })();
