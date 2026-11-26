@@ -537,6 +537,7 @@ async function dotcams(request, env, ctx) {
   if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
   const u = new URL(request.url), st = u.searchParams.get('st'), lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon'));
   if (!DOT_SRC[st]) return json({ error: 'Unknown camera source' }, 400, NS);
+  if (u.searchParams.get('dbg') === 'mt1') { const out = []; for (const x of DOT_SRC.mt.urls) { try { const r = await fetch(x, { headers: { Accept: '*/*', 'User-Agent': UA } }); const t = await r.text(); out.push({ x, s: r.status, ct: r.headers.get('content-type'), n: t.length, head: t.slice(0, 300), imgs: (t.match(/RRS\/[A-Za-z]+\//g) || []).length }); } catch (e) { out.push({ x, e: String(e) }); } } return json(out, 200, NS); }
   if (!u.searchParams.get('lat') || !u.searchParams.get('lon') || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return json({ error: 'lat/lon required' }, 400, NS);
   const r = Math.min(350, Math.max(1, Math.round(Number(u.searchParams.get('r')) || 50))), limit = Math.min(80, Math.max(1, Math.round(Number(u.searchParams.get('limit')) || 40)));
   let list;
