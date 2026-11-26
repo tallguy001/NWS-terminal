@@ -3197,3 +3197,8 @@ body.snd-open #chatPanel { z-index: 9600; }
 .sz-log li.new .sz-log-t::after { content: ' new'; color: var(--ac); font-weight: 700; }
 .sz-log b { color: var(--text-1); }
 @media (max-width: 720px) { .sz-log li { grid-template-columns: 10px 1fr; } .sz-log li > span:last-child { grid-column: 2; } .sz-gauges { grid-template-columns: 1fr; } }
+
+/* v3.86.0: a road camera whose picture will not load is dimmed, not left as a broken box */
+.cam-card.cam-dead .cam-shot img { visibility: hidden; }
+.cam-card.cam-dead .cam-shot::after { content: "No image from this camera right now"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: var(--text-3); }
+.cam-card.cam-dead .cam-shot { position: relative; }

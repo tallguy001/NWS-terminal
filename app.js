@@ -7366,7 +7366,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.85.0';
+var APP_VERSION = '3.86.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -9667,7 +9667,9 @@ var CAMS = (function () {
   var srcPick = lsGet('nws_cams_src', 'all'), notes = [], stillTimer = null;
   if (['all', 'windy', 'wis'].indexOf(srcPick) < 0) srcPick = 'all';
   var HLS = (function () { try { return !!document.createElement('video').canPlayType('application/vnd.apple.mpegurl'); } catch (e) { return false; } })();   // Safari and every iPad browser play the stream; most desktop browsers do not
-  function isRoad(c) { return c.src === 'wis'; }
+  function isRoad(c) { return c.src === 'wis' || c.src === 'dot'; }   // v3.86.0: the state DOT cameras read without a key
+  function bust(u, t) { return u + (u.indexOf('?') >= 0 ? '&' : '?') + 't=' + t; }
+  function credit(c) { return c.src === 'wis' ? 'WisDOT 511' : (c.attr || 'State DOT'); }
   function bothKinds() { return !!data && data.some(isRoad) && data.some(function (c) { return !isRoad(c); }); }
   function roadVideo(u) {
     u = httpsURL(u); if (!u) return '';
@@ -9741,17 +9743,18 @@ var CAMS = (function () {
       return;
     }
     var roads = list.some(function (x) { return isRoad(x.c); });
-    el.innerHTML = (roads ? '<div class="source-note cams-credit">Road cameras: Wisconsin Department of Transportation (WisDOT), <a href="https://511wi.gov/" target="_blank" rel="noopener">511wi.gov</a>. &copy; WisDOT. ' +
-        'The time is printed on each image. Tap one for the latest image' + (HLS ? ' or live video' : '') + '.</div>' : '') +
+    var agencies = []; list.forEach(function (x) { if (isRoad(x.c)) { var k = x.c.src === 'wis' ? 'Wisconsin DOT (WisDOT), 511wi.gov' : x.c.attr; if (k && agencies.indexOf(k) < 0) agencies.push(k); } });
+    el.innerHTML = (roads ? '<div class="source-note cams-credit">Road cameras: ' + esc(agencies.join('; ')) + '. Each image belongs to its agency. ' +
+        'Most print the time on the image. Tap one for the latest image' + (HLS ? ' or, where the agency streams it, live video' : '') + '.</div>' : '') +
       '<div class="cams-grid">' + list.map(function (x) {
       var c = x.c, img = view === 'daylight' ? (c.day || c.img) : c.img;
       if (isRoad(c)) {
-        var rsub = [x.d < 10 ? x.d.toFixed(1) + ' mi ' + x.b : Math.round(x.d) + ' mi ' + x.b, c.county ? c.county + ' County' : ''].filter(Boolean).map(esc).join(' \u00B7 ');
+        var rsub = [x.d < 10 ? x.d.toFixed(1) + ' mi ' + x.b : Math.round(x.d) + ' mi ' + x.b, c.dir || '', c.county ? c.county + ' County' : ''].filter(Boolean).map(esc).join(' \u00B7 ');
         return '<article class="cam-card">' +
           '<button type="button" class="cam-shot is-road" data-cam="' + esc(c.id) + '" aria-label="Open road camera: ' + esc(c.title) + '">' +
-            '<img loading="lazy" decoding="async" alt="" src="' + esc(c.img + '?t=' + stamp) + '"></button>' +
+            '<img loading="lazy" decoding="async" alt="" src="' + esc(bust(c.img, stamp)) + '" onerror="var k=this.closest(\'.cam-card\');if(k)k.classList.add(\'cam-dead\')"></button>' +
           '<div class="cam-meta"><div class="cam-title">' + esc(c.title) + '</div><div class="cam-sub">' + rsub + '</div>' +
-          '<div class="cam-sub">Road camera \u00B7 WisDOT 511</div></div></article>';
+          '<div class="cam-sub">Road camera \u00B7 ' + esc(credit(c)) + (c.video && HLS ? ' \u00B7 live video' : '') + (c.old ? ' \u00B7 image may be old' : '') + '</div></div></article>';
       }
       var upd = c.updated ? Date.parse(c.updated) : NaN, old = !isNaN(upd) && Date.now() - upd > OLD_IMAGE_MS;
       var place = [c.city, c.region].filter(Boolean).join(', ');
@@ -9809,23 +9812,30 @@ var CAMS = (function () {
       })
       .catch(function (e) { return { ok: false, needsKey: false, err: offlineOr('Wisconsin road cameras could not be loaded (' + ((e && e.message) || 'network error') + ').') }; });
   }
+  /* v3.86.0: every state DOT that publishes its cameras openly (DOTCAMS) */
+  function dotJob(o) {
+    return DOTCAMS.near(o.lat, o.lon, radius, 36).then(function (r) {
+      if (!r.list.length && r.notes.length && !r.states.length) return { ok: false, needsKey: false, err: r.notes.join(' ') };
+      return { ok: true, more: r.more, list: r.list, notes: r.notes };
+    }, function (e) { return { ok: false, needsKey: false, err: offlineOr('Road cameras could not be loaded (' + ((e && e.message) || 'network error') + ').') }; });
+  }
   function load(force) {
     renderBar();
     var el = box(); if (!el) return;
     if (!currentLat || !currentLon) { el.innerHTML = '<div class="card state-load">Load a location to list nearby webcams.</div>'; return; }
-    var useW = camsAvailable(), useT = roadCamsAvailable();
-    if (!useW && !useT) {
+    var useW = camsAvailable(), useT = roadCamsAvailable(), useD = typeof DOTCAMS !== 'undefined' && DOTCAMS.reaches(+currentLat, +currentLon, radius);
+    if (!useW && !useT && !useD) {
       data = null; dataKey = ''; renderBar();
-      el.innerHTML = '<div class="card empty-key">Webcams need a free Windy Webcams API key; Wisconsin road cameras need a Wisconsin 511 key. ' +
+      el.innerHTML = '<div class="card empty-key">No road camera source covers this place yet. Webcams need a free Windy Webcams API key. ' +
         '<button type="button" class="btn-link" onclick="openDrawer()">Add it in Settings &amp; keys</button></div>';
       return;
     }
-    var o = origin(), key = o.lat.toFixed(3) + ',' + o.lon.toFixed(3) + ',' + radius + ',' + (useW ? 'w' : '') + (useT ? 't' : '');
+    var o = origin(), key = o.lat.toFixed(3) + ',' + o.lon.toFixed(3) + ',' + radius + ',' + (useW ? 'w' : '') + (useT ? 't' : '') + (useD ? 'd' : '');
     if (!force && data && key === dataKey && Date.now() - dataAt < REFRESH_MS) { render(); return; }
     if (busy && key === dataKey) return;
     if (key !== dataKey || !data) el.innerHTML = '<div class="card state-load">Finding webcams near ' + esc(o.label) + '…</div>';
     var my = ++seq; busy = true; dataKey = key;
-    Promise.all([useW ? windyJob(o) : null, useT ? roadJob(o) : null]).then(function (res) {
+    Promise.all([useW ? windyJob(o) : null, useT ? roadJob(o) : null, useD ? dotJob(o) : null]).then(function (res) {
       if (my !== seq) return;
       busy = false;
       var got = res.filter(function (x) { return x && x.ok; }), bad = res.filter(function (x) { return x && !x.ok; });
@@ -9833,6 +9843,7 @@ var CAMS = (function () {
       data = []; dataMore = false;
       got.forEach(function (x) { data = data.concat(x.list); if (x.more) dataMore = true; });
       notes = bad.map(function (x) { return x.err; });   // one source down: say so under the cameras the other one sent
+      got.forEach(function (x) { if (x.notes) notes = notes.concat(x.notes); });
       dataAt = Date.now();
       stampSection('cams', dataAt, 'Checked');
       renderBar(); render();
@@ -9863,12 +9874,12 @@ var CAMS = (function () {
       return;
     }
     var im = document.createElement('img');
-    im.alt = 'Latest image: ' + cam.title; im.src = cam.img + '?t=' + Date.now();
+    im.alt = 'Latest image: ' + cam.title; im.src = bust(cam.img, Date.now());
     im.addEventListener('error', function () { if (openCam === cam && im.parentNode) stage.innerHTML = '<div class="cam-novid">The image could not be loaded.</div>'; });
     stage.appendChild(im);
     stillTimer = setInterval(function () {   // the next still is fetched aside and swapped in whole, so the picture never blanks
       if (openCam !== cam || document.hidden || !im.parentNode) return;
-      var n = new Image(); n.onload = function () { if (openCam === cam && im.parentNode) im.src = n.src; }; n.src = cam.img + '?t=' + Date.now();
+      var n = new Image(); n.onload = function () { if (openCam === cam && im.parentNode) im.src = n.src; }; n.src = bust(cam.img, Date.now());
     }, ROAD_REFRESH_MS);
   }
   function openRoad(c) {
@@ -9878,7 +9889,8 @@ var CAMS = (function () {
     document.getElementById('camModalTabs').innerHTML = kinds.map(function (k) {
       return '<button type="button" class="cpc-nav-btn" aria-pressed="false" data-p="' + k[0] + '">' + k[1] + '</button>'; }).join('');
     document.getElementById('camModalFoot').innerHTML = [c.road, c.dir, c.county ? c.county + ' County' : ''].filter(Boolean).map(esc).join(' · ') + (c.road || c.dir || c.county ? '<br>' : '') +
-      'Camera: Wisconsin Department of Transportation (WisDOT), <a href="https://511wi.gov/" target="_blank" rel="noopener">511wi.gov</a>. &copy; WisDOT. The image is re-read every 30 seconds.' +
+      (c.src === 'dot' ? 'Camera: ' + esc(c.attr || 'State DOT') + (c.page ? ', <a href="' + esc(c.page) + '" target="_blank" rel="noopener">the agency\u2019s camera page</a>' : '') + '. The image is re-read every 30 seconds.'
+                       : 'Camera: Wisconsin Department of Transportation (WisDOT), <a href="https://511wi.gov/" target="_blank" rel="noopener">511wi.gov</a>. &copy; WisDOT. The image is re-read every 30 seconds.') +
       (c.video && !HLS ? ' This browser cannot play the camera’s live video; Safari can.' : '');
     document.getElementById('camPlayer').classList.add('is-road');
     document.getElementById('camModal').classList.add('open');
@@ -9972,7 +9984,7 @@ var CAMS = (function () {
     if (!data) return 'No webcam list is loaded.';
     var o = origin();
     return data.length + ' webcams near ' + o.label + ': ' + data.slice(0, 12).map(function (c) {
-      return c.title + (isRoad(c) ? ' [WisDOT road camera]' : '') + ' (' + Math.round(haversine(o.lat, o.lon, c.lat, c.lon)) + ' mi)';
+      return c.title + (isRoad(c) ? ' [' + credit(c) + ' road camera]' : '') + ' (' + Math.round(haversine(o.lat, o.lon, c.lat, c.lon)) + ' mi)';
     }).join('; ');
   }
   return { init: init, load: load, ensure: ensure, reset: reset, open: open, close: close, describe: describe };
@@ -20366,4 +20378,132 @@ var STORMZ = (function () {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
   function bootKey() { var h = location.hash; return /^#storms(=|$)/.test(h) ? decodeURIComponent(h.slice(8).replace(/^=/, '')) : null; }
   return { open: open, off: off, on: function () { return S.on; }, leaveFor: leaveFor, refresh: refresh, bootKey: bootKey, describe: function () { var st = S.key ? stormBy(S.key) : null; return st ? describe(st) : (root() ? root().innerText : ''); }, _S: S, _detect: detect, _parseScc: parseScc };
+})();
+
+/* ══════════════════════════════════════════════════════════════════
+   STATE DOT ROAD CAMERAS, NO KEY (v3.86.0)
+   Road cameras from the state transportation departments that publish their camera lists openly, beside WisDOT's (which
+   needs the WI511_KEY secret) and Windy's webcams. Every source here answers without a key or a login and is read the way
+   the agency serves it; none needs a header faked or a token copied. Each camera keeps its agency's credit.
+   - Read straight from this device (their servers allow it):
+       Caltrans CWWP2, one file per district, only the districts that reach the circle (cwwp2.dot.ca.gov)
+       New York State DOT and NYC DOT, and Colorado DOT, on the CARS 511 map feed (api-511x-*.carsprogram.org)
+       Iowa DOT, Kentucky TC (and Indiana cameras on its layer), WSDOT: their ArcGIS layers,
+         asked only for the box around the circle
+       North Dakota DOT's camera file (travelfiles.dot.nd.gov)
+   - Read through the app's server, which keeps a trimmed copy for 30 minutes (their servers do not allow a browser):
+       Michigan DOT MiDrive, ALDOT ALGO Traffic, ODOT TripCheck, South Dakota DOT (/api/dotcams)
+   A list is kept on this device for 30 minutes; the pictures themselves are always the agency's newest.
+   Left out on purpose: Illinois DOT's open camera layer, because its picture server refuses pictures shown on another site
+   (a Referer check), and sources that would need a header faked, a token copied or a guest login (see the v3.86.0 notes).
+   ══════════════════════════════════════════════════════════════════ */
+var DOTCAMS = (function () {
+  var KEEP = 30 * 60000, R2D = Math.PI / 180;
+  var CA_D = { 1: [-124.2, 38.75, -122.6, 41.99], 2: [-122.99, 39.77, -120.04, 42.0], 3: [-122.16, 38.08, -119.96, 39.79], 4: [-122.79, 36.92, -121.51, 38.53], 5: [-122.02, 34.39, -119.49, 37.13], 6: [-120.72, 34.82, -118.81, 37.33],
+              7: [-119.29, 33.75, -117.69, 34.79], 8: [-117.74, 33.44, -114.55, 35.6], 9: [-119.45, 34.99, -117.87, 38.35], 10: [-121.68, 36.98, -119.95, 38.45], 11: [-117.39, 32.55, -115.5, 33.34], 12: [-118.09, 33.4, -117.59, 33.94] };
+  var ARC = {
+    ia: { url: 'https://services.arcgis.com/8lRhdTsQyJpO52F1/arcgis/rest/services/Traffic_Cameras_View/FeatureServer/0', attr: 'Iowa DOT', page: 'https://511ia.org/',
+          map: function (a, g) { return { id: a.device_id || a.FID, title: a.ImageName || a.Desc_, road: a.Route, img: a.ImageURL, video: a.VideoURL, lat: a.latitude, lon: a.longitude, attr: a.ORG && a.ORG !== 'IADOT' ? a.ORG : 'Iowa DOT' }; } },
+    ky: { url: 'https://services2.arcgis.com/CcI36Pduqd0OR4W9/arcgis/rest/services/trafficCamerasCur_Prd/FeatureServer/0', attr: 'Kentucky Transportation Cabinet', page: 'https://goky.ky.gov/',
+          map: function (a, g) { return { id: a.OBJECTID, title: a.description || a.name, road: a.highway, dir: a.direction, county: a.county, img: a.snapshot, lat: a.latitude, lon: a.longitude }; } },
+    wa: { url: 'https://data.wsdot.wa.gov/arcgis/rest/services/TravelInformation/TravelInfoCamerasWeather/FeatureServer/0', attr: 'WSDOT', page: 'https://wsdot.com/travel/real-time/map/',
+          map: function (a, g) { return { id: a.OBJECTID, title: a.CameraTitle, dir: a.CompassDirection, img: a.ImageURL, lat: g && g.y, lon: g && g.x }; } }
+  };
+  /* where each source can have cameras: [west, south, east, north], a little past the state line (border cameras) */
+  var BOX = { ca: [-124.6, 32.4, -114.1, 42.1], ny: [-79.9, 40.4, -71.7, 45.1], co: [-109.2, 36.9, -101.9, 41.1], ia: [-96.8, 40.3, -90.0, 43.6],
+             ky: [-89.7, 36.4, -81.8, 39.3], wa: [-124.9, 45.4, -116.8, 49.1], nd: [-104.1, 45.9, -96.5, 49.1], mi: [-90.5, 41.6, -82.1, 48.4], al: [-88.6, 30.1, -84.8, 35.1],
+             or: [-124.7, 41.9, -116.4, 46.4], sd: [-104.1, 42.4, -96.4, 46.0] };
+  var NAME = { ca: 'Caltrans', ny: 'New York 511', co: 'Colorado DOT', ia: 'Iowa DOT', ky: 'Kentucky', wa: 'WSDOT', nd: 'North Dakota DOT', mi: 'Michigan DOT', al: 'ALDOT', or: 'Oregon DOT', sd: 'South Dakota DOT' };
+  var mem = {};   // whole lists kept for KEEP: { at, list } or { p }
+
+  function km(la1, lo1, la2, lo2) { var a = Math.sin((la2 - la1) * R2D / 2), b = Math.sin((lo2 - lo1) * R2D / 2), h = a * a + Math.cos(la1 * R2D) * Math.cos(la2 * R2D) * b * b; return 12742 * Math.asin(Math.min(1, Math.sqrt(h))); }
+  function boxOf(lat, lon, r) { var dLat = r / 111, dLon = r / (111 * Math.max(0.2, Math.cos(lat * R2D))); return [lon - dLon, lat - dLat, lon + dLon, lat + dLat]; }
+  function meets(a, b) { return !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]); }
+  /* https only; the two Kentucky hosts that still answer on http have https twins */
+  function https(u) {
+    u = String(u || '').trim(); if (!u) return '';
+    u = u.replace(/^http:\/\/www\.trimarc\.org\//i, 'https://www.trimarc.org/').replace(/^http:\/\/pws\.trafficwise\.org\//i, 'https://511in.org/');
+    return /^https:\/\/[^\s"'<>]+$/i.test(u) ? u : '';
+  }
+  function hls(u) { u = https(u); return u && /\.m3u8(\?|$)/i.test(u) ? u : ''; }
+  function clean(s, n) { return String(s == null ? '' : s).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n || 120); }
+  function cam(src, o, attr, page) {
+    var lat = +o.lat, lon = +o.lon, img = https(o.img);
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0) || !img) return null;
+    var dir = clean(o.dir, 24); if (/^(b|none|unknown|n\/a|both directions?)$/i.test(dir)) dir = '';
+    return { src: 'dot', st: src, id: 'dot-' + src + '-' + String(o.id).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 60), title: clean(o.title, 140) || 'Road camera', road: clean(o.road, 40), dir: dir, county: clean(o.county, 40),
+             lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5, img: img, video: hls(o.video), attr: clean(o.attr || attr, 60), page: https(o.page) || page || '', old: !!o.old };
+  }
+  function getJ(u, again) { return netFetch(u, { headers: { Accept: 'application/json' } }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .catch(function (e) { if (again === false) throw e; return new Promise(function (res) { setTimeout(res, 1500); }).then(function () { return getJ(u, false); }); }); }   // one more try: a busy feed often answers the second time
+  function kept(key, fn) {
+    var m = mem[key]; if (m && m.list && Date.now() - m.at < KEEP) return Promise.resolve(m.list); if (m && m.p) return m.p;
+    var p = fn().then(function (list) { mem[key] = { at: Date.now(), list: list }; return list; }, function (e) { if (m && m.list) { mem[key] = m; return m.list; } delete mem[key]; throw e; });
+    mem[key] = { p: p, list: m && m.list, at: m && m.at }; return p;
+  }
+
+  /* ---- each source ---- */
+  function caltrans(d) {
+    var dd = (d < 10 ? '0' : '') + d;
+    return kept('ca' + d, function () { return getJ('https://cwwp2.dot.ca.gov/data/d' + d + '/cctv/cctvStatusD' + dd + '.json').then(function (j) {
+      return ((j && j.data) || []).map(function (x) { var c = x && x.cctv; if (!c || c.inService === 'false') return null; var L = c.location || {}, I = c.imageData || {};
+        return cam('ca', { id: d + '-' + c.index, title: L.locationName ? L.locationName.replace(/^[A-Z]{1,3}\d+\s*--\s*/, '') : L.nearbyPlace, road: L.route, dir: L.direction, county: L.county, img: I.static && I.static.currentImageURL, video: I.streamingVideoURL, lat: L.latitude, lon: L.longitude }, 'Caltrans', 'https://cwwp2.dot.ca.gov/'); }).filter(Boolean);
+    }); });
+  }
+  function cars(st, host, attr, page) {
+    return kept(st, function () { return getJ('https://' + host + '/cameras/map-features').then(function (j) {
+      var out = [];
+      ((j && j.features) || []).forEach(function (f) { var p = f.properties || {}, g = f.geometry || {}, xy = g.coordinates || []; if (p.public === false) return;
+        var vs = (p.views || []).filter(function (v) { return v && !v.broken; });
+        vs.forEach(function (v, i) { var c = cam(st, { id: p.id + '-' + i, title: (p.name || p.tooltip || '') + (vs.length > 1 && v.name && v.name !== p.name ? ' · ' + v.name : ''), road: p.route && p.route !== p.name ? p.route : '', img: v.type === 'STILL_IMAGE' ? v.url : v.videoPreviewUrl,
+          video: v.type === 'WMP' ? v.url : '', lat: xy[1], lon: xy[0], attr: p.cameraOwner || attr }, attr, page); if (c) out.push(c); }); });
+      return out;
+    }); });
+  }
+  function arc(st, box) {
+    var A = ARC[st], q = A.url + '/query?where=1%3D1&geometry=' + box.map(function (v) { return v.toFixed(3); }).join(',') + '&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true&outSR=4326&resultRecordCount=2000&f=json';
+    return getJ(q).then(function (j) { if (!j || j.error) throw new Error('the map service answered with an error'); return (j.features || []).map(function (f) { return cam(st, A.map(f.attributes || {}, f.geometry), A.attr, A.page); }).filter(Boolean); });
+  }
+  function northDakota() {
+    return kept('nd', function () { return getJ('https://travelfiles.dot.nd.gov/geojson/cameras/cameras.json').then(function (j) {
+      var out = [];
+      ((j && j.features) || []).forEach(function (f) { var xy = (f.geometry && f.geometry.coordinates) || [], p = f.properties || {};
+        (p.Cameras || []).forEach(function (c, i) { var x = cam('nd', { id: (f.id || p.ObjectID) + '-' + i, title: c.Description, dir: c.Direction, img: c.FullPath || c.LinkPath, lat: xy[1], lon: xy[0] }, 'North Dakota DOT', 'https://travel.dot.nd.gov/'); if (x) out.push(x); }); });
+      return out;
+    }); });
+  }
+  function server(st, lat, lon, r) {
+    return getJ('/api/dotcams?st=' + st + '&lat=' + lat.toFixed(4) + '&lon=' + lon.toFixed(4) + '&r=' + Math.round(r) + '&limit=60').then(function (j) {
+      return ((j && j.cams) || []).map(function (o) { return cam(st, o, o.attr, o.page); }).filter(Boolean);
+    });
+  }
+
+  /* cameras within r km of a place, from every source that reaches it, nearest first */
+  function near(lat, lon, r, limit) {
+    var bx = boxOf(lat, lon, r), jobs = [];
+    Object.keys(BOX).forEach(function (st) {
+      if (!meets(bx, BOX[st])) return;
+      var p;
+      if (st === 'ca') p = Promise.all(Object.keys(CA_D).filter(function (d) { var b = CA_D[d]; return meets(bx, [b[0] - 0.2, b[1] - 0.2, b[2] + 0.2, b[3] + 0.2]); }).map(function (d) { return caltrans(+d); })).then(function (a) { return [].concat.apply([], a); });
+      else if (st === 'ny') p = cars('ny', 'api-511x-nysdot.carsprogram.org', 'NYSDOT', 'https://511ny.org/');
+      else if (st === 'co') p = cars('co', 'api-511x-co.carsprogram.org', 'CDOT', 'https://www.cotrip.org/');
+      else if (ARC[st]) p = arc(st, bx);
+      else if (st === 'nd') p = northDakota();
+      else p = server(st, lat, lon, r);
+      jobs.push(p.then(function (list) { return { st: st, list: list }; }, function (e) { return { st: st, err: (e && e.message) || 'no answer' }; }));
+    });
+    if (!jobs.length) return Promise.resolve({ list: [], more: false, notes: [], states: [] });
+    return Promise.all(jobs).then(function (res) {
+      var all = [], seen = {}, notes = [], states = [];
+      res.forEach(function (x) {
+        if (x.err) { notes.push(NAME[x.st] + ' cameras could not be loaded (' + x.err + ').'); return; }
+        states.push(x.st);
+        x.list.forEach(function (c) { var d = km(lat, lon, c.lat, c.lon); if (d > r) return; var k = c.img; if (seen[k]) return; seen[k] = 1; c._km = d; all.push(c); });
+      });
+      all.sort(function (a, b) { return a._km - b._km; });
+      return { list: all.slice(0, limit || 36), more: all.length > (limit || 36), notes: notes, states: states, total: all.length };
+    });
+  }
+  function reaches(lat, lon, r) { var bx = boxOf(lat, lon, r); return Object.keys(BOX).some(function (st) { return meets(bx, BOX[st]); }); }
+  return { near: near, reaches: reaches, names: NAME };
 })();

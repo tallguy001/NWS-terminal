@@ -10,7 +10,7 @@
    - /api/health     liveness for uptime checks
    - /push/...       push alerts: key, sub, unsub, test (the app) and tick (the cron Worker); needs KV bound as PUSH */
 
-const VERSION = '3.85.0';
+const VERSION = '3.86.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -48,7 +48,8 @@ const CSP = [
   // Windy's map embed (embed.windy.com) and webcam player (webcams.windy.com).
   "frame-src https://*.windy.com",
   // WisDOT's live road-camera video (v3.66.0). Stills are images, which img-src already allows.
-  "media-src 'self' https://*.dot.wi.gov",
+  // v3.86.0: the state DOTs' live road-camera streams (HLS) come from many agency and CDN hosts.
+  "media-src 'self' https:",
   "worker-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",
@@ -434,6 +435,86 @@ async function wicams(request, env, ctx) {
   const km = (la, lo) => { const a = Math.sin((la - lat) * rad / 2) ** 2 + Math.cos(lat * rad) * Math.cos(la * rad) * Math.sin((lo - lon) * rad / 2) ** 2; return 12742 * Math.asin(Math.sqrt(a)); };
   const near = list.map((c) => ({ c, d: km(c.lat, c.lon) })).filter((x) => x.d <= r).sort((a, b) => a.d - b.d);
   return json({ radiusKm: r, total: near.length, more: near.length > limit, cams: near.slice(0, limit).map((x) => x.c) }, 200, NS);
+}
+
+/* ---- State DOT road cameras whose servers do not answer a browser (v3.86.0) ----
+   Michigan DOT (MiDrive), ALDOT (ALGO Traffic), ODOT (TripCheck) and South Dakota DOT publish their camera lists openly but
+   send no CORS header, so the app asks here. Each list is read at most once in 30 minutes, trimmed to what a camera card
+   needs, and kept in memory and in the edge cache; a request is answered with the cameras nearest the point. No keys. */
+const DOT_KEEP_MS = 30 * 60000, dotMem = {};
+const DOT_SRC = {
+  mi: { url: 'https://mdotjboss.state.mi.us/MiDrive/camera/list', attr: 'Michigan DOT', page: 'https://mdotjboss.state.mi.us/MiDrive/map', trim: (raw) => {
+    const out = [];
+    for (const c of Array.isArray(raw) ? raw : []) {
+      const cty = String(c && c.county || ''), img = String(c && c.image || '');
+      const ll = /lat=(-?[\d.]+)&(?:amp;)?lon=(-?[\d.]+)/.exec(cty), id = /[?&](?:amp;)?id=(\d+)/.exec(cty), src = /src="([^"]+)"/.exec(img);
+      if (!ll || !src) continue;
+      out.push({ id: id ? id[1] : src[1].slice(-40), title: (String(c.route || '') + ' ' + String(c.location || '')).replace(/\s+/g, ' ').trim(), road: String(c.route || '').trim(),
+                 county: cty.replace(/<[^>]*>[\s\S]*$/, '').replace(/\s*County\s*$/i, '').trim(), dir: '', img: src[1].replace(/&amp;/g, '&'), lat: +ll[1], lon: +ll[2] });
+    }
+    return out;
+  } },
+  al: { url: 'https://api.algotraffic.com/v4.0/Cameras', attr: 'ALDOT ALGO Traffic', page: 'https://algotraffic.com/', trim: (raw) => {
+    const out = [];
+    for (const c of Array.isArray(raw) ? raw : []) {
+      if (!c || (c.accessLevel && c.accessLevel !== 'Public')) continue;
+      const L = c.location || {};
+      out.push({ id: c.id, title: [L.displayRouteDesignator, L.displayCrossStreet ? '@ ' + L.displayCrossStreet : ''].filter(Boolean).join(' ') + (L.city ? ', ' + L.city : ''), road: L.displayRouteDesignator || '',
+                 dir: L.direction || '', county: L.county || '', img: c.snapshotImageUrl || c.mapImageUrl || '', video: c.playbackUrls && c.playbackUrls.hls || '', lat: +L.latitude, lon: +L.longitude, page: c.permLink || '' });
+    }
+    return out;
+  } },
+  or: { url: 'https://tripcheck.com/Scripts/map/data/cctvinventory.js', text: true, attr: 'ODOT TripCheck', page: 'https://tripcheck.com/', trim: (txt) => {
+    const a = txt.indexOf('{'), b = txt.lastIndexOf('}'); if (a < 0 || b < a) return [];
+    let j; try { j = JSON.parse(txt.slice(a, b + 1)); } catch { return []; }
+    const out = [];
+    for (const f of (j && j.features) || []) {
+      const x = f && f.attributes || {}; if (!x.filename) continue;
+      out.push({ id: x.cameraId + '-' + x.publishedImageId, title: String(x.title || '').trim(), road: String(x.route || '').trim(), img: 'https://tripcheck.com/RoadCams/cams/' + encodeURIComponent(x.filename), lat: +x.latitude, lon: +x.longitude });
+    }
+    return out;
+  } },
+  sd: { url: 'https://sd.cdn.iteris-atis.com/geojson/icons/metadata/icons.cameras.geojson', attr: 'South Dakota DOT', page: 'https://sd511.org/', trim: (raw) => {
+    const out = [];
+    for (const f of (raw && raw.features) || []) {
+      const p = f && f.properties || {}, xy = f && f.geometry && f.geometry.coordinates || [];
+      for (const c of p.cameras || []) out.push({ id: f.id + '-' + c.id, title: String(c.description || p.name || '').trim(), road: String(p.route || '').trim(), img: c.image || '', lat: +xy[1], lon: +xy[0] });
+    }
+    return out;
+  } }
+};
+async function dotList(st, ctx) {
+  const S = DOT_SRC[st], now = Date.now(), m = dotMem[st];
+  if (m && now - m.at < DOT_KEEP_MS) return m.list;
+  const cache = typeof caches !== 'undefined' && caches.default ? caches.default : null, cacheKey = new Request('https://nws-terminal.internal/dotcams/' + st);
+  const hit = cache ? await cache.match(cacheKey) : null;
+  if (hit) { const at = Number(hit.headers.get('X-Fetched-At')) || 0; if (now - at < DOT_KEEP_MS) { try { const list = await hit.json(); dotMem[st] = { at, list }; return list; } catch { /* read it fresh */ } } }
+  let res;
+  try { res = await fetch(S.url, { headers: { Accept: S.text ? '*/*' : 'application/json', 'User-Agent': UA }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) }); }
+  catch (err) { if (m) return m.list; throw Object.assign(new Error('no answer'), { status: err && err.name === 'TimeoutError' ? 504 : 502 }); }
+  if (!res.ok) { if (m) return m.list; throw Object.assign(new Error('refused'), { status: res.status }); }
+  let raw; try { raw = S.text ? await res.text() : await res.json(); } catch { raw = null; }
+  const list = (S.trim(raw) || []).filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lon) && Math.abs(c.lat) <= 90 && Math.abs(c.lon) <= 180 && !(c.lat === 0 && c.lon === 0) && /^https?:\/\//i.test(c.img));
+  if (!list.length) { if (m) return m.list; throw Object.assign(new Error('no list'), { status: 502 }); }
+  dotMem[st] = { at: now, list };
+  if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(list), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=1800', 'X-Fetched-At': String(now) } })));
+  return list;
+}
+async function dotcams(request, env, ctx) {
+  const NS = { 'Cache-Control': 'no-store' };
+  if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, NS);
+  if (!isSameOriginRead(request)) return json({ error: 'This route only answers the app itself.' }, 401, NS);
+  if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
+  const u = new URL(request.url), st = u.searchParams.get('st'), lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon'));
+  if (!DOT_SRC[st]) return json({ error: 'Unknown camera source' }, 400, NS);
+  if (!u.searchParams.get('lat') || !u.searchParams.get('lon') || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return json({ error: 'lat/lon required' }, 400, NS);
+  const r = Math.min(350, Math.max(1, Math.round(Number(u.searchParams.get('r')) || 50))), limit = Math.min(80, Math.max(1, Math.round(Number(u.searchParams.get('limit')) || 40)));
+  let list;
+  try { list = await dotList(st, ctx); }
+  catch (err) { return json({ error: DOT_SRC[st].attr + ' cameras are unavailable' + (err && err.status ? ' (' + err.status + ').' : '.') }, 502, NS); }
+  const rad = Math.PI / 180, km = (la, lo) => { const a = Math.sin((la - lat) * rad / 2) ** 2 + Math.cos(lat * rad) * Math.cos(la * rad) * Math.sin((lo - lon) * rad / 2) ** 2; return 12742 * Math.asin(Math.sqrt(a)); };
+  const near = list.map((c) => ({ c, d: km(c.lat, c.lon) })).filter((x) => x.d <= r).sort((a, b) => a.d - b.d);
+  return json({ radiusKm: r, total: near.length, more: near.length > limit, cams: near.slice(0, limit).map((x) => Object.assign({ attr: DOT_SRC[st].attr, page: x.c.page || DOT_SRC[st].page }, x.c)) }, 200, NS);
 }
 
 /* ---- Wisconsin 511 winter road conditions (v3.71.0) ----
@@ -1065,6 +1146,10 @@ export default {
     if (path === '/api/wicams') {
       try { return await wicams(request, env, ctx); }
       catch (err) { return json({ error: 'Wisconsin 511 request failed.' }, err && err.name === 'TimeoutError' ? 504 : 502, { 'Cache-Control': 'no-store' }); }   // no detail: an upstream address would carry the key
+    }
+    if (path === '/api/dotcams') {   // v3.86.0
+      try { return await dotcams(request, env, ctx); }
+      catch (err) { return json({ error: 'Road cameras are unavailable.' }, 502, { 'Cache-Control': 'no-store' }); }
     }
     if (path === '/api/wiroads') {   // v3.71.0
       try { return await wiroads(request, env, ctx); }
