@@ -9871,10 +9871,12 @@ var CAMS = (function () {
     if (kind === 'video') {
       var v = document.createElement('video');
       v.controls = true; v.autoplay = true; v.muted = true; v.setAttribute('playsinline', ''); v.setAttribute('aria-label', 'Live video: ' + cam.title);
-      v.addEventListener('error', function () {
+      var noVid = function () {
         if (openCam !== cam || !v.parentNode) return;
         stage.innerHTML = '<div class="cam-novid">Live video is not coming from this camera right now.' + (cam.vonly ? ' This camera has no still picture; try again in a few minutes.' : ' <button type="button" class="btn-link" data-p="still">Show the latest image</button>') + '</div>';
-      });
+      };
+      v.addEventListener('error', noVid);
+      setTimeout(function () { if (v.readyState === 0 && !v.error) noVid(); }, 25000);   // v3.88.0: a stream server that never answers gives no error, only silence
       v.src = cam.video; stage.appendChild(v);
       return;
     }
