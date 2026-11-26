@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.88.0">
+<link rel="stylesheet" href="/app.css?v=3.89.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -263,7 +263,9 @@
           <button type="button" onclick="stepRadar(-1)" aria-label="Previous frame"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back</span></button>
           <button type="button" onclick="stepRadar(1)" aria-label="Next frame"><span>Forward</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <span class="radar-time" id="radarTime"></span>
+          <button type="button" id="radarCamsBtn" class="radar-cams-btn" aria-pressed="false" title="Road cameras on the map"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H3z M16 11l5-3v10l-5-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Cameras</span></button>
         </div>
+        <div class="cm-note" id="radarCamsNote" aria-live="polite"></div>
         <div class="radar-legend">
           <span>Light</span>
           <div class="radar-legend-bar" style="background:linear-gradient(to right,#04e9e7,#019ff4,#0300f4,#02fd02,#01c501,#008e00,#fdf802,#e5bc00,#fd9500,#fd0000,#d40000,#bc0000,#f800fd,#9854c6);"></div>
@@ -1867,6 +1869,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.88.0" defer></script>
+<script src="/app.js?v=3.89.0" defer></script>
 </body>
 </html>

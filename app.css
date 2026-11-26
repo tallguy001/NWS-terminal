@@ -3209,3 +3209,35 @@ body.snd-open #chatPanel { z-index: 9600; }
 .cam-shot .cam-vonly small { font-size: 11px; font-weight: 400; color: #9aa7b6; }
 .cam-shot .cam-vonly-play { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 1.5px solid rgba(230,237,245,.7); font-size: 15px; padding-left: 3px; margin-bottom: 2px; }
 .cam-shot:hover .cam-vonly-play { background: rgba(230,237,245,.12); }
+
+/* v3.89.0: road cameras on the maps */
+.radar-controls .radar-cams-btn { display: inline-flex; align-items: center; gap: 6px; }
+.radar-controls .radar-cams-btn svg { width: 16px; height: 16px; }
+.cm-note { font-size: var(--fs-sm); color: var(--text-2); margin-top: var(--s2); line-height: 1.45; }
+.cm-note:empty { display: none; }
+.cm-note .dim { color: var(--text-3); }
+.cm-bub { display: grid; place-items: center; }
+.cm-bub span { display: grid; place-items: center; width: 100%; height: 100%; border-radius: 50%; background: rgba(248,250,252,0.94); color: #0B1220;
+  font: 700 12px/1 Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 4px rgba(248,250,252,0.28), 0 1px 4px rgba(0,0,0,0.5); cursor: pointer; }
+.cm-bub:hover span { background: #fff; box-shadow: 0 0 0 6px rgba(248,250,252,0.35), 0 1px 4px rgba(0,0,0,0.5); }
+.cm-leaf .leaflet-popup-content-wrapper { background: var(--bg-raised); color: var(--text-1, #E5E7EB); border-radius: 10px; }
+.cm-leaf .leaflet-popup-tip { background: var(--bg-raised); }
+.cm-leaf .leaflet-popup-content { margin: 12px 14px; width: auto !important; min-width: 220px; }
+.cm-leaf a.leaflet-popup-close-button { color: var(--text-2, #9CA3AF); }
+.cm-pop { font-size: var(--fs-sm); line-height: 1.4; }
+.cm-pop .rg-head { font-size: 14px; margin-bottom: 2px; }
+.cm-pop .rg-cap { color: var(--text-3); margin-bottom: 6px; }
+.cm-shot { position: relative; display: block; width: 100%; max-width: 300px; aspect-ratio: 4 / 3; margin: 6px 0; padding: 0; border: 0; border-radius: 6px; overflow: hidden; background: #000; cursor: pointer; }
+.cm-shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.cm-shot.is-dead::after { content: "No picture from this camera right now"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: #9aa7b6; padding: 8px; text-align: center; }
+.cm-shot:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+.cm-vonly { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: linear-gradient(160deg, #141a22, #0b0f14); color: #e6edf5; font-size: 13px; font-weight: 600; }
+.cm-vonly small { font-size: 11px; font-weight: 400; color: #9aa7b6; }
+.cm-vonly .cam-vonly-play { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 1.5px solid rgba(230,237,245,.7); font-size: 15px; padding-left: 3px; }
+.cm-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--text-3); }
+.cm-row .btn-link { font-weight: 600; }
+.sz-camk { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #F8FAFC; border: 1.5px solid #0B1220; box-shadow: 0 0 0 1px rgba(248,250,252,.5); vertical-align: -1px; margin-right: 5px; }
+.sz-camk.is-vo { background: #0B1220; border-color: #F8FAFC; }
+.sz-cam:hover circle + circle, .sz-cam:focus circle + circle { stroke: #60A5FA; }
+.map-pop .cm-shot { max-width: 280px; }

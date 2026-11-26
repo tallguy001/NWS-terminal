@@ -1389,6 +1389,7 @@ async function initRadar(lat, lon) {
     attributionControl: true
   });
   radarMap.attributionControl.setPrefix(false);
+  if (typeof CAMMAP !== 'undefined') CAMMAP.radar(radarMap);   // v3.89.0: road cameras on the map
 
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
     maxNativeZoom: 16, maxZoom: 19, attribution: 'Esri'
@@ -7366,7 +7367,7 @@ async function doFetch(opts) {
    adds a timeout and records per-source health. The status drawer and
    the sidebar health line read from SRC.
    ════════════════════════════════════════════════════════════════════ */
-var APP_VERSION = '3.88.0';
+var APP_VERSION = '3.89.0';
 var CHAT_MODEL = 'claude-opus-5-5';
 
 var SRC = (function () {
@@ -9995,7 +9996,7 @@ var CAMS = (function () {
       return c.title + (isRoad(c) ? ' [' + credit(c) + ' road camera]' : '') + ' (' + Math.round(haversine(o.lat, o.lon, c.lat, c.lon)) + ' mi)';
     }).join('; ');
   }
-  return { init: init, load: load, ensure: ensure, reset: reset, open: open, close: close, describe: describe };
+  return { init: init, load: load, ensure: ensure, reset: reset, open: open, close: close, describe: describe, openCam: function (c) { if (c) openRoad(c); }, hls: HLS, roadVideo: roadVideo };
 })();
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -10610,7 +10611,7 @@ var REGMAP = (function () {
       ['Temperature', [['temp', 'Temperature'], ['feels', 'Feels like', 'Wind chill'], ['dew', 'Dew point'], ['chg24', '24-hour change'], ['hilo', 'High and low today']]],
       ['Wind', [['wind', 'Wind'], ['gust', 'Peak gust'], ['pres', 'Pressure'], ['sfcmap', 'Surface map']]],
       ['Rain', [['precip', 'Station rain, 24 h'], ['obsrain', 'Observer rain'], ['rain', 'Rainfall analysis'], ['mrain', 'Radar and gauge rain']]],
-      ['Snow and ice', [['snow', 'New snow', 'Observers'], ['snowgnd', 'Snow on the ground', 'Estimate'], ['snowdepth', 'Snow depth', 'Analysis'], ['roads', 'Road conditions', 'WI 511'], ['lakeice', 'Great Lakes ice']]],
+      ['Snow and ice', [['snow', 'New snow', 'Observers'], ['snowgnd', 'Snow on the ground', 'Estimate'], ['snowdepth', 'Snow depth', 'Analysis'], ['roads', 'Road conditions', 'WI 511'], ['cams', 'Road cameras', 'State DOTs'], ['lakeice', 'Great Lakes ice']]],
       ['Storms', [['ltgmap', 'Lightning'], ['rot', 'Rotation'], ['hail', 'Hail size'], ['lsr', 'Storm reports']]],
       ['Sky and visibility', [['vis', 'Visibility']]],
       ['Upper air', [['raob', 'Balloon soundings', 'Observed']]],
@@ -11559,6 +11560,27 @@ var REGMAP = (function () {
       .then(function (j) { D[k] = { at: Date.now(), segs: j && Array.isArray(j.segs) ? j.segs : null, err: j && j.error ? String(j.error) : null, t: j && j.at }; },
             function (e) { D[k] = { at: Date.now(), segs: null, err: (e && e.message) || 'network error' }; });
   }
+  /* v3.89.0: road cameras, from every state DOT the Webcams screen reads (and WisDOT where the server has its key) */
+  function camsKey(b) { return 'cams:' + b.map(function (v) { return v.toFixed(2); }).join(','); }
+  function loadCams(W, H) {
+    var b = projector(W, H).bbox, k = camsKey(b); if (D[k] && Date.now() - D[k].at < 30 * 6e4) return Promise.resolve();
+    if (typeof CAMMAP === 'undefined') { D[k] = { at: Date.now(), list: null, err: 'not available' }; return Promise.resolve(); }
+    return CAMMAP.inBox(b).then(function (r) { D[k] = { at: Date.now(), list: r.list, notes: r.notes, hidden: r.hidden }; },
+                                function (e) { D[k] = { at: Date.now(), list: null, err: (e && e.message) || 'no answer' }; });
+  }
+  function camsLayer() {
+    var C = D[camsKey(frame.bbox)], T = 'Road cameras';
+    if (!C || !C.list) return { title: T, pts: refNames(), subText: 'State DOT road cameras', empty: 'Road cameras did not load' + (C && C.err ? ': ' + C.err : '.') };
+    var pj = projector(frame.W, frame.H), cx = +currentLat, cy = +currentLon;
+    var inView = C.list.filter(function (c) { var q = pj(c.lon, c.lat); return q[0] > 8 && q[0] < frame.W - 8 && q[1] > 8 && q[1] < frame.H - 8; });
+    var cap = 1200, shown = inView.length > cap ? inView.map(function (c) { return { c: c, d: haversine(cx, cy, c.lat, c.lon) }; }).sort(function (a, b) { return a.d - b.d; }).slice(0, cap).map(function (x) { return x.c; }) : inView;
+    var syms = shown.map(function (c) { return { lat: c.lat, lon: c.lon, letter: '', color: CAMMAP.FILL, hollow: !!c.vonly, r: 5, label: '', rank: 0, aria: 'Road camera: ' + c.title, detail: CAMMAP.detail(c) }; });
+    var ag = CAMMAP.agencies(inView), vo = shown.some(function (c) { return c.vonly; });
+    return { title: T, pts: refNames(), symbols: syms, legendCat: [[CAMMAP.FILL, 'Road camera']].concat(vo ? [[CAMMAP.EDGE, 'Live video only (hollow)']] : []),
+             subText: (ag.length ? ag.slice(0, 3).join(', ') + (ag.length > 3 ? ' and ' + (ag.length - 3) + ' more' : '') : 'State DOTs') + ' · ' + (inView.length ? inView.length + ' in view' + (inView.length > cap ? ', the ' + cap + ' nearest shown' : '') : 'none in view'),
+             sub2: 'the agencies\u2019 own road cameras. Tap a dot for its latest picture' + (C.hidden ? '. ' + C.hidden + ' video-only cameras are left off: this browser cannot play them' : '') + (C.notes && C.notes.length ? '. ' + C.notes.join(' ') : ''),
+             empty: inView.length ? null : 'No road cameras in this view.' + (C.notes && C.notes.length ? '' : ' No camera source covers this area yet.') };
+  }
   function roadsLayer() {
     var R0 = D['wiroads:' + frame.W], T = 'Road conditions, Wisconsin 511';
     if (!R0 || !R0.segs) return { title: T, pts: refNames(), subText: 'WisDOT winter road conditions', empty: 'Road conditions did not load' + (R0 && R0.err ? ': ' + R0.err : '.') };
@@ -12480,6 +12502,7 @@ var REGMAP = (function () {
     mrain: { label: 'Radar and gauge rain', needs: 'mrain', controls: function () { return [[1, '1 hour', 'mh'], [12, '12 hours', 'mh'], [24, '24 hours', 'mh']]; }, build: function () { return mrainLayer(); } },
     snowgnd: { label: 'Snow on the ground', needs: 'snowgnd', build: function () { return snowGndLayer(); } },
     roads: { label: 'Road conditions', needs: 'roads', build: function () { return roadsLayer(); } },
+    cams: { label: 'Road cameras', needs: 'cams', build: function () { return camsLayer(); } },   // v3.89.0
     feels: { label: 'Feels like', slider: true, build: function () {   // v3.71.0: wind chill when it is cold, heat index when it is hot
       var v = obsLayer('Feels like (wind chill or heat index)', function (o, r) {
         var f = r.t <= 50 && r.chill != null ? r.chill : r.t >= 80 && r.heat != null ? r.heat : r.t; if (f == null) return null;
@@ -12822,7 +12845,7 @@ var REGMAP = (function () {
     var n = L[layer].needs, back = L[layer].slider && st.back ? loadHist() : Promise.resolve();
     var p = !n ? Promise.resolve() : n.indexOf('svc:') === 0 ? loadSvc(n.slice(4), W, H) : n.indexOf('mf:') === 0 ? loadMf(n.slice(3)) : n === 'gd' ? loadGd() : n === 'hist' ? loadHist() : n === 'ndfd' ? loadNdfd() : n === 'pcp' ? Promise.all([loadNdfd(), loadPcpGrid(W, H)]) : n === 'alerts' ? loadAlerts() : n === 'lsr' ? loadLsr() : n === 'snow' ? loadSnow() : n === 'rain' ? loadRain(W, H) :
       n && n.indexOf('scan:') === 0 ? loadScan(n.slice(5), W, H) : n === 'fradar' ? loadFradar(W, H) : n && n.indexOf('wx:') === 0 ? loadWx(n.slice(3), W, H) : n === 'rivers' ? loadRivers(W, H) : n === 'raob' ? raobSites() :
-      n && n.indexOf('storm:') === 0 ? loadStorm(n.slice(6), W, H) : n === 'snowgnd' ? loadSnowGnd(W, H) : n === 'roads' ? loadRoads(W, H) : n === 'ecsnow' ? loadEs(W, H) : n === 'stormpot' ? loadStormPot(W, H) : n === 'mrain' ? Promise.all([loadMrGrid(W, H), loadHist().catch(function () {})]) :
+      n && n.indexOf('storm:') === 0 ? loadStorm(n.slice(6), W, H) : n === 'snowgnd' ? loadSnowGnd(W, H) : n === 'roads' ? loadRoads(W, H) : n === 'cams' ? loadCams(W, H) : n === 'ecsnow' ? loadEs(W, H) : n === 'stormpot' ? loadStormPot(W, H) : n === 'mrain' ? Promise.all([loadMrGrid(W, H), loadHist().catch(function () {})]) :
       n === 'gauge' ? Promise.all([loadHist(), gsAvailable() ? loadMrStations().catch(function () {}) : null]) : n === 'model' ? loadModel(st.model) :
       n === 'spread' ? loadSpread() : n === 'sfcmap' ? loadSfcMap(W, H) : Promise.resolve();
     return Promise.all([p, back]);
@@ -13089,7 +13112,7 @@ var REGMAP = (function () {
         .sort(function (a, b) { return a.rank - b.rank; }).forEach(function (y) {
           taps.push(y.detail);
           symHits.push('<circle class="regmap-stn" data-i="' + (taps.length - 1) + '" aria-hidden="true" cx="' + y.x.toFixed(1) + '" cy="' + y.y.toFixed(1) + '" r="' + Math.max(13, (y.r || 10) + 3) + '" style="fill:transparent"></circle>');
-          s.push('<g class="regmap-stn" data-i="' + (taps.length - 1) + '" tabindex="0" role="button" aria-label="' + esc(y.aria || (y.letter + ' ' + y.label)) + '"><circle cx="' + y.x.toFixed(1) + '" cy="' + y.y.toFixed(1) + '" r="' + (y.r || 10) + '" style="fill:' + y.color + ';stroke:#070B14;stroke-width:1.5"></circle>' +
+          s.push('<g class="regmap-stn" data-i="' + (taps.length - 1) + '" tabindex="0" role="button" aria-label="' + esc(y.aria || (y.letter + ' ' + y.label)) + '"><circle cx="' + y.x.toFixed(1) + '" cy="' + y.y.toFixed(1) + '" r="' + (y.r || 10) + '" style="fill:' + (y.hollow ? '#070B14' : y.color) + ';stroke:' + (y.hollow ? y.color : '#070B14') + ';stroke-width:' + (y.hollow ? 2 : 1.5) + '"></circle>' +
                  '<text x="' + y.x.toFixed(1) + '" y="' + (y.y + 4.5).toFixed(1) + '" style="font:700 12px ' + F + ';fill:#070B14;text-anchor:middle">' + esc(y.letter) + '</text></g>');
           if (y.label) lab.push(y);
         });
@@ -19220,7 +19243,7 @@ var STORMZ = (function () {
     [/WND|WIND|GUST/, 'wind', 'W', '#FBBF24', 'Wind'] ];
 
   var S = { on: false, key: '', prevCounties: null, d: {}, at: {}, err: {}, busy: {}, z: {}, storms: [], minor: [], base: null, baseP: null, ring: {}, cty: null,
-            lay: { alerts: true, radar: true, fronts: true, track: true, lsr: true, cities: true }, ov: lsGet('stormz_ov', 'none') || 'none', loop: { on: false, i: 0, timer: null, frames: [] }, taps: [], openDet: {}, timer: null, badgeAt: 0 };
+            lay: { alerts: true, radar: true, fronts: true, track: true, lsr: true, cities: true, cams: true }, ov: lsGet('stormz_ov', 'none') || 'none', loop: { on: false, i: 0, timer: null, frames: [] }, taps: [], openDet: {}, timer: null, badgeAt: 0 };
   try { var savedLay = JSON.parse(lsGet('stormz_layers', 'null')); if (savedLay) Object.keys(S.lay).forEach(function (k) { if (typeof savedLay[k] === 'boolean') S.lay[k] = savedLay[k]; }); } catch (e) { /* defaults */ }
 
   /* ---------- small pieces ---------- */
@@ -19740,6 +19763,15 @@ var STORMZ = (function () {
       tr.fut.forEach(function (p, i) { var q = fp[i + 1]; if (!inF(q, 6)) return; g += '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + (5 * u).toFixed(1) + '" style="fill:#FDE68A;stroke:#0B1220;stroke-width:' + (1.2 * u).toFixed(1) + '"></circle><text x="' + q[0].toFixed(1) + '" y="' + (q[1] - 9 * u).toFixed(1) + '" style="font:700 ' + (11 * u).toFixed(1) + 'px ' + FONT + ';fill:#FDE68A;text-anchor:middle' + HALO + '">' + esc(p.label) + '</text>'; });
       o.push(g + '</g>');
     });
+    /* road cameras under the alerts (v3.89.0), under the report dots */
+    if (st && S.lay.cams && Z && Z.cams && Z.cams.list.length) {
+      var cr = 4.2 * Math.min(u, 1.8), many = Z.cams.list.length > 150, cg = '';
+      Z.cams.list.forEach(function (c) {
+        var q = proj(c.lon, c.lat); if (!inF(q, 4)) return; taps.push({ cam: c.id });
+        cg += '<g class="regmap-stn sz-cam" data-t="' + (taps.length - 1) + '"' + (many ? '' : ' tabindex="0"') + ' role="button" aria-label="' + esc('Road camera: ' + c.title) + '"><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + (cr + 5 * u).toFixed(1) + '" style="fill:transparent"></circle><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + cr.toFixed(1) + '" style="fill:' + (c.vonly ? CAMMAP.EDGE : CAMMAP.FILL) + ';stroke:' + (c.vonly ? CAMMAP.FILL : CAMMAP.EDGE) + ';stroke-width:' + ((c.vonly ? 1.7 : 1.2) * u).toFixed(1) + '"></circle></g>';
+      });
+      o.push(cg);
+    }
     /* storm reports */
     var lsr = Z && Z.d.lsr;
     if (st && S.lay.lsr && lsr) {
@@ -19921,6 +19953,7 @@ var STORMZ = (function () {
       need('mds', TTL.mds, function () { return loadMds(st); }, force, Z).then(function () { paint(true); });
       need('afd', TTL.afd, function () { return loadAfds(st); }, force, Z).then(function () { paint(false); });
       if (S.ov !== 'none') overlay(st, force);
+      if (S.lay.cams) camsFor(st, Z, force);
       if (hasCoast(st)) need('tideSt', TTL.tideSt, loadTideSt, false).then(function () { gauges(st, Z, force); });
     });
     return pending;
@@ -19930,6 +19963,17 @@ var STORMZ = (function () {
   function overlay(st, force) {
     var Z = zone(st), k = S.ov, key = 'ov_' + k; if (k === 'none') return;
     need(key, TTL.ov, function () { return loadOverlay(k, viewFor(st).ll); }, force, Z).then(function () { if (S.on && S.key === st.key) schedule(st, true); });
+  }
+  /* v3.89.0: the road cameras inside the storm's alerted counties */
+  function camsFor(st, Z, force) {
+    if (typeof CAMMAP === 'undefined' || Z.camsBusy) return;
+    var key = st.key + '|' + S.at.alerts; if (!force && Z.cams && Z.camsKey === key && Date.now() - Z.camsAt < 30 * MIN) return;
+    Z.camsBusy = true;
+    CAMMAP.inBox(viewFor(st).ll).then(function (r) {
+      var list = r.list.filter(function (c) { return !!countyAt(st, c.lon, c.lat); });
+      Z.cams = { list: list, notes: r.notes, hidden: r.list.length ? r.hidden : 0 }; Z.camsKey = key; Z.camsAt = Date.now();
+    }, function (e) { Z.cams = { list: [], notes: ['Road cameras could not be loaded (' + ((e && e.message) || 'no answer') + ').'], hidden: 0 }; Z.camsAt = Date.now(); })
+      .then(function () { Z.camsBusy = false; if (S.on && S.key === st.key) schedule(st, true); });
   }
   function gauges(st, Z, force) {
     if (!S.d.tideSt) { schedule(st, false); return; }
@@ -19964,7 +20008,7 @@ var STORMZ = (function () {
     return e.length ? '<div class="sz-err" role="status">' + e.join(' ') + '</div>' : '';
   }
   function layerBar(zoneMap) {
-    var L = [['alerts', 'Alerts'], ['radar', 'Radar'], ['fronts', 'Fronts and lows'], ['track', 'Low track']].concat(zoneMap ? [['lsr', 'Reports and gauges'], ['cities', 'Cities']] : []);
+    var L = [['alerts', 'Alerts'], ['radar', 'Radar'], ['fronts', 'Fronts and lows'], ['track', 'Low track']].concat(zoneMap ? [['lsr', 'Reports and gauges'], ['cams', 'Road cameras'], ['cities', 'Cities']] : []);
     var h = '<div class="cpc-nav sz-layers" role="group" aria-label="What the map shows">' + L.map(function (l) { return '<button type="button" class="cpc-nav-btn' + (S.lay[l[0]] ? ' active' : '') + '" aria-pressed="' + (S.lay[l[0]] ? 'true' : 'false') + '" data-lay="' + l[0] + '">' + l[1] + '</button>'; }).join('') + '</div>';
     if (!zoneMap) return h;
     return h + '<button type="button" class="cpc-nav-btn sz-play" data-loop="1" aria-pressed="' + (S.loop.on ? 'true' : 'false') + '">' + (S.loop.on ? '\u275A\u275A Stop radar' : '\u25B6 Radar loop') + '</button>' +
@@ -20028,7 +20072,7 @@ var STORMZ = (function () {
       '<div class="sz-tiles" id="szTiles"></div>' +
       '<div class="sz-grid">' +
         sec('szBriefP', 'The storm in brief', 'szBrief', true) +
-        '<section class="card regmap-card sz-wide sz-mapcard" id="szMapP"><div class="sz-bar">' + layerBar(true) + '</div><div class="regmap-stage sz-stage is-loading" id="szStage" style="aspect-ratio:1000 / 640"></div><div class="usn-key" id="szKey"></div><div class="rg-note" id="szOvNote"></div><div class="regmap-detail" id="szDetail" aria-live="polite">Tap a county for its alerts, a lettered dot for a storm report or a diamond for a tide gauge.</div></section>' +
+        '<section class="card regmap-card sz-wide sz-mapcard" id="szMapP"><div class="sz-bar">' + layerBar(true) + '</div><div class="regmap-stage sz-stage is-loading" id="szStage" style="aspect-ratio:1000 / 640"></div><div class="usn-key" id="szKey"></div><div class="rg-note" id="szOvNote"></div><div class="regmap-detail" id="szDetail" aria-live="polite">Tap a county for its alerts, a lettered dot for a storm report, a diamond for a tide gauge or a white dot for a road camera.</div></section>' +
         sec('szWhenP', 'When', 'szWhen', true) +
         sec('szCityP', 'Impacts in the largest cities', 'szCities', true) +
         sec('szCoastP', 'Coast: tide gauges', 'szCoast', true) +
@@ -20051,7 +20095,7 @@ var STORMZ = (function () {
     setHtml('szErr', errs());
     setHtml('szSub', esc(FAM[st.kind][0]) + ' · ' + esc(st.region) + ' · ' + plural(st.counties.length, 'county', 'counties') + ' under alerts' + (st.favs.length ? '<div class="sz-card-fav">★ Your places: ' + st.favs.map(function (f) { return '<button type="button" class="btn-link" data-q="' + esc(f.q) + '">' + esc(f.name) + '</button>' + (f.top ? ' (' + esc(f.top.ev) + ')' : ''); }).join(' · ') + '</div>' : ''));
     setHtml('szTiles', tilesHtml(st, Z));
-    setHtml('szKey', st.evOrder.map(function (ev) { return '<span><i class="usn-sw" style="background:' + colOf(ev) + '"></i>' + esc(ev) + '</span>'; }).join('') + (S.lay.lsr && Z.d.lsr ? LSRK.filter(function (k) { return Z.d.lsr.some(function (r) { return r.k === k; }); }).map(function (k) { return '<span><i class="sz-dot" style="background:' + k[3] + '">' + k[2] + '</i>' + k[4] + ' report</span>'; }).join('') : ''));
+    setHtml('szKey', st.evOrder.map(function (ev) { return '<span><i class="usn-sw" style="background:' + colOf(ev) + '"></i>' + esc(ev) + '</span>'; }).join('') + (S.lay.lsr && Z.d.lsr ? LSRK.filter(function (k) { return Z.d.lsr.some(function (r) { return r.k === k; }); }).map(function (k) { return '<span><i class="sz-dot" style="background:' + k[3] + '">' + k[2] + '</i>' + k[4] + ' report</span>'; }).join('') : '') + (S.lay.cams && Z.cams ? '<span><i class="sz-camk' + (Z.cams.list.some(function (c) { return c.vonly; }) ? '' : '') + '"></i>Road camera' + (Z.cams.list.length ? ', ' + Z.cams.list.length + ' under the alerts' : ': none under the alerts') + '</span>' + (Z.cams.list.some(function (c) { return c.vonly; }) ? '<span><i class="sz-camk is-vo"></i>Video only</span>' : '') + (Z.cams.hidden ? '<span class="dim">' + Z.cams.hidden + ' video-only cameras left off: this browser cannot play them</span>' : '') + (Z.cams.notes.length ? '<span class="dim">' + esc(Z.cams.notes.join(' ')) + '</span>' : '') : ''));
     setHtml('szWhen', whenHtml(st));
     fillCities(st);
     setHtml('szNow', nowHtml(st, Z));
@@ -20350,14 +20394,14 @@ var STORMZ = (function () {
       var sto = stormBy(S.key); if (sto) { overlay(sto, false); schedule(sto, true); } return; }
     if ((b = t.closest('[data-loop]'))) { loopToggle(); return; }
     if ((b = t.closest('[data-lay]'))) { var k = b.getAttribute('data-lay'); S.lay[k] = !S.lay[k]; lsSet('stormz_layers', JSON.stringify(S.lay)); Array.prototype.forEach.call(root().querySelectorAll('[data-lay="' + k + '"]'), function (x) { x.classList.toggle('active', S.lay[k]); x.setAttribute('aria-pressed', S.lay[k] ? 'true' : 'false'); });
-      var st = S.key ? stormBy(S.key) : null; if (st) { drawZoneMap(st); fillZone(st); } else { var sg = root().querySelector('.sz-stage'); if (sg) drawMap(sg, viewFor(null), null); } return; }
+      var st = S.key ? stormBy(S.key) : null; if (st && k === 'cams' && S.lay.cams) camsFor(st, zone(st), false); if (st) { drawZoneMap(st); fillZone(st); } else { var sg = root().querySelector('.sz-stage'); if (sg) drawMap(sg, viewFor(null), null); } return; }
     if ((b = t.closest('[data-q]'))) { el('locationInput').value = b.getAttribute('data-q'); off(); doFetch(); return; }
     if ((b = t.closest('[data-open]'))) { el('locationInput').value = b.getAttribute('data-open'); off(); doFetch(); return; }
     if ((b = t.closest('[data-t]'))) {
       var tap = S.taps[+b.getAttribute('data-t')]; if (!tap) return;
       if (tap.storm) { select(tap.storm); return; }
       var st2 = stormBy(S.key), det = el('szDetail') || root().querySelector('.regmap-detail'); if (!det) return;
-      det.innerHTML = tap.county ? countyDetail(st2, tap.county) : tap.html || '';
+      det.innerHTML = tap.county ? countyDetail(st2, tap.county) : tap.cam ? CAMMAP.detail(CAMMAP.get(tap.cam)) : tap.html || '';
       return;
     }
   }
@@ -20526,6 +20570,55 @@ var DOTCAMS = (function () {
       return { list: all.slice(0, limit || 36), more: all.length > (limit || 36), notes: notes, states: states, total: all.length };
     });
   }
+  /* v3.89.0: every camera inside a box [w, s, e, n], for the maps. Each source's whole list is read once and kept (KEEP), so
+     panning a map asks nothing new; a list only says where cameras are, and each picture is read fresh when it is shown. */
+  function arcAll(st) {
+    return kept('arcall-' + st, function () {
+      var A = ARC[st], out = [];
+      var page = function (off) {
+        var q = A.url + '/query?where=1%3D1&geometry=' + BOX[st].join(',') + '&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true&outSR=4326&resultOffset=' + off + '&resultRecordCount=1000&f=json';
+        return getJ(q).then(function (j) {
+          if (!j || j.error) throw new Error('the map service answered with an error');
+          (j.features || []).forEach(function (f) { var c = cam(st, A.map(f.attributes || {}, f.geometry), A.attr, A.page); if (c) out.push(c); });
+          return j.exceededTransferLimit && (j.features || []).length && off < 9000 ? page(off + (j.features || []).length) : out;
+        });
+      };
+      return page(0);
+    });
+  }
+  function serverAll(st) {
+    return kept('srvall-' + st, function () { return getJ('/api/dotcams?st=' + st + '&box=' + BOX[st].join(',')).then(function (j) {
+      return ((j && j.cams) || []).map(function (o) { return cam(st, o, o.attr, o.page); }).filter(Boolean); }); });
+  }
+  function inBox(bx) {
+    var jobs = [];
+    Object.keys(BOX).forEach(function (st) {
+      if (!meets(bx, BOX[st])) return;
+      var p;
+      if (st === 'ca') p = Promise.all(Object.keys(CA_D).filter(function (d) { return meets(bx, CA_D[d]); }).map(function (d) { return caltrans(+d); })).then(function (a) { return [].concat.apply([], a); });
+      else if (st === 'ny') p = cars('ny', 'api-511x-nysdot.carsprogram.org', 'NYSDOT', 'https://511ny.org/');
+      else if (st === 'co') p = cars('co', 'api-511x-co.carsprogram.org', 'CDOT', 'https://www.cotrip.org/');
+      else if (st === 'mn') p = cars('mn', 'api-511x-mn.carsprogram.org', 'MnDOT', 'https://511mn.org/');
+      else if (ARC[st]) p = arcAll(st);
+      else if (st === 'nd') p = northDakota();
+      else p = serverAll(st);
+      jobs.push(p.then(function (list) { return { st: st, list: list }; }, function (e) { return { st: st, err: (e && e.message) || 'no answer' }; }));
+    });
+    var inv = inventory().then(function (ix) {
+      return Promise.all(Object.keys(ix).filter(function (st) { return meets(bx, ix[st].box); }).map(function (st) {
+        NAME[st] = ix[st].credit;
+        return invState(st, ix[st]).then(function (list) { return { st: st, list: list }; }, function (e) { return { st: st, err: (e && e.message) || 'no answer' }; });
+      }));
+    }, function () { return []; });
+    return Promise.all([Promise.all(jobs), inv]).then(function (two) {
+      var all = [], seen = {}, notes = [];
+      two[0].concat(two[1]).forEach(function (x) {
+        if (x.err) { notes.push((NAME[x.st] || x.st.toUpperCase()) + ' cameras could not be loaded (' + x.err + ').'); return; }
+        x.list.forEach(function (c) { if (c.lon < bx[0] || c.lon > bx[2] || c.lat < bx[1] || c.lat > bx[3]) return; var k = c.img || c.video; if (seen[k]) return; seen[k] = 1; all.push(c); });
+      });
+      return { list: all, notes: notes };
+    });
+  }
   function inventory() { return kept('inv-index', function () { return getJ('/geo/cams511/index.json'); }); }
   function invState(st, meta) {
     return kept('inv-' + st, function () { return getJ('/geo/cams511/' + st + '.json?v=' + (meta.at || 0)).then(function (j) {
@@ -20535,5 +20628,119 @@ var DOTCAMS = (function () {
   }
   var BOX511 = [[-180, 24, -66, 72]];   // the inventory covers these states only; the quick test below just says whether any source could
   function reaches(lat, lon, r) { var bx = boxOf(lat, lon, r); return Object.keys(BOX).some(function (st) { return meets(bx, BOX[st]); }) || meets(bx, BOX511[0]); }
-  return { near: near, reaches: reaches, names: NAME };
+  return { near: near, inBox: inBox, reaches: reaches, names: NAME };
+})();
+
+/* ══════════════════════════════════════════════════════════════════
+   ROAD CAMERAS ON THE MAPS (v3.89.0)
+   The same cameras as the Webcams screen (every state DOT source, plus WisDOT where the server has its key), placed on three
+   maps: the NEXRAD radar map (a Cameras button; numbered bubbles when zoomed out, dots when zoomed in), the Storm Zone map
+   (the cameras inside the storm's alerted counties) and the regional map (Current, Snow and ice, Road cameras). A dot opens a
+   card with the latest picture; "Open camera" opens the Webcams screen's viewer (30-second refresh, live video where offered).
+   A hollow dot streams video only. Cameras that only stream video are left off where this browser cannot play the stream.
+   ══════════════════════════════════════════════════════════════════ */
+var CAMMAP = (function () {
+  var reg = {}, wiMem = null, WI_KEEP = 30 * 60000, FILL = '#F8FAFC', EDGE = '#0B1220';
+  function bust(u) { return u + (u.indexOf('?') >= 0 ? '&' : '?') + 't=' + Math.floor(Date.now() / 60000); }
+  function wiAll() {
+    if (wiMem && Date.now() - wiMem.at < WI_KEEP) return Promise.resolve(wiMem.list);
+    return netFetch('/api/wicams?box=-93.2,42.3,-86.4,47.4', { headers: { Accept: 'application/json' }, cache: 'no-store' }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status); return j; });
+    }).then(function (j) {
+      var list = (j.cams || []).map(function (c) {
+        var id = String(c && c.id || ''); if (!/^\d+$/.test(id) || !isFinite(+c.lat) || !isFinite(+c.lon)) return null;
+        return { src: 'wis', id: 'wi-' + id, title: String(c.title || 'Road camera'), lat: +c.lat, lon: +c.lon, county: String(c.county || ''), road: String(c.road || ''), dir: String(c.dir || ''),
+                 img: 'https://511wi.gov/map/Cctv/' + id, video: CAMS.roadVideo(c.video), attr: 'WisDOT 511' };
+      }).filter(Boolean);
+      wiMem = { at: Date.now(), list: list }; return list;
+    });
+  }
+  function wiIn(bx) {
+    if (typeof roadCamsAvailable !== 'function' || !roadCamsAvailable() || bx[2] < -93 || bx[0] > -86.6 || bx[3] < 42.4 || bx[1] > 47.4) return Promise.resolve({ list: [], notes: [] });
+    return wiAll().then(function (l) { return { list: l.filter(function (c) { return c.lon >= bx[0] && c.lon <= bx[2] && c.lat >= bx[1] && c.lat <= bx[3]; }), notes: [] }; },
+                        function (e) { return { list: [], notes: ['Wisconsin 511 cameras could not be loaded (' + ((e && e.message) || 'no answer') + ').'] }; });
+  }
+  /* every camera inside [w, s, e, n] */
+  function inBox(bx) {
+    bx = [Math.max(-180, bx[0]), Math.max(-85, bx[1]), Math.min(180, bx[2]), Math.min(85, bx[3])];
+    return Promise.all([DOTCAMS.inBox(bx), wiIn(bx)]).then(function (two) {
+      var list = [], hidden = 0;
+      two[0].list.concat(two[1].list).forEach(function (c) { if (c.vonly && !CAMS.hls) { hidden++; return; } reg[c.id] = c; list.push(c); });
+      return { list: list, notes: two[0].notes.concat(two[1].notes), hidden: hidden };
+    });
+  }
+  function agency(c) { return c.src === 'wis' ? 'WisDOT 511' : (c.attr || 'State DOT'); }
+  function agencies(list) { var a = []; list.forEach(function (c) { var k = agency(c); if (a.indexOf(k) < 0) a.push(k); }); return a; }
+  /* the card a dot opens: the camera's latest picture, and a button for the full viewer */
+  function detail(c) {
+    if (!c) return '';
+    var sub = [c.road, c.dir, c.county ? c.county + ' County' : ''].filter(Boolean).map(esc).join(' · ');
+    var shot = c.vonly ? '<span class="cm-vonly"><span class="cam-vonly-play" aria-hidden="true">▶</span>Live video<small>No still picture</small></span>'
+                       : '<img alt="Latest image: ' + esc(c.title) + '" src="' + esc(bust(c.img)) + '" onerror="this.parentNode.classList.add(\'is-dead\');this.remove()">';
+    return '<div class="cm-pop"><div class="rg-head"><b>' + esc(c.title) + '</b></div>' + (sub ? '<div class="rg-cap">' + sub + '</div>' : '') +
+      '<button type="button" class="cm-shot" data-camopen="' + esc(c.id) + '" aria-label="Open road camera: ' + esc(c.title) + '">' + shot + '</button>' +
+      '<div class="cm-row"><button type="button" class="btn-link" data-camopen="' + esc(c.id) + '">' + (c.vonly ? 'Play live video' : 'Open camera') + '</button>' +
+      '<span>' + esc(agency(c)) + (c.video && CAMS.hls && !c.vonly ? ' · live video too' : '') + '</span></div></div>';
+  }
+  function open(id) { var c = reg[id]; if (c) CAMS.openCam(c); }
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-camopen]') : null; if (!b) return;
+    e.preventDefault(); e.stopPropagation(); open(b.getAttribute('data-camopen'));
+  }, true);
+
+  /* ---- the NEXRAD radar map (Leaflet) ---- */
+  var R = { on: lsGet('cammap_radar', '0') === '1', map: null, group: null, rend: null, seq: 0, last: null, t: null };
+  function rNote(h) { var n = document.getElementById('radarCamsNote'); if (n) n.innerHTML = h; }
+  function rBtn() { var b = document.getElementById('radarCamsBtn'); if (b) { b.classList.toggle('active', R.on); b.setAttribute('aria-pressed', R.on ? 'true' : 'false'); } }
+  function radar(map) {   // called each time the radar map is built
+    R.map = map; R.group = null; R.rend = null; R.last = null; rBtn(); rNote('');
+    map.on('moveend', function () { if (map === R.map) { clearTimeout(R.t); R.t = setTimeout(rSync, 150); } });
+    if (R.on) rSync();
+  }
+  function rToggle() {
+    R.on = !R.on; lsSet('cammap_radar', R.on ? '1' : '0'); rBtn();
+    if (!R.on) { if (R.group) R.group.clearLayers(); if (R.map) R.map.closePopup(); rNote(''); return; }
+    rSync();
+  }
+  function rSync() {
+    var map = R.map; if (!R.on || !map) return;
+    var b = map.getBounds(), w = b.getEast() - b.getWest(), h = b.getNorth() - b.getSouth();
+    if (w > 40) { if (R.group) R.group.clearLayers(); rNote('Zoom in to see road cameras.'); return; }
+    var bx = [b.getWest() - w * 0.1, b.getSouth() - h * 0.1, b.getEast() + w * 0.1, b.getNorth() + h * 0.1], my = ++R.seq;
+    if (!R.last) rNote('Finding road cameras…');
+    inBox(bx).then(function (res) { if (my !== R.seq || map !== R.map || !R.on) return; R.last = res; rDraw(res); },
+                   function (e) { if (my === R.seq) rNote('Road cameras could not be loaded (' + esc((e && e.message) || 'no answer') + ').'); });
+  }
+  function rDot(c, z) {
+    var m = L.circleMarker([c.lat, c.lon], { renderer: R.rend, radius: z >= 11 ? 6 : 5, color: c.vonly ? FILL : EDGE, weight: c.vonly ? 2 : 1.5, fillColor: c.vonly ? EDGE : FILL, fillOpacity: 1, bubblingMouseEvents: false });
+    m.on('click', function () { L.popup({ maxWidth: 300, minWidth: 240, className: 'cm-leaf', autoPanPadding: [16, 16] }).setLatLng([c.lat, c.lon]).setContent(detail(c)).openOn(R.map); });
+    return m;
+  }
+  function rDraw(res) {
+    var map = R.map, z = map.getZoom(), b = map.getBounds();
+    if (!R.rend) R.rend = L.canvas({ padding: 0.3 });
+    if (!R.group) R.group = L.layerGroup().addTo(map);
+    R.group.clearLayers();
+    var vis = res.list.filter(function (c) { return b.contains([c.lat, c.lon]); }), list = res.list;
+    if (z < 11 && list.length > 150) {   // zoomed out: one numbered bubble per 60-pixel cell
+      var cells = {}, CELL = 60;
+      list.forEach(function (c) { var p = map.project([c.lat, c.lon], z), k = Math.floor(p.x / CELL) + ':' + Math.floor(p.y / CELL), g = cells[k] || (cells[k] = { n: 0, la: 0, lo: 0, cams: [] }); g.n++; g.la += c.lat; g.lo += c.lon; g.cams.push(c); });
+      Object.keys(cells).forEach(function (k) {
+        var g = cells[k]; if (g.n === 1) { rDot(g.cams[0], z).addTo(R.group); return; }
+        var sz = g.n >= 100 ? 40 : g.n >= 10 ? 34 : 28;
+        var mk = L.marker([g.la / g.n, g.lo / g.n], { icon: L.divIcon({ className: 'cm-bub', html: '<span>' + g.n + '</span>', iconSize: [sz, sz] }), keyboard: true, title: g.n + ' road cameras: zoom in', zIndexOffset: 500 });
+        mk.on('click', function () { var bb = L.latLngBounds(g.cams.map(function (c) { return [c.lat, c.lon]; })); if (z >= 10) map.setView(bb.getCenter(), z + 2); else map.fitBounds(bb.pad(0.25), { maxZoom: Math.min(z + 3, 12) }); });
+        mk.addTo(R.group);
+      });
+    } else list.forEach(function (c) { rDot(c, z).addTo(R.group); });
+    var ag = agencies(vis);
+    rNote(vis.length ? '<b>' + vis.length + '</b> road camera' + (vis.length === 1 ? '' : 's') + ' in view' + (ag.length ? ' · ' + esc(ag.slice(0, 4).join(', ')) + (ag.length > 4 ? ' and ' + (ag.length - 4) + ' more' : '') : '') + '. ' +
+                      (z < 11 && list.length > 150 ? 'Tap a number to zoom in, a dot for its picture.' : 'Tap a dot for its picture.') + (res.list.some(function (c) { return c.vonly; }) ? ' A hollow dot streams live video only.' : '')
+                    : 'No road cameras in view.' + (res.notes.length ? '' : ' No camera source covers this area yet.'));
+    if (res.hidden) rNote(document.getElementById('radarCamsNote').innerHTML + ' ' + res.hidden + ' video-only camera' + (res.hidden === 1 ? ' is' : 's are') + ' left off: this browser cannot play their streams.');
+    if (res.notes.length) rNote(document.getElementById('radarCamsNote').innerHTML + ' <span class="dim">' + esc(res.notes.join(' ')) + '</span>');
+  }
+  function init() { var b = document.getElementById('radarCamsBtn'); if (b) b.addEventListener('click', rToggle); rBtn(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+  return { inBox: inBox, detail: detail, open: open, get: function (id) { return reg[id]; }, agencies: agencies, radar: radar, FILL: FILL, EDGE: EDGE };
 })();

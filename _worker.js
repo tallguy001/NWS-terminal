@@ -10,7 +10,7 @@
    - /api/health     liveness for uptime checks
    - /push/...       push alerts: key, sub, unsub, test (the app) and tick (the cron Worker); needs KV bound as PUSH */
 
-const VERSION = '3.88.0';
+const VERSION = '3.89.0';
 
 const ORIGINS = {
   spc: 'https://www.spc.noaa.gov',
@@ -414,13 +414,26 @@ async function wiList(env, ctx) {
   if (cache && ctx && ctx.waitUntil) ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(list), { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=600', 'X-Fetched-At': String(now) } })));
   return list;
 }
+/* v3.89.0: the maps ask for every camera inside a box (w,s,e,n) rather than the nearest few to a point */
+function camBox(u) {
+  const v = String(u.searchParams.get('box') || '').split(',').map(Number);
+  if (v.length !== 4 || !v.every(Number.isFinite) || v[0] >= v[2] || v[1] >= v[3] || v[0] < -180 || v[2] > 180 || v[1] < -90 || v[3] > 90) return null;
+  return v;
+}
+const inCamBox = (c, b) => c.lon >= b[0] && c.lon <= b[2] && c.lat >= b[1] && c.lat <= b[3];
 async function wicams(request, env, ctx) {
   const NS = { 'Cache-Control': 'no-store' };
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, NS);
   if (!env.WI511_KEY) return json({ error: 'No Wisconsin 511 key on the server. Add the WI511_KEY secret in Cloudflare.' }, 401, NS);
   if (!isSameOriginRead(request)) return json({ error: 'This route only answers the app itself.' }, 401, NS);
   if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
-  const u = new URL(request.url), lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon'));
+  const u = new URL(request.url), lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon')), bx = camBox(u);
+  if (bx) {   // v3.89.0: every camera in a box, for the maps
+    if (bx[2] < -93.0 || bx[0] > -86.6 || bx[3] < 42.4 || bx[1] > 47.4) return json({ total: 0, cams: [] }, 200, NS);
+    let all; try { all = await wiList(env, ctx); } catch (err) { return json({ error: 'Wisconsin 511 cameras are unavailable' + (err && err.status ? ' (' + err.status + ').' : '.') }, 502, NS); }
+    const inside = all.filter((c) => inCamBox(c, bx));
+    return json({ total: inside.length, cams: inside.slice(0, 5000) }, 200, NS);
+  }
   if (!u.searchParams.get('lat') || !u.searchParams.get('lon') || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return json({ error: 'lat/lon required' }, 400, NS);
   const r = Math.min(250, Math.max(1, Math.round(Number(u.searchParams.get('r')) || 50)));          // km
   const limit = Math.min(60, Math.max(1, Math.round(Number(u.searchParams.get('limit')) || 24)));
@@ -514,8 +527,14 @@ async function dotcams(request, env, ctx) {
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, NS);
   if (!isSameOriginRead(request)) return json({ error: 'This route only answers the app itself.' }, 401, NS);
   if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
-  const u = new URL(request.url), st = u.searchParams.get('st'), lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon'));
+  const u = new URL(request.url), st = u.searchParams.get('st'), lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon')), bx = camBox(u);
   if (!DOT_SRC[st]) return json({ error: 'Unknown camera source' }, 400, NS);
+  if (bx) {   // v3.89.0: every camera in a box, for the maps
+    let all; try { all = await dotList(st, ctx); }
+    catch (err) { return json({ error: DOT_SRC[st].attr + ' cameras are unavailable' + (err && err.status ? ' (' + err.status + ').' : '.') }, 502, NS); }
+    const inside = all.filter((c) => inCamBox(c, bx));
+    return json({ total: inside.length, cams: inside.slice(0, 5000).map((c) => Object.assign({ attr: DOT_SRC[st].attr, page: c.page || DOT_SRC[st].page }, c)) }, 200, NS);
+  }
   if (!u.searchParams.get('lat') || !u.searchParams.get('lon') || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return json({ error: 'lat/lon required' }, 400, NS);
   const r = Math.min(350, Math.max(1, Math.round(Number(u.searchParams.get('r')) || 50))), limit = Math.min(80, Math.max(1, Math.round(Number(u.searchParams.get('limit')) || 40)));
   let list;
