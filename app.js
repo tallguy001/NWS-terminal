@@ -11576,7 +11576,7 @@ var REGMAP = (function () {
     var cap = 1200, shown = inView.length > cap ? inView.map(function (c) { return { c: c, d: haversine(cx, cy, c.lat, c.lon) }; }).sort(function (a, b) { return a.d - b.d; }).slice(0, cap).map(function (x) { return x.c; }) : inView;
     var syms = shown.map(function (c) { return { lat: c.lat, lon: c.lon, letter: '', color: CAMMAP.FILL, hollow: !!c.vonly, r: 5, label: '', rank: 0, aria: 'Road camera: ' + c.title, detail: CAMMAP.detail(c) }; });
     var ag = CAMMAP.agencies(inView), vo = shown.some(function (c) { return c.vonly; });
-    return { title: T, pts: refNames(), symbols: syms, legendCat: [[CAMMAP.FILL, 'Road camera']].concat(vo ? [[CAMMAP.EDGE, 'Live video only (hollow)']] : []),
+    return { title: T, pts: refNames(), symbols: syms, legendCat: [[CAMMAP.FILL, vo ? 'Road camera (a hollow dot streams video only)' : 'Road camera']],
              subText: (ag.length ? ag.slice(0, 3).join(', ') + (ag.length > 3 ? ' and ' + (ag.length - 3) + ' more' : '') : 'State DOTs') + ' · ' + (inView.length ? inView.length + ' in view' + (inView.length > cap ? ', the ' + cap + ' nearest shown' : '') : 'none in view'),
              sub2: 'the agencies\u2019 own road cameras. Tap a dot for its latest picture' + (C.hidden ? '. ' + C.hidden + ' video-only cameras are left off: this browser cannot play them' : '') + (C.notes && C.notes.length ? '. ' + C.notes.join(' ') : ''),
              empty: inView.length ? null : 'No road cameras in this view.' + (C.notes && C.notes.length ? '' : ' No camera source covers this area yet.') };
@@ -19765,9 +19765,10 @@ var STORMZ = (function () {
     });
     /* road cameras under the alerts (v3.89.0), under the report dots */
     if (st && S.lay.cams && Z && Z.cams && Z.cams.list.length) {
-      var cr = 4.2 * Math.min(u, 1.8), many = Z.cams.list.length > 150, cg = '';
-      Z.cams.list.forEach(function (c) {
-        var q = proj(c.lon, c.lat); if (!inF(q, 4)) return; taps.push({ cam: c.id });
+      var cr = 4.2 * Math.min(u, 1.8), many = Z.cams.list.length > 150, cg = '', cell = {}, CS = 2.6 * cr;
+      /* a storm can cover thousands of cameras: one dot per few pixels (a still-picture camera first), so the map stays readable and quick */
+      Z.cams.list.slice().sort(function (a, b) { return (a.vonly ? 1 : 0) - (b.vonly ? 1 : 0); }).forEach(function (c) {
+        var q = proj(c.lon, c.lat); if (!inF(q, 4)) return; var ck = Math.floor(q[0] / CS) + ':' + Math.floor(q[1] / CS); if (cell[ck]) return; cell[ck] = 1; taps.push({ cam: c.id });
         cg += '<g class="regmap-stn sz-cam" data-t="' + (taps.length - 1) + '"' + (many ? '' : ' tabindex="0"') + ' role="button" aria-label="' + esc('Road camera: ' + c.title) + '"><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + (cr + 5 * u).toFixed(1) + '" style="fill:transparent"></circle><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + cr.toFixed(1) + '" style="fill:' + (c.vonly ? CAMMAP.EDGE : CAMMAP.FILL) + ';stroke:' + (c.vonly ? CAMMAP.FILL : CAMMAP.EDGE) + ';stroke-width:' + ((c.vonly ? 1.7 : 1.2) * u).toFixed(1) + '"></circle></g>';
       });
       o.push(cg);
@@ -20670,7 +20671,7 @@ var CAMMAP = (function () {
     });
   }
   function agency(c) { return c.src === 'wis' ? 'WisDOT 511' : (c.attr || 'State DOT'); }
-  function agencies(list) { var a = []; list.forEach(function (c) { var k = agency(c); if (a.indexOf(k) < 0) a.push(k); }); return a; }
+  function agencies(list) { var n = {}; list.forEach(function (c) { var k = agency(c); n[k] = (n[k] || 0) + 1; }); return Object.keys(n).sort(function (a, b) { return n[b] - n[a]; }); }   // most cameras first
   /* the card a dot opens: the camera's latest picture, and a button for the full viewer */
   function detail(c) {
     if (!c) return '';

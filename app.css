@@ -3241,3 +3241,5 @@ body.snd-open #chatPanel { z-index: 9600; }
 .sz-camk.is-vo { background: #0B1220; border-color: #F8FAFC; }
 .sz-cam:hover circle + circle, .sz-cam:focus circle + circle { stroke: #60A5FA; }
 .map-pop .cm-shot { max-width: 280px; }
+.map-pop .cm-shot { max-width: 230px; }
+.map-pop .map-pop-body:has(.cm-pop) { max-height: none; overflow: visible; }
