@@ -21,7 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="NWS Terminal">
 <link rel="preconnect" href="https://mesonet.agron.iastate.edu" crossorigin>
 <script>try{if(localStorage.getItem('nwst_theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css?v=3.83.3">
+<link rel="stylesheet" href="/app.css?v=3.84.0">
 <!-- Leaflet + Chart.js are NOT loaded here. They are fetched on demand by
      the tabs that need them (radar / hourly / models). See loadVendor(). -->
 </head>
@@ -55,6 +55,11 @@
         <button class="nav-item" type="button" data-section="regional" data-group="regional upper maps home">
           <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z"/><path d="M9 4v13.5M15 6.5V20"/></svg>
           <span class="nl">Maps</span>
+        </button>
+        <button class="nav-item nav-storms" type="button" id="navStorms" aria-label="Storm Zone">
+          <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 9.5c-.9-3.7-4.4-6.2-8.3-5.9-3.4.3-6 2.8-6.6 6"/><path d="M3.5 14.5c.9 3.7 4.4 6.2 8.3 5.9 3.4-.3 6-2.8 6.6-6"/><circle cx="12" cy="12" r="2.6"/><path d="M5.6 10C7 8.6 9.6 8 12 9.4M18.4 14c-1.4 1.4-4 2-6.4.6"/></svg>
+          <span class="nl">Storms</span>
+          <span id="stormBadge" class="nav-badge hidden"></span>
         </button>
         <button class="nav-item" type="button" data-section="hourly" data-group="hourly afd models spc wpc cpc tropical">
           <svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m7 14 4-4 3 3 5-5"/></svg>
@@ -1634,6 +1639,9 @@
       </div><!-- /#resultsEl -->
 
       <!-- ══════════════ OPENING PAGE: the US right now (v3.42.0) ══════════════ -->
+      <!-- v3.84.0: the Storm Zone. Every significant storm in the country and one screen per storm; filled by STORMZ in app.js. -->
+      <div id="stormEl" class="home storm-zone hidden" aria-live="off"></div>
+
       <div id="homeEl" class="home hidden">
         <div class="section">
           <h2 class="section-label">United States, right now</h2>
@@ -1859,6 +1867,6 @@
 
 <div id="spcLightbox" role="dialog" aria-modal="true" aria-label="Full-size map"><button type="button" class="lb-close" aria-label="Close">&times;</button><img alt="Full-size map"></div>
 
-<script src="/app.js?v=3.83.3" defer></script>
+<script src="/app.js?v=3.84.0" defer></script>
 </body>
 </html>
