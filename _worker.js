@@ -517,7 +517,7 @@ async function dotList(st, ctx) {
   const one = async (url, text) => {
     let res;
     try { res = await fetch(url, { headers: { Accept: text ? '*/*' : 'application/json', 'User-Agent': UA }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) }); }
-    catch (err) { throw Object.assign(new Error('no answer'), { status: err && err.name === 'TimeoutError' ? 504 : 502 }); }
+    catch (err) { throw Object.assign(new Error('no answer' + (err && err.message ? ': ' + String(err.message).slice(0, 80) : '')), { status: err && err.name === 'TimeoutError' ? 504 : 502 }); }
     if (!res.ok) throw Object.assign(new Error('refused'), { status: res.status });
     try { return text ? await res.text() : await res.json(); } catch { return null; }
   };
@@ -541,7 +541,7 @@ async function dotcams(request, env, ctx) {
   const r = Math.min(350, Math.max(1, Math.round(Number(u.searchParams.get('r')) || 50))), limit = Math.min(80, Math.max(1, Math.round(Number(u.searchParams.get('limit')) || 40)));
   let list;
   try { list = await dotList(st, ctx); }
-  catch (err) { return json({ error: DOT_SRC[st].attr + ' cameras are unavailable' + (err && err.status ? ' (' + err.status + ').' : '.') }, 502, NS); }
+  catch (err) { return json({ error: DOT_SRC[st].attr + ' cameras are unavailable' + (err && err.status ? ' (' + err.status + (err.message ? ', ' + err.message : '') + ').' : '.') }, 502, NS); }
   const rad = Math.PI / 180, km = (la, lo) => { const a = Math.sin((la - lat) * rad / 2) ** 2 + Math.cos(lat * rad) * Math.cos(la * rad) * Math.sin((lo - lon) * rad / 2) ** 2; return 12742 * Math.asin(Math.sqrt(a)); };
   const near = list.map((c) => ({ c, d: km(c.lat, c.lon) })).filter((x) => x.d <= r).sort((a, b) => a.d - b.d);
   return json({ radiusKm: r, total: near.length, more: near.length > limit, cams: near.slice(0, limit).map((x) => Object.assign({ attr: DOT_SRC[st].attr, page: x.c.page || DOT_SRC[st].page }, x.c)) }, 200, NS);
