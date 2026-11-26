@@ -9755,7 +9755,7 @@ var CAMS = (function () {
             (c.vonly ? '<span class="cam-vonly"><span class="cam-vonly-play" aria-hidden="true">\u25B6</span>Live video<small>No still picture; tap to play</small></span>'
                      : '<img loading="lazy" decoding="async" alt="" src="' + esc(bust(c.img, stamp)) + '" onerror="var k=this.closest(\'.cam-card\');if(k)k.classList.add(\'cam-dead\')">') + '</button>' +
           '<div class="cam-meta"><div class="cam-title">' + esc(c.title) + '</div><div class="cam-sub">' + rsub + '</div>' +
-          '<div class="cam-sub">Road camera \u00B7 ' + esc(credit(c)) + (c.vonly ? ' \u00B7 video only' : (c.video && HLS ? ' \u00B7 live video' : '')) + (c.old ? ' \u00B7 image may be old' : '') + (c.slow ? ' \u00B7 new picture about every 15 min' : '') + '</div></div></article>';
+          '<div class="cam-sub">Road camera \u00B7 ' + esc(credit(c)) + (c.vonly ? ' \u00B7 video only' : (c.video && HLS ? ' \u00B7 live video' : '')) + (c.old ? ' \u00B7 image may be old' : '') + '</div></div></article>';
       }
       var upd = c.updated ? Date.parse(c.updated) : NaN, old = !isNaN(upd) && Date.now() - upd > OLD_IMAGE_MS;
       var place = [c.city, c.region].filter(Boolean).join(', ');
@@ -9895,7 +9895,7 @@ var CAMS = (function () {
       return '<button type="button" class="cpc-nav-btn" aria-pressed="false" data-p="' + k[0] + '">' + k[1] + '</button>'; }).join('');
     document.getElementById('camModalFoot').innerHTML = [c.road, c.dir, c.county ? c.county + ' County' : ''].filter(Boolean).map(esc).join(' · ') + (c.road || c.dir || c.county ? '<br>' : '') +
       (c.src === 'dot' ? 'Camera: ' + esc(c.attr || 'State DOT') + (c.page ? ', <a href="' + esc(c.page) + '" target="_blank" rel="noopener">the agency\u2019s camera page</a>' : '') +
-        (c.vonly ? '. This camera streams live video only.' : c.slow ? '. The agency posts a new picture about every 15 minutes; reload the cameras for the newest.' : '. The image is re-read every 30 seconds.')
+        (c.vonly ? '. This camera streams live video only.' : '. The image is re-read every 30 seconds.')
                        : 'Camera: Wisconsin Department of Transportation (WisDOT), <a href="https://511wi.gov/" target="_blank" rel="noopener">511wi.gov</a>. &copy; WisDOT. The image is re-read every 30 seconds.') +
       (c.video && !HLS ? ' This browser cannot play the camera’s live video; Safari can.' : '');
     document.getElementById('camPlayer').classList.add('is-road');
@@ -20423,8 +20423,8 @@ var DOTCAMS = (function () {
   /* where each source can have cameras: [west, south, east, north], a little past the state line (border cameras) */
   var BOX = { ca: [-124.6, 32.4, -114.1, 42.1], ny: [-79.9, 40.4, -71.7, 45.1], co: [-109.2, 36.9, -101.9, 41.1], ia: [-96.8, 40.3, -90.0, 43.6],
              ky: [-89.7, 36.4, -81.8, 39.3], wa: [-124.9, 45.4, -116.8, 49.1], nd: [-104.1, 45.9, -96.5, 49.1], mi: [-90.5, 41.6, -82.1, 48.4], al: [-88.6, 30.1, -84.8, 35.1],
-             or: [-124.7, 41.9, -116.4, 46.4], sd: [-104.1, 42.4, -96.4, 46.0], mn: [-97.4, 43.3, -89.4, 49.5], mt: [-116.2, 44.3, -104.0, 49.1] };
-  var NAME = { ca: 'Caltrans', ny: 'New York 511', co: 'Colorado DOT', ia: 'Iowa DOT', ky: 'Kentucky', wa: 'WSDOT', nd: 'North Dakota DOT', mi: 'Michigan DOT', al: 'ALDOT', or: 'Oregon DOT', sd: 'South Dakota DOT', mn: 'MnDOT', mt: 'Montana DOT' };
+             or: [-124.7, 41.9, -116.4, 46.4], sd: [-104.1, 42.4, -96.4, 46.0], mn: [-97.4, 43.3, -89.4, 49.5] };
+  var NAME = { ca: 'Caltrans', ny: 'New York 511', co: 'Colorado DOT', ia: 'Iowa DOT', ky: 'Kentucky', wa: 'WSDOT', nd: 'North Dakota DOT', mi: 'Michigan DOT', al: 'ALDOT', or: 'Oregon DOT', sd: 'South Dakota DOT', mn: 'MnDOT' };
   var mem = {};   // whole lists kept for KEEP: { at, list } or { p }
 
   function km(la1, lo1, la2, lo2) { var a = Math.sin((la2 - la1) * R2D / 2), b = Math.sin((lo2 - lo1) * R2D / 2), h = a * a + Math.cos(la1 * R2D) * Math.cos(la2 * R2D) * b * b; return 12742 * Math.asin(Math.min(1, Math.sqrt(h))); }
@@ -20445,7 +20445,7 @@ var DOTCAMS = (function () {
     if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0) || !(img || vid)) return null;   // v3.88.0: a camera that only streams video has no picture
     var dir = clean(o.dir, 24); if (/^(b|none|unknown|n\/a|both directions?)$/i.test(dir)) dir = '';
     return { src: 'dot', st: src, id: 'dot-' + src + '-' + String(o.id).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 60), title: clean(o.title, 140) || 'Road camera', road: clean(o.road, 40), dir: dir, county: clean(o.county, 40),
-             lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5, img: img, video: vid, vonly: !img, attr: clean(o.attr || attr, 60), page: https(o.page) || page || '', old: !!o.old, slow: !!o.slow };
+             lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5, img: img, video: vid, vonly: !img, attr: clean(o.attr || attr, 60), page: https(o.page) || page || '', old: !!o.old };
   }
   function getJ(u, again) { return netFetch(u, { headers: { Accept: 'application/json' } }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .catch(function (e) { if (again === false) throw e; return new Promise(function (res) { setTimeout(res, 1500); }).then(function () { return getJ(u, false); }); }); }   // one more try: a busy feed often answers the second time
@@ -20487,7 +20487,7 @@ var DOTCAMS = (function () {
   }
   function server(st, lat, lon, r) {
     return getJ('/api/dotcams?st=' + st + '&lat=' + lat.toFixed(4) + '&lon=' + lon.toFixed(4) + '&r=' + Math.round(r) + '&limit=60').then(function (j) {
-      return ((j && j.cams) || []).map(function (o) { if (st === 'mt') o.slow = true; return cam(st, o, o.attr, o.page); }).filter(Boolean);
+      return ((j && j.cams) || []).map(function (o) { return cam(st, o, o.attr, o.page); }).filter(Boolean);
     });
   }
 

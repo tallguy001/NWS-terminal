@@ -485,27 +485,6 @@ const DOT_SRC = {
       for (const c of p.cameras || []) out.push({ id: f.id + '-' + c.id, title: String(c.description || p.name || '').trim(), road: String(p.route || '').trim(), img: c.image || '', lat: +xy[1], lon: +xy[0] });
     }
     return out;
-  } },
-  /* v3.88.0 Montana DOT: its device list (places) and its camera page (the newest picture of each view). The pictures carry
-     their time in the file name and change about every 15 minutes, so this list is kept only 10 minutes. */
-  mt: { urls: ['https://app.mdt.mt.gov/atms/public/listDeviceLocations', 'https://app.mdt.mt.gov/atms/public/cameras'], text: [false, true], keep: 10 * 60000,
-        attr: 'Montana DOT', page: 'https://www.mdt.mt.gov/travinfo/', trim: (raw) => {
-    let dev = raw[0]; const html = String(raw[1] || '');
-    if (dev && !Array.isArray(dev)) dev = Object.values(dev).find((v) => Array.isArray(v)) || [];
-    const views = {}, re = /https:\/\/mdt\.mt\.gov\/other\/WebAppData\/External\/RRS\/[A-Za-z]+\/[^\s"'<>]+\.jpg/g;
-    for (const u of new Set(html.match(re) || [])) {
-      const m = /-(\d{4,7})-(\d{2})-(\d{1,2})-(\d{1,2})-(\d{4})-(\d{1,2})-(\d{1,2})-\d+\.jpg$/.exec(u); if (!m) continue;
-      const t = Date.UTC(+m[5], +m[3] - 1, +m[4], +m[6], +m[7]), v = (views[m[1]] = views[m[1]] || {});
-      if (!v[m[2]] || t > v[m[2]].t) v[m[2]] = { u, t };   // the newest file of each view
-    }
-    const out = [];
-    for (const d of Array.isArray(dev) ? dev : []) {
-      const site = String((d && d.rwisRpu && d.rwisRpu.siteId) || (d && d.camera && d.camera.siteId) || ''), vs = views[site]; if (!vs) continue;
-      const keys = Object.keys(vs).sort();
-      keys.forEach((k, i) => out.push({ id: site + '-' + k, title: String(d.locationName || '').trim() + (keys.length > 1 ? ' · view ' + (i + 1) : ''), road: String(d.signRte || '').trim(),
-        dir: '', county: '', img: vs[k].u, lat: +d.lat, lon: +d.lon }));
-    }
-    return out;
   } }
 };
 async function dotList(st, ctx) {
@@ -537,7 +516,6 @@ async function dotcams(request, env, ctx) {
   if (!(await unlocked(request, env))) return json({ error: 'Locked. Enter the access code in Settings.' }, 401, NS);
   const u = new URL(request.url), st = u.searchParams.get('st'), lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon'));
   if (!DOT_SRC[st]) return json({ error: 'Unknown camera source' }, 400, NS);
-  if (u.searchParams.get('dbg') === 'mt1') { const out = []; for (const x of DOT_SRC.mt.urls) { try { const r = await fetch(x, { headers: { Accept: '*/*', 'User-Agent': UA } }); const t = await r.text(); out.push({ x, s: r.status, ct: r.headers.get('content-type'), n: t.length, head: t.slice(0, 300), imgs: (t.match(/RRS\/[A-Za-z]+\//g) || []).length }); } catch (e) { out.push({ x, e: String(e) }); } } return json(out, 200, NS); }
   if (!u.searchParams.get('lat') || !u.searchParams.get('lon') || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return json({ error: 'lat/lon required' }, 400, NS);
   const r = Math.min(350, Math.max(1, Math.round(Number(u.searchParams.get('r')) || 50))), limit = Math.min(80, Math.max(1, Math.round(Number(u.searchParams.get('limit')) || 40)));
   let list;
